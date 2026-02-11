@@ -1,0 +1,4 @@
+module views
+StatusConfigView 1.0 StatusConfigView.qml
+LogsView 1.0 LogsView.qml
+WalletView 1.0 WalletView.qml

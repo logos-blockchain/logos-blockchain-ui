@@ -1,0 +1,26 @@
+{
+  "name": "blockchain_ui",
+  "version": "1.0.0",
+  "description": "Blockchain UI module for the Logos application",
+  "author": "Logos Blockchain Team",
+  "type": "ui",
+  "main": "blockchain_ui",
+  "dependencies": ["liblogos_blockchain_module"],
+  "category": "blockchain",
+  "build": {
+    "type": "cmake",
+    "files": [
+      "src/BlockchainPlugin.cpp",
+      "src/BlockchainPlugin.h",
+      "src/BlockchainBackend.cpp",
+      "src/BlockchainBackend.h",
+      "src/LogModel.cpp",
+      "src/LogModel.h",
+      "src/blockchain_resources.qrc"
+    ]
+  },
+  "capabilities": [
+    "ui_components",
+    "blockchain"
+  ]
+}
