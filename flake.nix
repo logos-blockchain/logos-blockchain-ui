@@ -6,7 +6,7 @@
     nixpkgs.follows = "logos-liblogos/nixpkgs";
     logos-cpp-sdk.url = "github:logos-co/logos-cpp-sdk";
     logos-liblogos.url = "github:logos-co/logos-liblogos";
-    logos-blockchain-module.url = "github:logos-co/logos-blockchain-module";
+    logos-blockchain-module.url = "github:logos-blockchain/logos-blockchain-module/578308270ecfe7463a94ac50cae0584451c135ef";
     logos-capability-module.url = "github:logos-co/logos-capability-module";
     logos-design-system.url = "github:logos-co/logos-design-system";
     logos-design-system.inputs.nixpkgs.follows = "nixpkgs";

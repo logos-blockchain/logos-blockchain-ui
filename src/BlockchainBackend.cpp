@@ -7,6 +7,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     : QObject(parent),
       m_status(NotStarted),
       m_configPath(""),
+      m_logModel(new LogModel(this)),
       m_logos(nullptr),
       m_blockchainModule(nullptr)
 {
@@ -46,11 +47,6 @@ void BlockchainBackend::setStatus(BlockchainStatus newStatus)
     }
 }
 
-void BlockchainBackend::clearLogs()
-{
-    emit logsCleared();
-}
-
 void BlockchainBackend::setConfigPath(const QString& path)
 {
     const QString localPath = QUrl::fromUserInput(path).toLocalFile();
@@ -58,6 +54,36 @@ void BlockchainBackend::setConfigPath(const QString& path)
         m_configPath = localPath;
         emit configPathChanged();
     }
+}
+
+void BlockchainBackend::clearLogs()
+{
+    m_logModel->clear();
+}
+
+QString BlockchainBackend::getBalance(const QString& addressHex)
+{
+    if (!m_blockchainModule) {
+        return QStringLiteral("Error: Module not initialized.");
+    }
+    // The generated proxy converts C pointer params (uint8_t*, BalanceResult*) to QVariant,
+    // which cannot carry raw C pointers. The module needs to expose a QString-based
+    // wrapper (e.g. getWalletBalanceQ) for this to work through the proxy.
+    Q_UNUSED(addressHex)
+    return QStringLiteral("Not yet available: module needs Qt-friendly wallet API.");
+}
+
+QString BlockchainBackend::transferFunds(const QString& fromKeyHex, const QString& toKeyHex, const QString& amountStr)
+{
+    if (!m_blockchainModule) {
+        return QStringLiteral("Error: Module not initialized.");
+    }
+    // Same limitation: TransferFundsArguments and Hash are C types that cannot
+    // pass through the QVariant-based generated proxy.
+    Q_UNUSED(fromKeyHex)
+    Q_UNUSED(toKeyHex)
+    Q_UNUSED(amountStr)
+    return QStringLiteral("Not yet available: module needs Qt-friendly wallet API.");
 }
 
 void BlockchainBackend::startBlockchain()
@@ -107,14 +133,16 @@ void BlockchainBackend::stopBlockchain()
 void BlockchainBackend::onNewBlock(const QVariantList& data)
 {
     QString timestamp = QDateTime::currentDateTime().toString("HH:mm:ss");
+    QString line;
     if (!data.isEmpty()) {
         QString blockInfo = data.first().toString();
         QString shortInfo = blockInfo.left(80);
         if (blockInfo.length() > 80) {
             shortInfo += "...";
         }
-        emit newBlockMessage(QString("[%1] 📦 New block: %2\n").arg(timestamp, shortInfo));
+        line = QString("[%1] 📦 New block: %2").arg(timestamp, shortInfo);
     } else {
-        emit newBlockMessage(QString("[%1] 📦 New block (no data)\n").arg(timestamp));
+        line = QString("[%1] 📦 New block (no data)").arg(timestamp);
     }
+    m_logModel->append(line);
 }

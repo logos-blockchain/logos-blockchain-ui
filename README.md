@@ -115,6 +115,6 @@ Example configuration file can be found in the logos-blockchain-module repositor
 
 During development, you can enable QML hot reload by setting an environment variable:
 ```bash
-export BLOCKCHAIN_UI_QML_PATH=/path/to/logos-blockchain-ui-new/src/BlockchainView.qml
+export BLOCKCHAIN_UI_QML_PATH=/path/to/logos-blockchain-ui/src/qml
 ```
 This allows you to edit the QML file and see changes by reloading the plugin without recompiling.

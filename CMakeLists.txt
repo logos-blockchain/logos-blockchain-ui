@@ -92,6 +92,8 @@ set(SOURCES
     src/BlockchainPlugin.h
     src/BlockchainBackend.cpp
     src/BlockchainBackend.h
+    src/LogModel.cpp
+    src/LogModel.h
     src/blockchain_resources.qrc
 )
 
