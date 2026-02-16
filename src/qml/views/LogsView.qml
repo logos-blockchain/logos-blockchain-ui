@@ -2,9 +2,8 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-import Logos.DesignSystem
-
-import controls
+import Logos.Theme
+import Logos.Controls
 
 Control {
     id: root
@@ -29,11 +28,10 @@ Control {
             Layout.preferredHeight: implicitHeight
             spacing: Theme.spacing.medium
 
-            Text {
+            LogosText {
                 text: qsTr("Logs")
                 font.pixelSize: Theme.typography.secondaryText
                 font.bold: true
-                color: Theme.palette.text
             }
 
             Item { Layout.fillWidth: true }
@@ -62,16 +60,14 @@ Control {
                 model: root.logModel
                 spacing: 2
 
-                delegate: Text {
+                delegate: LogosText {
+                    width: logsListView.width
                     text: model.text
                     font.pixelSize: Theme.typography.secondaryText
-                    font.family: Theme.typography.publicSans
-                    color: Theme.palette.text
-                    width: logsListView.width
                     wrapMode: Text.Wrap
                 }
 
-                Text {
+                LogosText {
                     visible: !root.logModel || root.logModel.count === 0
                     anchors.centerIn: parent
                     text: qsTr("No logs yet...")
