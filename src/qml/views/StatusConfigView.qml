@@ -2,8 +2,8 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-import Logos.DesignSystem
-import controls
+import Logos.Theme
+import Logos.Controls
 
 ColumnLayout {
     id: root
@@ -41,15 +41,14 @@ ColumnLayout {
             anchors.margins: Theme.spacing.large
             spacing: Theme.spacing.medium
 
-            Text {
+            LogosText {
                 Layout.alignment: Qt.AlignLeft
-                font.pixelSize: Theme.typography.primaryText
                 font.bold: true
                 text: root.statusText
                 color: root.statusColor
             }
 
-            Text {
+            LogosText {
                 Layout.alignment: Qt.AlignLeft
                 Layout.topMargin: -Theme.spacing.medium
                 text: qsTr("Mainnet - chain ID 1")
@@ -87,14 +86,12 @@ ColumnLayout {
             anchors.margins: Theme.spacing.large
             spacing: Theme.spacing.medium
 
-            Text {
+            LogosText {
                 text: qsTr("Current Config: ")
-                font.pixelSize: Theme.typography.primaryText
                 font.bold: true
-                color: Theme.palette.text
             }
 
-            Text {
+            LogosText {
                 Layout.fillWidth: true
                 Layout.topMargin: -Theme.spacing.medium
                 text: root.configPath || qsTr("No file selected")

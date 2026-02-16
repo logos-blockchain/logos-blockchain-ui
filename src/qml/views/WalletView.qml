@@ -2,9 +2,8 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-import Logos.DesignSystem
-
-import controls
+import Logos.Theme
+import Logos.Controls
 
 ColumnLayout {
     id: root
@@ -38,11 +37,10 @@ ColumnLayout {
             anchors.margins: Theme.spacing.large
             spacing: Theme.spacing.large
 
-            Text {
+            LogosText {
                 text: qsTr("Get balance")
                 font.pixelSize: Theme.typography.secondaryText
                 font.bold: true
-                color: Theme.palette.text
             }
 
             CustomTextFeild {
@@ -56,7 +54,7 @@ ColumnLayout {
                 onClicked: root.getBalanceRequested(balanceAddressField.text)
             }
 
-            Text {
+            LogosText {
                 id: balanceResultText
                 Layout.fillWidth: true
                 font.pixelSize: Theme.typography.secondaryText
@@ -83,11 +81,10 @@ ColumnLayout {
             anchors.margins: Theme.spacing.large
             spacing: Theme.spacing.large
 
-            Text {
+            LogosText {
                 text: qsTr("Transfer funds")
                 font.pixelSize: Theme.typography.secondaryText
                 font.bold: true
-                color: Theme.palette.text
             }
 
             CustomTextFeild {
@@ -109,7 +106,7 @@ ColumnLayout {
                 onClicked: root.transferRequested(transferFromField.text, transferToField.text, transferAmountField.text)
             }
 
-            Text {
+            LogosText {
                 id: transferResultText
                 Layout.fillWidth: true
                 font.pixelSize: Theme.typography.secondaryText

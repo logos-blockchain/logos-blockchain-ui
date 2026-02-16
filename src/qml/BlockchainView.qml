@@ -5,7 +5,7 @@ import QtQuick.Dialogs
 import QtCore
 
 import BlockchainBackend
-import Logos.DesignSystem
+import Logos.Theme
 
 import views
 
