@@ -5,6 +5,7 @@
   "author": "Logos Blockchain Team",
   "type": "ui",
   "main": "blockchain_ui",
+  "icon": ":/icons/blockchain.png",
   "dependencies": ["liblogos_blockchain_module"],
   "category": "blockchain",
   "build": {

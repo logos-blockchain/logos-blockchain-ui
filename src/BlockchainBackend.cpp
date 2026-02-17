@@ -1,6 +1,8 @@
 #include "BlockchainBackend.h"
+#include <QByteArray>
 #include <QDebug>
 #include <QDateTime>
+#include <QTimer>
 #include <QUrl>
 
 BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
@@ -66,11 +68,7 @@ QString BlockchainBackend::getBalance(const QString& addressHex)
     if (!m_blockchainModule) {
         return QStringLiteral("Error: Module not initialized.");
     }
-    // The generated proxy converts C pointer params (uint8_t*, BalanceResult*) to QVariant,
-    // which cannot carry raw C pointers. The module needs to expose a QString-based
-    // wrapper (e.g. getWalletBalanceQ) for this to work through the proxy.
-    Q_UNUSED(addressHex)
-    return QStringLiteral("Not yet available: module needs Qt-friendly wallet API.");
+    return m_blockchainModule->wallet_get_balance(addressHex);
 }
 
 QString BlockchainBackend::transferFunds(const QString& fromKeyHex, const QString& toKeyHex, const QString& amountStr)
@@ -78,12 +76,9 @@ QString BlockchainBackend::transferFunds(const QString& fromKeyHex, const QStrin
     if (!m_blockchainModule) {
         return QStringLiteral("Error: Module not initialized.");
     }
-    // Same limitation: TransferFundsArguments and Hash are C types that cannot
-    // pass through the QVariant-based generated proxy.
-    Q_UNUSED(fromKeyHex)
-    Q_UNUSED(toKeyHex)
-    Q_UNUSED(amountStr)
-    return QStringLiteral("Not yet available: module needs Qt-friendly wallet API.");
+    QStringList senderAddresses;
+    senderAddresses << fromKeyHex;
+    return m_blockchainModule->wallet_transfer_funds(fromKeyHex, senderAddresses, toKeyHex, amountStr, "");
 }
 
 void BlockchainBackend::startBlockchain()
@@ -99,12 +94,24 @@ void BlockchainBackend::startBlockchain()
 
     if (result == 0 || result == 1) {
         setStatus(Running);
+        QTimer::singleShot(500, this, [this]() { refreshKnownAddresses(); });
     } else if (result == 2) {
         setStatus(ErrorConfigMissing);
     } else if (result == 3) {
         setStatus(ErrorStartFailed);
     } else {
         setStatus(ErrorStartFailed);
+    }
+}
+
+void BlockchainBackend::refreshKnownAddresses()
+{
+    if (!m_blockchainModule) return;
+    QStringList list = m_blockchainModule->wallet_get_known_addresses();
+    qDebug() << "BlockchainBackend: received from blockchain lib: type=QStringList, count=" << list.size();
+    if (m_knownAddresses != list) {
+        m_knownAddresses = std::move(list);
+        emit knownAddressesChanged();
     }
 }
 

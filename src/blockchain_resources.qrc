@@ -5,5 +5,6 @@
         <file>qml/views/StatusConfigView.qml</file>
         <file>qml/views/LogsView.qml</file>
         <file>qml/views/WalletView.qml</file>
+        <file>icons/blockchain.png</file>
     </qresource>
 </RCC>

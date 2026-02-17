@@ -78,6 +78,7 @@ Rectangle {
             WalletView {
                 id: walletView
                 Layout.preferredWidth: parent.width / 2
+                knownAddresses: backend.knownAddresses
 
                 onGetBalanceRequested: function(addressHex) {
                     walletView.setBalanceResult(backend.getBalance(addressHex))

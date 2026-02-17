@@ -8,6 +8,9 @@ import Logos.Controls
 ColumnLayout {
     id: root
 
+    // list of known wallet addresses for Get balance dropdown
+    property var knownAddresses: []
+
     // --- Public API ---
     signal getBalanceRequested(string addressHex)
     signal transferRequested(string fromKeyHex, string toKeyHex, string amount)
@@ -25,7 +28,8 @@ ColumnLayout {
     // Get balance card
     Rectangle {
         Layout.fillWidth: true
-        Layout.preferredHeight: balanceCol.implicitHeight
+        implicitHeight: balanceCol.implicitHeight + 2 * Theme.spacing.large
+        Layout.preferredHeight: implicitHeight
         color: Theme.palette.backgroundTertiary
         radius: Theme.spacing.radiusLarge
         border.color: Theme.palette.border
@@ -33,7 +37,9 @@ ColumnLayout {
 
         ColumnLayout {
             id: balanceCol
-            anchors.fill: parent
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
             anchors.margins: Theme.spacing.large
             spacing: Theme.spacing.large
 
@@ -43,23 +49,48 @@ ColumnLayout {
                 font.bold: true
             }
 
-            CustomTextFeild {
-                id: balanceAddressField
-                placeholderText: qsTr("Wallet address (64 hex chars)")
-            }
-
-            LogosButton {
-                text: qsTr("Get balance")
-                Layout.alignment: Qt.AlignRight
-                onClicked: root.getBalanceRequested(balanceAddressField.text)
-            }
-
-            LogosText {
-                id: balanceResultText
+            // Dropdown of known addresses, or type a custom address
+            ComboBox {
+                id: balanceAddressCombo
                 Layout.fillWidth: true
+                editable: true
+                model: knownAddresses
                 font.pixelSize: Theme.typography.secondaryText
-                color: Theme.palette.textSecondary
-                wrapMode: Text.WordWrap
+                onActivated: function(index) {
+                    if (index >= 0 && index < knownAddresses.length)
+                        currentText = knownAddresses[index]
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: balanceButton.implicitHeight
+                spacing: Theme.spacing.large
+
+                LogosButton {
+                    id: balanceButton
+                    text: qsTr("Get balance")
+                    onClicked: root.getBalanceRequested(balanceAddressCombo.currentText.trim())
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: balanceResultText.height + 2 * Theme.spacing.large
+                    color: Theme.palette.backgroundSecondary
+                    radius: Theme.spacing.radiusXlarge
+                    border.color: Theme.palette.border
+                    border.width: 1
+                    LogosText {
+                        id: balanceResultText
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: Theme.spacing.large
+                        font.pixelSize: Theme.typography.secondaryText
+                        color: Theme.palette.textSecondary
+                        wrapMode: Text.WordWrap
+                    }
+                }
             }
         }
     }
@@ -88,6 +119,7 @@ ColumnLayout {
             }
 
             CustomTextFeild {
+                id: transferFromField
                 placeholderText: qsTr("From key (64 hex chars)")
             }
 
@@ -97,6 +129,7 @@ ColumnLayout {
             }
 
             CustomTextFeild {
+                id: transferAmountField
                 placeholderText: qsTr("Amount")
             }
 
