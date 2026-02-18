@@ -2,8 +2,15 @@
 #include <QByteArray>
 #include <QDebug>
 #include <QDateTime>
+#include <QSettings>
 #include <QTimer>
 #include <QUrl>
+
+namespace {
+    const char kSettingsOrg[] = "Logos";
+    const char kSettingsApp[] = "BlockchainUI";
+    const char kConfigPathKey[] = "configPath";
+}
 
 BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     : QObject(parent),
@@ -13,8 +20,13 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
       m_logos(nullptr),
       m_blockchainModule(nullptr)
 {
-
-    m_configPath =  QString::fromUtf8(qgetenv("LB_CONFIG_PATH"));
+    QSettings s(kSettingsOrg, kSettingsApp);
+    QString saved = s.value(kConfigPathKey).toString();
+    if (!saved.isEmpty()) {
+        m_configPath = saved;
+    } else {
+        m_configPath = QString::fromUtf8(qgetenv("LB_CONFIG_PATH"));
+    }
 
     if (!logosAPI) {
         logosAPI = new LogosAPI("core", this);
@@ -54,6 +66,8 @@ void BlockchainBackend::setConfigPath(const QString& path)
     const QString localPath = QUrl::fromUserInput(path).toLocalFile();
     if (m_configPath != localPath) {
         m_configPath = localPath;
+        QSettings s(kSettingsOrg, kSettingsApp);
+        s.setValue(kConfigPathKey, m_configPath);
         emit configPathChanged();
     }
 }
