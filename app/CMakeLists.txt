@@ -15,36 +15,15 @@ if(NOT DEFINED LOGOS_LIBLOGOS_ROOT)
     message(FATAL_ERROR "LOGOS_LIBLOGOS_ROOT must be defined")
 endif()
 
-# Find logos-cpp-sdk
-if(NOT DEFINED LOGOS_CPP_SDK_ROOT)
-    message(FATAL_ERROR "LOGOS_CPP_SDK_ROOT must be defined")
-endif()
-
 message(STATUS "Using logos-liblogos at: ${LOGOS_LIBLOGOS_ROOT}")
-message(STATUS "Using logos-cpp-sdk at: ${LOGOS_CPP_SDK_ROOT}")
 
-# Check if logos_sdk library exists
-if(NOT EXISTS "${LOGOS_CPP_SDK_ROOT}/lib/liblogos_sdk.a" AND NOT EXISTS "${LOGOS_CPP_SDK_ROOT}/lib/liblogos_sdk.dylib" AND NOT EXISTS "${LOGOS_CPP_SDK_ROOT}/lib/liblogos_sdk.so")
-    message(WARNING "logos_sdk library not found in ${LOGOS_CPP_SDK_ROOT}/lib/")
-    message(STATUS "Available files in ${LOGOS_CPP_SDK_ROOT}/lib/:")
-    file(GLOB SDK_LIB_FILES "${LOGOS_CPP_SDK_ROOT}/lib/*")
-    foreach(file ${SDK_LIB_FILES})
-        message(STATUS "  ${file}")
-    endforeach()
-endif()
-
-# Include directories - the new structure has headers in /include with subdirectories
+# Include and link directories (app only uses logos_core from liblogos, not the SDK)
 include_directories(
     ${LOGOS_LIBLOGOS_ROOT}/include
-    ${LOGOS_CPP_SDK_ROOT}/include
-    ${LOGOS_CPP_SDK_ROOT}/include/cpp
-    ${LOGOS_CPP_SDK_ROOT}/include/core
 )
 
-# Link directories
 link_directories(
     ${LOGOS_LIBLOGOS_ROOT}/lib
-    ${LOGOS_CPP_SDK_ROOT}/lib
 )
 
 # Set output directories
@@ -62,7 +41,6 @@ target_link_libraries(logos-blockchain-ui-app PRIVATE
     Qt${QT_VERSION_MAJOR}::Core
     Qt${QT_VERSION_MAJOR}::Widgets
     logos_core
-    logos_sdk
 )
 
 # Set RPATH settings for the executable

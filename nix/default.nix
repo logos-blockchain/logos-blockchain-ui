@@ -29,9 +29,7 @@
     "-DLOGOS_LIBLOGOS_ROOT=${logosLiblogos}"
   ];
   
-  # Environment variables
   env = {
-    LOGOS_CPP_SDK_ROOT = "${logosSdk}";
     LOGOS_LIBLOGOS_ROOT = "${logosLiblogos}";
   };
   

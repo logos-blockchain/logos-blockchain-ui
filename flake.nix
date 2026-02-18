@@ -6,7 +6,7 @@
     nixpkgs.follows = "logos-liblogos/nixpkgs";
     logos-cpp-sdk.url = "github:logos-co/logos-cpp-sdk";
     logos-liblogos.url = "github:logos-co/logos-liblogos";
-    logos-blockchain-module.url = "github:logos-blockchain/logos-blockchain-module/578308270ecfe7463a94ac50cae0584451c135ef";
+    logos-blockchain-module.url = "github:logos-blockchain/logos-blockchain-module";
     logos-capability-module.url = "github:logos-co/logos-capability-module";
     logos-design-system.url = "github:logos-co/logos-design-system";
     logos-design-system.inputs.nixpkgs.follows = "nixpkgs";
@@ -35,12 +35,12 @@
           
           # Library package (default blockchain-module has lib + include via symlinkJoin)
           lib = import ./nix/lib.nix { 
-            inherit pkgs common src logosBlockchainModule logosSdk; 
+            inherit pkgs common src logosBlockchainModule; 
           };
           
           # App package
           app = import ./nix/app.nix { 
-            inherit pkgs common src logosLiblogos logosSdk logosBlockchainModule logosCapabilityModule logosDesignSystem;
+            inherit pkgs common src logosLiblogos logosBlockchainModule logosCapabilityModule logosDesignSystem;
             logosBlockchainUI = lib;
           };
         in
@@ -71,11 +71,9 @@
           ];
           
           shellHook = ''
-            export LOGOS_CPP_SDK_ROOT="${logosSdk}"
             export LOGOS_LIBLOGOS_ROOT="${logosLiblogos}"
             export LOGOS_DESIGN_SYSTEM_ROOT="${logosDesignSystem}"
             echo "Logos Blockchain UI development environment"
-            echo "LOGOS_CPP_SDK_ROOT: $LOGOS_CPP_SDK_ROOT"
             echo "LOGOS_LIBLOGOS_ROOT: $LOGOS_LIBLOGOS_ROOT"
           '';
         };
