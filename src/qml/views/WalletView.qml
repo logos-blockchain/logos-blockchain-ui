@@ -56,10 +56,6 @@ ColumnLayout {
                 editable: true
                 model: knownAddresses
                 font.pixelSize: Theme.typography.secondaryText
-                onActivated: function(index) {
-                    if (index >= 0 && index < knownAddresses.length)
-                        currentText = knownAddresses[index]
-                }
             }
 
             RowLayout {
@@ -73,21 +69,16 @@ ColumnLayout {
                     onClicked: root.getBalanceRequested(balanceAddressCombo.currentText.trim())
                 }
 
-                Rectangle {
+                LogosButton {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: balanceResultText.height + 2 * Theme.spacing.large
-                    color: Theme.palette.backgroundSecondary
-                    radius: Theme.spacing.radiusXlarge
-                    border.color: Theme.palette.border
-                    border.width: 1
-                    LogosText {
+                     enabled: false
+                     padding: Theme.spacing.medium
+                    contentItem: Text {
                         id: balanceResultText
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.margins: Theme.spacing.large
-                        font.pixelSize: Theme.typography.secondaryText
+                        width: parent.width
                         color: Theme.palette.textSecondary
+                        font.pixelSize: Theme.typography.secondaryText
+                        font.weight: Theme.typography.weightMedium
                         wrapMode: Text.WordWrap
                     }
                 }
@@ -98,7 +89,7 @@ ColumnLayout {
     // Transfer funds card
     Rectangle {
         Layout.fillWidth: true
-        Layout.preferredHeight: transferCol.height
+        Layout.preferredHeight: transferCol.height + 2 * Theme.spacing.large
         color: Theme.palette.backgroundTertiary
         radius: Theme.spacing.radiusLarge
         border.color: Theme.palette.border
@@ -133,18 +124,31 @@ ColumnLayout {
                 placeholderText: qsTr("Amount")
             }
 
-            LogosButton {
-                text: qsTr("Transfer")
-                Layout.alignment: Qt.AlignRight
-                onClicked: root.transferRequested(transferFromField.text, transferToField.text, transferAmountField.text)
-            }
-
-            LogosText {
-                id: transferResultText
+            RowLayout {
                 Layout.fillWidth: true
-                font.pixelSize: Theme.typography.secondaryText
-                color: Theme.palette.textSecondary
-                wrapMode: Text.WordWrap
+                Layout.preferredHeight: transferButton.implicitHeight
+                spacing: Theme.spacing.large
+
+                LogosButton {
+                    id: transferButton
+                    text: qsTr("Transfer")
+                    Layout.alignment: Qt.AlignRight
+                    onClicked: root.transferRequested(transferFromField.text, transferToField.text, transferAmountField.text)
+                }
+
+                LogosButton {
+                    Layout.fillWidth: true
+                    enabled: false
+                    padding: Theme.spacing.medium
+                    contentItem: Text {
+                        id: transferResultText
+                        width: parent.width
+                        color: Theme.palette.textSecondary
+                        font.pixelSize: Theme.typography.secondaryText
+                        font.weight: Theme.typography.weightMedium
+                        wrapMode: Text.WordWrap
+                    }
+                }
             }
         }
     }

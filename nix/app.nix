@@ -1,15 +1,14 @@
 # Builds the logos-blockchain-ui-app standalone application
-{ pkgs, common, src, logosLiblogos, logosSdk, logosBlockchainModule, logosCapabilityModule, logosBlockchainUI, logosDesignSystem }:
+{ pkgs, common, src, logosLiblogos, logosBlockchainModule, logosCapabilityModule, logosBlockchainUI, logosDesignSystem }:
 
 pkgs.stdenv.mkDerivation rec {
   pname = "logos-blockchain-ui-app";
   version = common.version;
   
   inherit src;
-  inherit (common) buildInputs cmakeFlags meta;
+  inherit (common) buildInputs meta;
   
-  # Add logosSdk to nativeBuildInputs for logos-cpp-generator
-  nativeBuildInputs = common.nativeBuildInputs ++ [ logosSdk pkgs.patchelf pkgs.removeReferencesTo ];
+  nativeBuildInputs = common.nativeBuildInputs ++ [ pkgs.patchelf pkgs.removeReferencesTo ];
   
   # Provide Qt/GL runtime paths so the wrapper can inject them
   qtLibPath = pkgs.lib.makeLibraryPath (
@@ -55,31 +54,7 @@ pkgs.stdenv.mkDerivation rec {
   
   preConfigure = ''
     runHook prePreConfigure
-    
-    # Set macOS deployment target to match Qt frameworks
     export MACOSX_DEPLOYMENT_TARGET=12.0
-    
-    # Copy logos-cpp-sdk headers to expected location
-    echo "Copying logos-cpp-sdk headers for app..."
-    mkdir -p ./logos-cpp-sdk/include/cpp
-    cp -r ${logosSdk}/include/cpp/* ./logos-cpp-sdk/include/cpp/
-    
-    # Also copy core headers
-    echo "Copying core headers..."
-    mkdir -p ./logos-cpp-sdk/include/core
-    cp -r ${logosSdk}/include/core/* ./logos-cpp-sdk/include/core/
-    
-    # Copy SDK library files to lib directory
-    echo "Copying SDK library files..."
-    mkdir -p ./logos-cpp-sdk/lib
-    if [ -f "${logosSdk}/lib/liblogos_sdk.dylib" ]; then
-      cp "${logosSdk}/lib/liblogos_sdk.dylib" ./logos-cpp-sdk/lib/
-    elif [ -f "${logosSdk}/lib/liblogos_sdk.so" ]; then
-      cp "${logosSdk}/lib/liblogos_sdk.so" ./logos-cpp-sdk/lib/
-    elif [ -f "${logosSdk}/lib/liblogos_sdk.a" ]; then
-      cp "${logosSdk}/lib/liblogos_sdk.a" ./logos-cpp-sdk/lib/
-    fi
-    
     runHook postPreConfigure
   '';
   
@@ -122,16 +97,8 @@ pkgs.stdenv.mkDerivation rec {
     runHook preConfigure
     
     echo "Configuring logos-blockchain-ui-app..."
-    echo "liblogos: ${logosLiblogos}"
-    echo "cpp-sdk: ${logosSdk}"
-    echo "blockchain-module: ${logosBlockchainModule}"
-    echo "capability-module: ${logosCapabilityModule}"
-    echo "blockchain-ui: ${logosBlockchainUI}"
-    echo "logos-design-system: ${logosDesignSystem}"
-    
-    # Verify that the built components exist
+
     test -d "${logosLiblogos}" || (echo "liblogos not found" && exit 1)
-    test -d "${logosSdk}" || (echo "cpp-sdk not found" && exit 1)
     test -d "${logosBlockchainModule}" || (echo "blockchain-module not found" && exit 1)
     test -d "${logosCapabilityModule}" || (echo "capability-module not found" && exit 1)
     test -d "${logosBlockchainUI}" || (echo "blockchain-ui not found" && exit 1)
@@ -144,8 +111,7 @@ pkgs.stdenv.mkDerivation rec {
       -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=FALSE \
       -DCMAKE_INSTALL_RPATH="" \
       -DCMAKE_SKIP_BUILD_RPATH=TRUE \
-      -DLOGOS_LIBLOGOS_ROOT=${logosLiblogos} \
-      -DLOGOS_CPP_SDK_ROOT=$(pwd)/logos-cpp-sdk
+      -DLOGOS_LIBLOGOS_ROOT=${logosLiblogos}
     
     runHook postConfigure
   '';
@@ -186,11 +152,6 @@ pkgs.stdenv.mkDerivation rec {
       cp -L "${logosLiblogos}/lib/"liblogos_core.* "$out/lib/" || true
     fi
     
-    # Copy SDK library if it exists
-    if ls "${logosSdk}/lib/"liblogos_sdk.* >/dev/null 2>&1; then
-      cp -L "${logosSdk}/lib/"liblogos_sdk.* "$out/lib/" || true
-    fi
-
     # Determine platform-specific plugin extension
     OS_EXT="so"
     case "$(uname -s)" in
@@ -203,8 +164,8 @@ pkgs.stdenv.mkDerivation rec {
     if [ -f "${logosCapabilityModule}/lib/capability_module_plugin.$OS_EXT" ]; then
       cp -L "${logosCapabilityModule}/lib/capability_module_plugin.$OS_EXT" "$out/modules/"
     fi
-    if [ -f "${logosBlockchainModule}/lib/liblogos_blockchain_module.$OS_EXT" ]; then
-      cp -L "${logosBlockchainModule}/lib/liblogos_blockchain_module.$OS_EXT" "$out/modules/"
+    if [ -f "${logosBlockchainModule}/lib/liblogos-blockchain-module.$OS_EXT" ]; then
+      cp -L "${logosBlockchainModule}/lib/liblogos-blockchain-module.$OS_EXT" "$out/modules/"
     fi
     
     # Copy liblogos_blockchain library to modules directory (needed by blockchain module)
@@ -229,25 +190,20 @@ pkgs.stdenv.mkDerivation rec {
       echo "Copied Logos.Controls to lib/Logos/Controls/"
     fi
 
-    # Create a README for reference
     cat > $out/README.txt <<EOF
-Logos Blockchain UI App - Build Information
-============================================
+Logos Blockchain UI App
+=======================
 liblogos: ${logosLiblogos}
-cpp-sdk: ${logosSdk}
 blockchain-module: ${logosBlockchainModule}
 capability-module: ${logosCapabilityModule}
 blockchain-ui: ${logosBlockchainUI}
-logos-design-system: ${logosDesignSystem}
+design-system: ${logosDesignSystem}
 
-Runtime Layout:
-- Binary: $out/bin/logos-blockchain-ui-app
-- Libraries: $out/lib
-- Modules: $out/modules
-- Qt Plugin: $out/blockchain_ui.$OS_EXT
-
-Usage:
-  $out/bin/logos-blockchain-ui-app
+Layout:
+  bin/logos-blockchain-ui-app
+  lib/
+  modules/
+  blockchain_ui.$OS_EXT
 EOF
     
     runHook postInstall

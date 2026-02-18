@@ -3,14 +3,9 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
-#include <utility>
 #include "logos_api.h"
 #include "logos_api_client.h"
-#include "logos_sdk.h"
 #include "LogModel.h"
-
-// Type of the blockchain module proxy (has start(), stop(), on() etc.)
-using BlockchainModuleProxy = std::remove_reference_t<decltype(std::declval<LogosModules>().liblogos_blockchain_module)>;
 
 class BlockchainBackend : public QObject {
     Q_OBJECT
@@ -71,6 +66,6 @@ private:
     LogModel* m_logModel;
     QStringList m_knownAddresses;
 
-    LogosModules* m_logos;
-    BlockchainModuleProxy* m_blockchainModule;
+    LogosAPI* m_logosAPI;
+    LogosAPIClient* m_blockchainClient;
 };

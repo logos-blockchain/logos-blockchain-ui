@@ -7,9 +7,10 @@
 #include <QUrl>
 
 namespace {
-    const char kSettingsOrg[] = "Logos";
-    const char kSettingsApp[] = "BlockchainUI";
-    const char kConfigPathKey[] = "configPath";
+    const char SETTINGS_ORG[] = "Logos";
+    const char SETTINGS_APP[] = "BlockchainUI";
+    const char CONFIG_PATH_KEY[] = "configPath";
+    const QString BLOCKCHAIN_MODULE_NAME = QStringLiteral("liblogos-blockchain-module");
 }
 
 BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
@@ -17,33 +18,38 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
       m_status(NotStarted),
       m_configPath(""),
       m_logModel(new LogModel(this)),
-      m_logos(nullptr),
-      m_blockchainModule(nullptr)
+      m_logosAPI(nullptr),
+      m_blockchainClient(nullptr)
 {
-    QSettings s(kSettingsOrg, kSettingsApp);
-    QString saved = s.value(kConfigPathKey).toString();
-    if (!saved.isEmpty()) {
-        m_configPath = saved;
-    } else {
-        m_configPath = QString::fromUtf8(qgetenv("LB_CONFIG_PATH"));
+    QSettings s(SETTINGS_ORG, SETTINGS_APP);
+    const QString envConfigPath = QString::fromUtf8(qgetenv("LB_CONFIG_PATH"));
+    const QString savedConfigPath = s.value(CONFIG_PATH_KEY).toString();
+
+    if (!envConfigPath.isEmpty()) {
+        m_configPath = envConfigPath;
+    } else if (!savedConfigPath.isEmpty()) {
+        m_configPath = savedConfigPath;
     }
 
     if (!logosAPI) {
-        logosAPI = new LogosAPI("core", this);
+        logosAPI = new LogosAPI("blockchain_ui", this);
     }
 
-    m_logos = new LogosModules(logosAPI);
+    m_logosAPI = logosAPI;
+    m_blockchainClient = m_logosAPI->getClient(BLOCKCHAIN_MODULE_NAME);
 
-    if (!m_logos) {
+    if (!m_blockchainClient) {
         setStatus(ErrorNotInitialized);
         return;
     }
 
-    m_blockchainModule = &m_logos->liblogos_blockchain_module;
-
-    if (m_blockchainModule && !m_blockchainModule->on("newBlock", [this](const QVariantList& data) {
-        onNewBlock(data);
-    })) {
+    QObject* replica = m_blockchainClient->requestObject(BLOCKCHAIN_MODULE_NAME);
+    if (replica) {
+        replica->setParent(this);
+        m_blockchainClient->onEvent(replica, this, "newBlock", [this](const QString&, const QVariantList& data) {
+            onNewBlock(data);
+        });
+    } else {
         setStatus(ErrorSubscribeFailed);
     }
 }
@@ -66,8 +72,8 @@ void BlockchainBackend::setConfigPath(const QString& path)
     const QString localPath = QUrl::fromUserInput(path).toLocalFile();
     if (m_configPath != localPath) {
         m_configPath = localPath;
-        QSettings s(kSettingsOrg, kSettingsApp);
-        s.setValue(kConfigPathKey, m_configPath);
+        QSettings s(SETTINGS_ORG, SETTINGS_APP);
+        s.setValue(CONFIG_PATH_KEY, m_configPath);
         emit configPathChanged();
     }
 }
@@ -79,39 +85,48 @@ void BlockchainBackend::clearLogs()
 
 QString BlockchainBackend::getBalance(const QString& addressHex)
 {
-    if (!m_blockchainModule) {
+    if (!m_blockchainClient) {
         return QStringLiteral("Error: Module not initialized.");
     }
-    return m_blockchainModule->wallet_get_balance(addressHex);
+    QVariant result = m_blockchainClient->invokeRemoteMethod(BLOCKCHAIN_MODULE_NAME, "wallet_get_balance", addressHex);
+    return result.isValid() ? result.toString() : QStringLiteral("Error: Call failed.");
 }
 
 QString BlockchainBackend::transferFunds(const QString& fromKeyHex, const QString& toKeyHex, const QString& amountStr)
 {
-    if (!m_blockchainModule) {
+    if (!m_blockchainClient) {
         return QStringLiteral("Error: Module not initialized.");
     }
-    QStringList senderAddresses;
-    senderAddresses << fromKeyHex;
-    return m_blockchainModule->wallet_transfer_funds(fromKeyHex, senderAddresses, toKeyHex, amountStr, "");
+    QVariant result = m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME,
+        "wallet_transfer_funds",
+        fromKeyHex,
+        fromKeyHex,
+        toKeyHex,
+        amountStr,
+        QString());
+    return result.isValid() ? result.toString() : QStringLiteral("Error: Call failed.");
 }
 
 void BlockchainBackend::startBlockchain()
 {
-    if (!m_blockchainModule) {
+    if (!m_blockchainClient) {
         setStatus(ErrorNotInitialized);
         return;
     }
 
     setStatus(Starting);
 
-    int result = m_blockchainModule->start(m_configPath, QString());
+    QVariant result = m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, "start", m_configPath, QString());
+    int resultCode = result.isValid() ? result.toInt() : -1;
 
-    if (result == 0 || result == 1) {
+    if (resultCode == 0 || resultCode == 1) {
         setStatus(Running);
         QTimer::singleShot(500, this, [this]() { refreshKnownAddresses(); });
-    } else if (result == 2) {
+    } else if (resultCode == 2) {
         setStatus(ErrorConfigMissing);
-    } else if (result == 3) {
+    } else if (resultCode == 3) {
         setStatus(ErrorStartFailed);
     } else {
         setStatus(ErrorStartFailed);
@@ -120,8 +135,9 @@ void BlockchainBackend::startBlockchain()
 
 void BlockchainBackend::refreshKnownAddresses()
 {
-    if (!m_blockchainModule) return;
-    QStringList list = m_blockchainModule->wallet_get_known_addresses();
+    if (!m_blockchainClient) return;
+    QVariant result = m_blockchainClient->invokeRemoteMethod(BLOCKCHAIN_MODULE_NAME, "wallet_get_known_addresses");
+    QStringList list = result.isValid() && result.canConvert<QStringList>() ? result.toStringList() : QStringList();
     qDebug() << "BlockchainBackend: received from blockchain lib: type=QStringList, count=" << list.size();
     if (m_knownAddresses != list) {
         m_knownAddresses = std::move(list);
@@ -135,16 +151,17 @@ void BlockchainBackend::stopBlockchain()
         return;
     }
 
-    if (!m_blockchainModule) {
+    if (!m_blockchainClient) {
         setStatus(ErrorNotInitialized);
         return;
     }
 
     setStatus(Stopping);
 
-    int result = m_blockchainModule->stop();
+    QVariant result = m_blockchainClient->invokeRemoteMethod(BLOCKCHAIN_MODULE_NAME, "stop");
+    int resultCode = result.isValid() ? result.toInt() : -1;
 
-    if (result == 0 || result == 1) {
+    if (resultCode == 0 || resultCode == 1) {
         setStatus(Stopped);
     } else {
         setStatus(ErrorStopFailed);

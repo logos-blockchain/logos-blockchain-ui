@@ -1,4 +1,4 @@
-# logos-blockchain-ui-new
+# logos-blockchain-ui
 
 A Qt UI plugin for the Logos Blockchain Module, providing a graphical interface to control and monitor the Logos blockchain node.
 
@@ -62,7 +62,7 @@ After building the app with `nix build '.#app'`, you can run it:
 ./result/bin/logos-blockchain-ui-app
 ```
 
-The app will automatically load the required modules (capability_module, liblogos_blockchain_module) and the blockchain_ui Qt plugin. All dependencies are bundled in the Nix store layout.
+The app will automatically load the required modules (capability_module, liblogos-blockchain-module) and the blockchain_ui Qt plugin. All dependencies are bundled in the Nix store layout.
 
 #### Nix Organization
 
@@ -95,7 +95,7 @@ result/
 │   └── Logos/DesignSystem/        # QML design system
 ├── modules/
 │   ├── capability_module_plugin.dylib
-│   ├── liblogos_blockchain_module.dylib
+│   ├── liblogos-blockchain-module.dylib
 │   └── liblogos_blockchain.dylib
 └── blockchain_ui.dylib            # Qt plugin (loaded by app)
 ```
