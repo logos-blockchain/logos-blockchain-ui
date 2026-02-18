@@ -56,6 +56,7 @@ ColumnLayout {
                 editable: true
                 model: knownAddresses
                 font.pixelSize: Theme.typography.secondaryText
+                placeholderText: qsTr("Select or enter wallet address (64 hex chars)")
                 onActivated: function(index) {
                     if (index >= 0 && index < knownAddresses.length)
                         currentText = knownAddresses[index]
