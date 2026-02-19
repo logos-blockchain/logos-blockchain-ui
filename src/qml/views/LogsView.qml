@@ -61,7 +61,7 @@ Control {
                 spacing: 2
 
                 delegate: LogosText {
-                    width: logsListView.width
+                    width: ListView.view.width
                     text: model.text
                     font.pixelSize: Theme.typography.secondaryText
                     wrapMode: Text.Wrap

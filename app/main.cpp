@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
         qWarning() << "Failed to load capability_module plugin";
     }
     
-    if (!logos_core_load_plugin("liblogos-blockchain-module")) {
+    if (!logos_core_load_plugin("liblogos_blockchain_module")) {
         qWarning() << "Failed to load blockchain module plugin";
     }
 

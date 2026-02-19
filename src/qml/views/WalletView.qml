@@ -52,10 +52,78 @@ ColumnLayout {
             // Dropdown of known addresses, or type a custom address
             ComboBox {
                 id: balanceAddressCombo
+
                 Layout.fillWidth: true
+                padding: Theme.spacing.large
+
                 editable: true
                 model: knownAddresses
                 font.pixelSize: Theme.typography.secondaryText
+
+                background: Rectangle {
+                    color: Theme.palette.backgroundTertiary
+                    radius: Theme.spacing.radiusLarge
+                    border.color: Theme.palette.border
+                    border.width: 1
+                }
+                indicator: LogosText {
+                    id: indicatorText
+                    text: "▼"
+                    font.pixelSize: Theme.typography.secondaryText
+                    color: Theme.palette.textSecondary
+                    x: balanceAddressCombo.width - width - Theme.spacing.small
+                    y: (balanceAddressCombo.height - height) / 2
+                    visible: balanceAddressCombo.count > 0
+                }
+                contentItem: LogosText {
+                    width: parent.width - indicatorText.width - Theme.spacing.large
+                    font.pixelSize: Theme.typography.secondaryText
+                    font.bold: true
+                    text: balanceAddressCombo.displayText
+                    elide: Text.ElideRight
+                }
+                delegate: ItemDelegate {
+                    id: delegate
+
+                    width: balanceAddressCombo.width
+                    contentItem: LogosText {
+                        width: parent.width
+                        height: contentHeight + Theme.spacing.large
+                        font.pixelSize: Theme.typography.secondaryText
+                        font.bold: true
+                        text: modelData
+                        elide: Text.ElideRight
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        color: delegate.highlighted ?
+                                   Theme.palette.backgroundTertiary:
+                                   Theme.palette.backgroundSecondary
+                    }
+                    highlighted: balanceAddressCombo.highlightedIndex === index
+                }
+                popup: Popup {
+                    y: balanceAddressCombo.height - 1
+                    width: balanceAddressCombo.width
+                    height: contentItem.implicitHeight + 100
+                    padding: 1
+
+                    contentItem: ListView {
+                        clip: true
+                        implicitHeight: contentHeight
+                        model: balanceAddressCombo.popup.visible ? balanceAddressCombo.delegateModel : null
+                        ScrollIndicator.vertical: ScrollIndicator { }
+                        highlightFollowsCurrentItem: false
+                    }
+
+                    background: Rectangle {
+                        color: Theme.palette.backgroundSecondary
+                        border.color: Theme.palette.border
+                        border.width: 1
+                        radius: Theme.spacing.radiusLarge
+                    }
+                }
             }
 
             RowLayout {
@@ -71,8 +139,8 @@ ColumnLayout {
 
                 LogosButton {
                     Layout.fillWidth: true
-                     enabled: false
-                     padding: Theme.spacing.medium
+                    enabled: false
+                    padding: Theme.spacing.medium
                     contentItem: Text {
                         id: balanceResultText
                         width: parent.width
@@ -161,7 +229,7 @@ ColumnLayout {
     component CustomTextFeild: TextField {
         id: textField
         Layout.fillWidth: true
-        placeholderText: qsTr("From key (64 hex chars)")
+        placeholderTextColor: Theme.palette.textMuted
         font.pixelSize: Theme.typography.secondaryText
 
         background: Rectangle {

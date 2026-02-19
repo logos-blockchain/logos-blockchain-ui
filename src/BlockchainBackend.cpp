@@ -10,7 +10,7 @@ namespace {
     const char SETTINGS_ORG[] = "Logos";
     const char SETTINGS_APP[] = "BlockchainUI";
     const char CONFIG_PATH_KEY[] = "configPath";
-    const QString BLOCKCHAIN_MODULE_NAME = QStringLiteral("liblogos-blockchain-module");
+    const QString BLOCKCHAIN_MODULE_NAME = QStringLiteral("liblogos_blockchain_module");
 }
 
 BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
