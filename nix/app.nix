@@ -164,8 +164,8 @@ pkgs.stdenv.mkDerivation rec {
     if [ -f "${logosCapabilityModule}/lib/capability_module_plugin.$OS_EXT" ]; then
       cp -L "${logosCapabilityModule}/lib/capability_module_plugin.$OS_EXT" "$out/modules/"
     fi
-    if [ -f "${logosBlockchainModule}/lib/liblogos-blockchain-module.$OS_EXT" ]; then
-      cp -L "${logosBlockchainModule}/lib/liblogos-blockchain-module.$OS_EXT" "$out/modules/"
+    if [ -f "${logosBlockchainModule}/lib/liblogos_blockchain_module.$OS_EXT" ]; then
+      cp -L "${logosBlockchainModule}/lib/liblogos_blockchain_module.$OS_EXT" "$out/modules/"
     fi
     
     # Copy liblogos_blockchain library to modules directory (needed by blockchain module)

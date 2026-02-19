@@ -7,7 +7,7 @@ import QtCore
 import BlockchainBackend
 import Logos.Theme
 
-import views
+import "views"
 
 Rectangle {
     id: root

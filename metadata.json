@@ -6,7 +6,7 @@
   "type": "ui",
   "main": "blockchain_ui",
   "icon": ":/icons/blockchain.png",
-  "dependencies": ["liblogos-blockchain-module"],
+  "dependencies": ["liblogos_blockchain_module"],
   "category": "blockchain",
   "build": {
     "type": "cmake",
