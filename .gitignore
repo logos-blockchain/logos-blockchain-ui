@@ -10,3 +10,5 @@ CMakeFiles/
 *.cmake
 generated_code/
 db/
+state/
+.idea/
