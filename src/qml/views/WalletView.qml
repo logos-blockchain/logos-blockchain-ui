@@ -50,80 +50,9 @@ ColumnLayout {
             }
 
             // Dropdown of known addresses, or type a custom address
-            ComboBox {
+            StyledAddressComboBox {
                 id: balanceAddressCombo
-
-                Layout.fillWidth: true
-                padding: Theme.spacing.large
-
-                editable: true
                 model: knownAddresses
-                font.pixelSize: Theme.typography.secondaryText
-
-                background: Rectangle {
-                    color: Theme.palette.backgroundTertiary
-                    radius: Theme.spacing.radiusLarge
-                    border.color: Theme.palette.border
-                    border.width: 1
-                }
-                indicator: LogosText {
-                    id: indicatorText
-                    text: "▼"
-                    font.pixelSize: Theme.typography.secondaryText
-                    color: Theme.palette.textSecondary
-                    x: balanceAddressCombo.width - width - Theme.spacing.small
-                    y: (balanceAddressCombo.height - height) / 2
-                    visible: balanceAddressCombo.count > 0
-                }
-                contentItem: LogosText {
-                    width: parent.width - indicatorText.width - Theme.spacing.large
-                    font.pixelSize: Theme.typography.secondaryText
-                    font.bold: true
-                    text: balanceAddressCombo.displayText
-                    elide: Text.ElideRight
-                }
-                delegate: ItemDelegate {
-                    id: delegate
-
-                    width: balanceAddressCombo.width
-                    contentItem: LogosText {
-                        width: parent.width
-                        height: contentHeight + Theme.spacing.large
-                        font.pixelSize: Theme.typography.secondaryText
-                        font.bold: true
-                        text: modelData
-                        elide: Text.ElideRight
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    background: Rectangle {
-                        color: delegate.highlighted ?
-                                   Theme.palette.backgroundTertiary:
-                                   Theme.palette.backgroundSecondary
-                    }
-                    highlighted: balanceAddressCombo.highlightedIndex === index
-                }
-                popup: Popup {
-                    y: balanceAddressCombo.height - 1
-                    width: balanceAddressCombo.width
-                    height: contentItem.implicitHeight + 100
-                    padding: 1
-
-                    contentItem: ListView {
-                        clip: true
-                        implicitHeight: contentHeight
-                        model: balanceAddressCombo.popup.visible ? balanceAddressCombo.delegateModel : null
-                        ScrollIndicator.vertical: ScrollIndicator { }
-                        highlightFollowsCurrentItem: false
-                    }
-
-                    background: Rectangle {
-                        color: Theme.palette.backgroundSecondary
-                        border.color: Theme.palette.border
-                        border.width: 1
-                        radius: Theme.spacing.radiusLarge
-                    }
-                }
             }
 
             RowLayout {
@@ -169,7 +98,7 @@ ColumnLayout {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.margins: Theme.spacing.large
-            spacing: Theme.spacing.large
+            spacing: Theme.spacing.small
 
             LogosText {
                 text: qsTr("Transfer funds")
@@ -177,18 +106,22 @@ ColumnLayout {
                 font.bold: true
             }
 
-            CustomTextFeild {
-                id: transferFromField
-                placeholderText: qsTr("From key (64 hex chars)")
+            StyledAddressComboBox {
+                id: transferFromCombo
+                model: knownAddresses
             }
 
-            CustomTextFeild {
+            LogosTextField {
                 id: transferToField
+                Layout.fillWidth: true
+                Layout.preferredHeight: 30
                 placeholderText: qsTr("To key (64 hex chars)")
             }
 
-            CustomTextFeild {
+            LogosTextField {
                 id: transferAmountField
+                Layout.fillWidth: true
+                Layout.preferredHeight: 30
                 placeholderText: qsTr("Amount")
             }
 
@@ -201,7 +134,7 @@ ColumnLayout {
                     id: transferButton
                     text: qsTr("Transfer")
                     Layout.alignment: Qt.AlignRight
-                    onClicked: root.transferRequested(transferFromField.text, transferToField.text, transferAmountField.text)
+                    onClicked: root.transferRequested(transferFromCombo.currentText.trim(), transferToField.text.trim(), transferAmountField.text)
                 }
 
                 LogosButton {
@@ -226,18 +159,100 @@ ColumnLayout {
         Layout.preferredHeight: Theme.spacing.small
     }
 
-    component CustomTextFeild: TextField {
-        id: textField
+    component StyledAddressComboBox: ComboBox {
+        id: comboControl
+
         Layout.fillWidth: true
-        placeholderTextColor: Theme.palette.textMuted
+        padding: Theme.spacing.large
+        editable: true
         font.pixelSize: Theme.typography.secondaryText
 
         background: Rectangle {
-            radius: Theme.spacing.radiusSmall
-            color: Theme.palette.backgroundSecondary
-            border.color: textField.activeFocus ?
-                              Theme.palette.overlayOrange :
-                              Theme.palette.backgroundElevated
+            color: Theme.palette.backgroundTertiary
+            radius: Theme.spacing.radiusLarge
+            border.color: Theme.palette.border
+            border.width: 1
+        }
+        indicator: LogosText {
+            id: comboIndicator
+            text: "▼"
+            font.pixelSize: Theme.typography.secondaryText
+            color: Theme.palette.textSecondary
+            x: comboControl.width - width - Theme.spacing.small
+            y: (comboControl.height - height) / 2
+            visible: comboControl.count > 0
+        }
+        contentItem: Item {
+            implicitWidth: comboControl.availableWidth
+            implicitHeight: 30
+
+            TextField {
+                id: comboTextField
+                anchors.fill: parent
+                leftPadding: 0
+                rightPadding: comboControl.count > 0 ? comboIndicator.width + Theme.spacing.small : Theme.spacing.small
+                topPadding: 0
+                bottomPadding: 0
+                verticalAlignment: Text.AlignVCenter
+                font.pixelSize: Theme.typography.secondaryText
+                font.bold: true
+                text: comboControl.editText
+                onTextChanged: if (text !== comboControl.editText) comboControl.editText = text
+                selectByMouse: true
+                color: Theme.palette.text
+                background: Item { }
+            }
+            MouseArea {
+                anchors.fill: parent
+                visible: comboControl.count > 0
+                z: 1
+                onPressed: {
+                    comboControl.popup.visible ? comboControl.popup.close() : comboControl.popup.open()
+                }
+            }
+        }
+        delegate: ItemDelegate {
+            id: comboDelegate
+            width: comboControl.width
+            contentItem: LogosText {
+                width: parent.width
+                height: contentHeight + Theme.spacing.large
+                font.pixelSize: Theme.typography.secondaryText
+                font.bold: true
+                text: modelData
+                elide: Text.ElideMiddle
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+            }
+            background: Rectangle {
+                color: comboDelegate.highlighted ?
+                           Theme.palette.backgroundTertiary :
+                           Theme.palette.backgroundSecondary
+            }
+            highlighted: comboControl.highlightedIndex === index
+        }
+        popup: Popup {
+            y: comboControl.height - 1
+            width: comboControl.width
+            height: contentItem.implicitHeight
+            padding: 1
+
+            onOpened: if (comboControl.count === 0) close()
+
+            contentItem: ListView {
+                clip: true
+                implicitHeight: contentHeight
+                model: comboControl.popup.visible ? comboControl.delegateModel : null
+                ScrollIndicator.vertical: ScrollIndicator { }
+                highlightFollowsCurrentItem: false
+            }
+
+            background: Rectangle {
+                color: Theme.palette.backgroundSecondary
+                border.color: Theme.palette.border
+                border.width: 1
+                radius: Theme.spacing.radiusLarge
+            }
         }
     }
 }

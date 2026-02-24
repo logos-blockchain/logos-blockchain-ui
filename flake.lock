@@ -801,16 +801,17 @@
         ]
       },
       "locked": {
-        "lastModified": 1771871578,
-        "narHash": "sha256-6Mu3cmdhd8e7i+n8OWcaIBye+i12gwlwt1fhd9QCbCI=",
+        "lastModified": 1770837874,
+        "narHash": "sha256-wr75lv1q4U1FS5+l/6ypwzJFJe06l2RyUvx1npoRS88=",
         "owner": "logos-co",
         "repo": "logos-liblogos",
-        "rev": "19d29d4ef99292d9285b3a561cb7ea8029be3b74",
+        "rev": "e3741c01fd3abf6b7bd9ff2fa8edf89c41fc0cea",
         "type": "github"
       },
       "original": {
         "owner": "logos-co",
         "repo": "logos-liblogos",
+        "rev": "e3741c01fd3abf6b7bd9ff2fa8edf89c41fc0cea",
         "type": "github"
       }
     },

@@ -27,7 +27,8 @@ public:
     Q_ENUM(BlockchainStatus)
 
     Q_PROPERTY(BlockchainStatus status READ status NOTIFY statusChanged)
-    Q_PROPERTY(QString configPath READ configPath WRITE setConfigPath NOTIFY configPathChanged)
+    Q_PROPERTY(QString userConfig READ userConfig WRITE setUserConfig NOTIFY userConfigChanged)
+    Q_PROPERTY(QString deploymentConfig READ deploymentConfig WRITE setDeploymentConfig NOTIFY deploymentConfigChanged)
     Q_PROPERTY(LogModel* logModel READ logModel CONSTANT)
     Q_PROPERTY(QStringList knownAddresses READ knownAddresses NOTIFY knownAddressesChanged)
 
@@ -35,12 +36,15 @@ public:
     ~BlockchainBackend();
 
     BlockchainStatus status() const { return m_status; }
-    QString configPath() const { return m_configPath; }
+    QString userConfig() const { return m_userConfig; }
+    QString deploymentConfig() const { return m_deploymentConfig; }
     LogModel* logModel() const { return m_logModel; }
     QStringList knownAddresses() const { return m_knownAddresses; }
 
-    void setConfigPath(const QString& path);
+    void setUserConfig(const QString& path);
+    void setDeploymentConfig(const QString& path);
     Q_INVOKABLE void clearLogs();
+    Q_INVOKABLE void copyToClipboard(const QString& text);
     Q_INVOKABLE QString getBalance(const QString& addressHex);
     Q_INVOKABLE QString transferFunds(
         const QString& fromKeyHex, 
@@ -55,14 +59,16 @@ public slots:
 
 signals:
     void statusChanged();
-    void configPathChanged();
+    void userConfigChanged();
+    void deploymentConfigChanged();
     void knownAddressesChanged();
 
 private:
     void setStatus(BlockchainStatus newStatus);
 
     BlockchainStatus m_status;
-    QString m_configPath;
+    QString m_userConfig;
+    QString m_deploymentConfig;
     LogModel* m_logModel;
     QStringList m_knownAddresses;
 

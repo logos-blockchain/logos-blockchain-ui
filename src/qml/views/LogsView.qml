@@ -12,6 +12,7 @@ Control {
     required property var logModel   // LogModel (QAbstractListModel with "text" role)
 
     signal clearRequested()
+    signal copyToClipboard(string text)
 
     background: Rectangle {
         color: Theme.palette.background
@@ -60,11 +61,18 @@ Control {
                 model: root.logModel
                 spacing: 2
 
-                delegate: LogosText {
+                delegate: ItemDelegate{
                     width: ListView.view.width
-                    text: model.text
-                    font.pixelSize: Theme.typography.secondaryText
-                    wrapMode: Text.Wrap
+                    contentItem: LogosText {
+                        text: model.text
+                        font.pixelSize: Theme.typography.secondaryText
+                        wrapMode: Text.Wrap
+                    }
+                    background: Rectangle {
+                        color: hovered ? Theme.palette.background: "transparent"
+                        radius: 2
+                    }
+                    onClicked: root.copyToClipboard(model.text)
                 }
 
                 LogosText {
