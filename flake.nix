@@ -5,7 +5,7 @@
     # Follow the same nixpkgs as logos-liblogos to ensure compatibility
     nixpkgs.follows = "logos-liblogos/nixpkgs";
     logos-cpp-sdk.url = "github:logos-co/logos-cpp-sdk";
-    logos-liblogos.url = "github:logos-co/logos-liblogos";
+    logos-liblogos.url = "github:logos-co/logos-liblogos?rev=e3741c01fd3abf6b7bd9ff2fa8edf89c41fc0cea";
     logos-blockchain-module.url = "github:logos-blockchain/logos-blockchain-module";
     logos-capability-module.url = "github:logos-co/logos-capability-module";
     logos-design-system.url = "github:logos-co/logos-design-system";

@@ -64,15 +64,17 @@ Rectangle {
                 Layout.preferredWidth: parent.width / 2
                 statusText: _d.getStatusString(backend.status)
                 statusColor: _d.getStatusColor(backend.status)
-                configPath: backend.configPath
-                canStart: !!backend.configPath
+                userConfig: backend.userConfig
+                deploymentConfig: backend.deploymentConfig
+                canStart: !!backend.userConfig
                          && backend.status !== BlockchainBackend.Starting
                          && backend.status !== BlockchainBackend.Stopping
                 isRunning: backend.status === BlockchainBackend.Running
 
                 onStartRequested: backend.startBlockchain()
                 onStopRequested: backend.stopBlockchain()
-                onChangeConfigRequested: fileDialog.open()
+                onChangeUserConfigRequested: userConfigFileDialog.open()
+                onChangeDeploymentConfigRequested: deploymentConfigFileDialog.open()
             }
 
             WalletView {
@@ -96,16 +98,23 @@ Rectangle {
 
             logModel: backend.logModel
             onClearRequested: backend.clearLogs()
+            onCopyToClipboard: (text) => backend.copyToClipboard(text)
         }
     }
 
     FileDialog {
-        id: fileDialog
+        id: userConfigFileDialog
         modality: Qt.NonModal
         nameFilters: ["YAML files (*.yaml)"]
         currentFolder: StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0]
-        onAccepted: {
-            backend.configPath = selectedFile
-        }
+        onAccepted: backend.userConfig = selectedFile
+    }
+
+    FileDialog {
+        id: deploymentConfigFileDialog
+        modality: Qt.NonModal
+        nameFilters: ["YAML files (*.yaml)"]
+        currentFolder: StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0]
+        onAccepted: backend.deploymentConfig = selectedFile
     }
 }
