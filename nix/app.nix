@@ -173,6 +173,11 @@ pkgs.stdenv.mkDerivation rec {
       cp -L "${logosBlockchainModule}/lib/liblogos_blockchain.$OS_EXT" "$out/modules/"
     fi
 
+    # Copy circuits from blockchain module to lib (needed at runtime)
+    if [ -d "${logosBlockchainModule}/lib/circuits" ]; then
+      cp -r "${logosBlockchainModule}/lib/circuits" "$out/modules/"
+    fi
+
     # Copy blockchain_ui Qt plugin to root directory (not modules, as it's loaded differently)
     if [ -f "${logosBlockchainUI}/lib/blockchain_ui.$OS_EXT" ]; then
       cp -L "${logosBlockchainUI}/lib/blockchain_ui.$OS_EXT" "$out/"
