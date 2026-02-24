@@ -3,7 +3,10 @@
 #include <QClipboard>
 #include <QDebug>
 #include <QDateTime>
+#include <QDir>
 #include <QGuiApplication>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSettings>
 #include <QTimer>
 #include <QUrl>
@@ -95,6 +98,14 @@ void BlockchainBackend::setDeploymentConfig(const QString& path)
         QSettings s(SETTINGS_ORG, SETTINGS_APP);
         s.setValue(DEPLOYMENT_CONFIG_KEY, m_deploymentConfig);
         emit deploymentConfigChanged();
+    }
+}
+
+void BlockchainBackend::setUseGeneratedConfig(bool useGenerated)
+{
+    if (m_useGeneratedConfig != useGenerated) {
+        m_useGeneratedConfig = useGenerated;
+        emit useGeneratedConfigChanged();
     }
 }
 
@@ -205,4 +216,81 @@ void BlockchainBackend::onNewBlock(const QVariantList& data)
         line = QString("[%1] 📦 New block (no data)").arg(timestamp);
     }
     m_logModel->append(line);
+}
+
+static QString toLocalPath(const QString& pathInput)
+{
+    if (pathInput.trimmed().isEmpty())
+        return pathInput;
+    return QUrl::fromUserInput(pathInput).toLocalFile();
+}
+
+int BlockchainBackend::generateConfig(const QString& outputPath,
+                                      const QStringList& initialPeers,
+                                      int netPort,
+                                      int blendPort,
+                                      const QString& httpAddr,
+                                      const QString& externalAddress,
+                                      bool noPublicIpCheck,
+                                      int deploymentMode,
+                                      const QString& deploymentConfigPath,
+                                      const QString& statePath)
+{
+    if (!m_blockchainClient) {
+        return -1;
+    }
+    QVariantMap normalized;
+
+    // Output path: default if empty, then normalize
+    QString out = outputPath.trimmed();
+    if (out.isEmpty()) {
+        out = generatedUserConfigPath();
+    } else {
+        out = toLocalPath(out);
+    }
+    normalized.insert(QStringLiteral("output"), out);
+
+    if (!initialPeers.isEmpty()) {
+        QVariantList peersList;
+        for (const QString& p : initialPeers) {
+            if (!p.trimmed().isEmpty())
+                peersList.append(p.trimmed());
+        }
+        if (!peersList.isEmpty())
+            normalized.insert(QStringLiteral("initial_peers"), peersList);
+    }
+    if (netPort > 0)
+        normalized.insert(QStringLiteral("net_port"), netPort);
+    if (blendPort > 0)
+        normalized.insert(QStringLiteral("blend_port"), blendPort);
+    if (!httpAddr.trimmed().isEmpty())
+        normalized.insert(QStringLiteral("http_addr"), httpAddr.trimmed());
+    if (!externalAddress.trimmed().isEmpty())
+        normalized.insert(QStringLiteral("external_address"), externalAddress.trimmed());
+    if (noPublicIpCheck)
+        normalized.insert(QStringLiteral("no_public_ip_check"), true);
+    if (deploymentMode == 0) {
+        QVariantMap deployment;
+        deployment.insert(QStringLiteral("well_known_deployment"), QStringLiteral("devnet"));
+        normalized.insert(QStringLiteral("deployment"), deployment);
+    } else if (deploymentMode == 1 && !deploymentConfigPath.trimmed().isEmpty()) {
+        QVariantMap deployment;
+        deployment.insert(QStringLiteral("config_path"), toLocalPath(deploymentConfigPath.trimmed()));
+        normalized.insert(QStringLiteral("deployment"), deployment);
+    }
+    if (!statePath.trimmed().isEmpty())
+        normalized.insert(QStringLiteral("state_path"), toLocalPath(statePath.trimmed()));
+
+    const QJsonDocument doc = QJsonDocument::fromVariant(normalized);
+    const QByteArray jsonBytes = doc.toJson(QJsonDocument::Compact);
+    const QString jsonToSend = QString::fromUtf8(jsonBytes);
+
+    QVariant result = m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, "generate_user_config_from_str", jsonToSend);
+    return result.isValid() ? result.toInt() : -1;
+}
+
+QString BlockchainBackend::generatedUserConfigPath() const
+{
+    return QDir::currentPath() + QStringLiteral("/user_config.yaml");
 }
