@@ -142,12 +142,9 @@ ColumnLayout {
 
     CheckBox {
         id: noPublicIpCheckBox
-        contentItem: LogosText {
-            text: qsTr("No public IP check")
-            font.pixelSize: Theme.typography.secondaryText
-            verticalAlignment: Text.AlignVCenter
-            leftPadding: noPublicIpCheckBox.indicator.width + noPublicIpCheckBox.spacing
-        }
+        text: qsTr("No public IP check")
+        font.pixelSize: Theme.typography.secondaryText
+        palette.windowText: Theme.palette.text
     }
 
     // Deployment
@@ -159,13 +156,17 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
         spacing: Theme.spacing.medium
-        LogosRadioButton {
+        RadioButton {
             id: devnetRadio
+            font.pixelSize: Theme.typography.secondaryText
+            palette.windowText: Theme.palette.text
             checked: true
             text: qsTr("Devnet")
         }
-        LogosRadioButton {
+        RadioButton {
             id: customRadio
+            font.pixelSize: Theme.typography.secondaryText
+            palette.windowText: Theme.palette.text
             text: qsTr("Custom config")
         }
         LogosTextField {
@@ -223,16 +224,6 @@ ColumnLayout {
                 urlStr = urlStr.substring(7)
             if (urlStr.length > 0)
                 outputField.text = urlStr + "/user_config.yaml"
-        }
-    }
-
-    component LogosRadioButton: RadioButton {
-        id: customRadio
-        contentItem: LogosText {
-            text: customRadio.text
-            font.pixelSize: Theme.typography.secondaryText
-            verticalAlignment: Text.AlignVCenter
-            leftPadding: noPublicIpCheckBox.indicator.width + noPublicIpCheckBox.spacing
         }
     }     
 }
