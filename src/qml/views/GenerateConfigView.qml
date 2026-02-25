@@ -78,12 +78,19 @@ ColumnLayout {
         text: qsTr("Initial peers (one per line)")
         font.pixelSize: Theme.typography.secondaryText
     }
+
     ScrollView {
         Layout.fillWidth: true
         Layout.preferredHeight: 60
         clip: true
         TextArea {
             id: initialPeersArea
+            background: Rectangle {
+                radius: Theme.spacing.radiusSmall
+                color: Theme.palette.backgroundSecondary
+                border.width: 1
+                border.color: d.inputActiveFocus ? Theme.palette.overlayOrange : Theme.palette.backgroundElevated
+            }
             placeholderText: qsTr("Peer addresses, one per line")
             placeholderTextColor: Theme.palette.textTertiary
             font.pixelSize: Theme.typography.secondaryText
@@ -135,7 +142,12 @@ ColumnLayout {
 
     CheckBox {
         id: noPublicIpCheckBox
-        text: qsTr("No public IP check")
+        contentItem: LogosText {
+            text: qsTr("No public IP check")
+            font.pixelSize: Theme.typography.secondaryText
+            verticalAlignment: Text.AlignVCenter
+            leftPadding: noPublicIpCheckBox.indicator.width + noPublicIpCheckBox.spacing
+        }
     }
 
     // Deployment
@@ -147,12 +159,12 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
         spacing: Theme.spacing.medium
-        RadioButton {
+        LogosRadioButton {
             id: devnetRadio
             checked: true
             text: qsTr("Devnet")
         }
-        RadioButton {
+        LogosRadioButton {
             id: customRadio
             text: qsTr("Custom config")
         }
@@ -213,4 +225,14 @@ ColumnLayout {
                 outputField.text = urlStr + "/user_config.yaml"
         }
     }
+
+    component LogosRadioButton: RadioButton {
+        id: customRadio
+        contentItem: LogosText {
+            text: customRadio.text
+            font.pixelSize: Theme.typography.secondaryText
+            verticalAlignment: Text.AlignVCenter
+            leftPadding: noPublicIpCheckBox.indicator.width + noPublicIpCheckBox.spacing
+        }
+    }     
 }
