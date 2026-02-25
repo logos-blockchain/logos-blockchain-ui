@@ -358,11 +358,11 @@
         "nixpkgs": "nixpkgs_20"
       },
       "locked": {
-        "lastModified": 1770132997,
-        "narHash": "sha256-Iv0QMXMD6kf+y2Qx37jXR7Ik6h1dqOzuxBzCdc5S6KA=",
+        "lastModified": 1772028960,
+        "narHash": "sha256-BDWFjaKeoJW8oWDlPphNINt5U3P1xt1z1Y4f9jyC7uU=",
         "owner": "logos-co",
         "repo": "logos-cpp-sdk",
-        "rev": "30ef7986f4b65b7dcf43af84bb073233b1b77821",
+        "rev": "95f763b48d74bcdc63093b05159f43500cab139e",
         "type": "github"
       },
       "original": {
@@ -594,11 +594,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1771862755,
-        "narHash": "sha256-uRQztNMMLhHnQw0P2ZisB1LZ1V7pNqkZRI3pe0wUIts=",
+        "lastModified": 1772034067,
+        "narHash": "sha256-gHRlOZoBvNne7A8gP7+YH8WNas50mIgJGP/ZZzhCyLo=",
         "owner": "logos-co",
         "repo": "logos-design-system",
-        "rev": "4d55203607759c9ef042be4505bbc6efffbbd444",
+        "rev": "b3d5bda6765dace3a5aeefe9da74d8298490681b",
         "type": "github"
       },
       "original": {

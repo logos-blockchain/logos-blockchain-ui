@@ -85,6 +85,7 @@ ColumnLayout {
         TextArea {
             id: initialPeersArea
             placeholderText: qsTr("Peer addresses, one per line")
+            placeholderTextColor: Theme.palette.textTertiary
             font.pixelSize: Theme.typography.secondaryText
         }
     }
@@ -129,7 +130,7 @@ ColumnLayout {
     LogosTextField {
         id: externalAddrField
         Layout.fillWidth: true
-        placeholderText: qsTr("External address (e.g. public IP:port)")
+        placeholderText: qsTr("External address (e.g. /ip4/1.2.3.4/udp/3000/quic-v1)")
     }
 
     CheckBox {
