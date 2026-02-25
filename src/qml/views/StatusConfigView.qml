@@ -13,13 +13,13 @@ ColumnLayout {
     required property color  statusColor
     required property string userConfig
     required property string deploymentConfig
+    required property bool   useGeneratedConfig
     required property bool   canStart
     required property bool   isRunning
 
     signal startRequested()
     signal stopRequested()
-    signal changeUserConfigRequested()
-    signal changeDeploymentConfigRequested()
+    signal changeConfigRequested()
 
     spacing: Theme.spacing.large
 
@@ -89,55 +89,56 @@ ColumnLayout {
             anchors.margins: Theme.spacing.large
             spacing: Theme.spacing.medium
 
-            // User Config Card
-            ConfigSelectionPanel {
-                id: userConfigContent
-
-                title: qsTr("User Config: ")
-                configPath: root.userConfig || qsTr("No file selected")
-                onChangeRequested: root.changeUserConfigRequested()
+            LogosText {
+                text: qsTr("Config")
+                font.bold: true
             }
 
-            // Deployment Config Card
-            ConfigSelectionPanel {
-                id: deploymentConfigContent
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spacing.small
+                LogosText {
+                    text: qsTr("User Config: ")
+                    font.bold: true
+                }
+                LogosText {
+                    Layout.fillWidth: true
+                    text: (root.userConfig || qsTr("No file selected")) +
+                          (root.useGeneratedConfig ? " " + qsTr("(Generated)") : "")
+                    font.pixelSize: Theme.typography.secondaryText
+                    color: Theme.palette.textSecondary
+                    wrapMode: Text.WordWrap
+                }
+            }
 
-                title: qsTr("Deployment Config: ")
-                configPath: root.deploymentConfig || qsTr("No file selected")
-                onChangeRequested: root.changeDeploymentConfigRequested()
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: -Theme.spacing.small
+                spacing: Theme.spacing.small
+                LogosText {
+                    text: qsTr("Deployment Config: ")
+                    font.bold: true
+                }
+                LogosText {
+                    Layout.fillWidth: true
+                    text: (root.useGeneratedConfig && root.deploymentConfig ? root.deploymentConfig :
+                           root.useGeneratedConfig ? qsTr("Devnet (default)") :
+                           (root.deploymentConfig || qsTr("No file selected")))
+                    font.pixelSize: Theme.typography.secondaryText
+                    color: Theme.palette.textSecondary
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            LogosButton {
+                Layout.alignment: Qt.AlignHCenter
+                Layout.fillWidth: true
+                Layout.preferredHeight: 50
+                text: qsTr("Change")
+                onClicked: root.changeConfigRequested()
             }
         }
     }
 
     Item { Layout.fillHeight: true }
-
-    component ConfigSelectionPanel: ColumnLayout {
-        property string title
-        property string configPath
-        signal changeRequested()
-
-        spacing: Theme.spacing.medium
-
-        LogosText {
-            text: title
-            font.bold: true
-        }
-
-        LogosText {
-            Layout.fillWidth: true
-            Layout.topMargin: -Theme.spacing.small
-            text: configPath
-            font.pixelSize: Theme.typography.secondaryText
-            color: Theme.palette.textSecondary
-            wrapMode: Text.WordWrap
-        }
-
-        LogosButton {
-            Layout.alignment: Qt.AlignHCenter
-            Layout.fillWidth: true
-            Layout.preferredHeight: 50
-            text: qsTr("Change")
-            onClicked: changeRequested()
-        }
-    }
 }

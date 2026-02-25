@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <QVariant>
 #include "logos_api.h"
 #include "logos_api_client.h"
 #include "LogModel.h"
@@ -29,8 +30,10 @@ public:
     Q_PROPERTY(BlockchainStatus status READ status NOTIFY statusChanged)
     Q_PROPERTY(QString userConfig READ userConfig WRITE setUserConfig NOTIFY userConfigChanged)
     Q_PROPERTY(QString deploymentConfig READ deploymentConfig WRITE setDeploymentConfig NOTIFY deploymentConfigChanged)
+    Q_PROPERTY(bool useGeneratedConfig READ useGeneratedConfig WRITE setUseGeneratedConfig NOTIFY useGeneratedConfigChanged)
     Q_PROPERTY(LogModel* logModel READ logModel CONSTANT)
     Q_PROPERTY(QStringList knownAddresses READ knownAddresses NOTIFY knownAddressesChanged)
+    Q_PROPERTY(QString generatedUserConfigPath READ generatedUserConfigPath CONSTANT)
 
     explicit BlockchainBackend(LogosAPI* logosAPI = nullptr, QObject* parent = nullptr);
     ~BlockchainBackend();
@@ -38,11 +41,13 @@ public:
     BlockchainStatus status() const { return m_status; }
     QString userConfig() const { return m_userConfig; }
     QString deploymentConfig() const { return m_deploymentConfig; }
+    bool useGeneratedConfig() const { return m_useGeneratedConfig; }
     LogModel* logModel() const { return m_logModel; }
     QStringList knownAddresses() const { return m_knownAddresses; }
 
     void setUserConfig(const QString& path);
     void setDeploymentConfig(const QString& path);
+    void setUseGeneratedConfig(bool useGenerated);
     Q_INVOKABLE void clearLogs();
     Q_INVOKABLE void copyToClipboard(const QString& text);
     Q_INVOKABLE QString getBalance(const QString& addressHex);
@@ -53,6 +58,17 @@ public:
     Q_INVOKABLE void startBlockchain();
     Q_INVOKABLE void stopBlockchain();
     Q_INVOKABLE void refreshKnownAddresses();
+    Q_INVOKABLE int generateConfig(const QString& outputPath,
+                                   const QStringList& initialPeers,
+                                   int netPort,
+                                   int blendPort,
+                                   const QString& httpAddr,
+                                   const QString& externalAddress,
+                                   bool noPublicIpCheck,
+                                   int deploymentMode,
+                                   const QString& deploymentConfigPath,
+                                   const QString& statePath);
+    Q_INVOKABLE QString generatedUserConfigPath() const;
 
 public slots:
     void onNewBlock(const QVariantList& data);
@@ -61,6 +77,7 @@ signals:
     void statusChanged();
     void userConfigChanged();
     void deploymentConfigChanged();
+    void useGeneratedConfigChanged();
     void knownAddressesChanged();
 
 private:
@@ -69,6 +86,7 @@ private:
     BlockchainStatus m_status;
     QString m_userConfig;
     QString m_deploymentConfig;
+    bool m_useGeneratedConfig = false;
     LogModel* m_logModel;
     QStringList m_knownAddresses;
 

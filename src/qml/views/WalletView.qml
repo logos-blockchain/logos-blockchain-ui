@@ -183,7 +183,7 @@ ColumnLayout {
             visible: comboControl.count > 0
         }
         contentItem: Item {
-            implicitWidth: comboControl.availableWidth
+            implicitWidth: 200
             implicitHeight: 30
 
             TextField {
