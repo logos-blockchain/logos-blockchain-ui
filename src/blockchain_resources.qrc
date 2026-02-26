@@ -8,6 +8,11 @@
         <file>qml/views/GenerateConfigView.qml</file>
         <file>qml/views/ConfigChoiceView.qml</file>
         <file>qml/views/SetConfigPathView.qml</file>
+        <file>qml/controls/AccountDelegate.qml</file>
+        <file>qml/controls/LogosCopyButton.qml</file>
         <file>icons/blockchain.png</file>
+        <file>icons/copy.svg</file>
+        <file>icons/checkmark.svg</file>
+        <file>icons/refresh.svg</file>
     </qresource>
 </RCC>

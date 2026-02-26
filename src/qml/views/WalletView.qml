@@ -5,20 +5,20 @@ import QtQuick.Layouts
 import Logos.Theme
 import Logos.Controls
 
-ColumnLayout {
+import "../controls"
+
+RowLayout {
     id: root
 
-    // list of known wallet addresses for Get balance dropdown
-    property var knownAddresses: []
+    required property var accountsModel
 
-    // --- Public API ---
+    property string lastBalanceError: ""
+    property string lastBalanceErrorAddress: ""
+
     signal getBalanceRequested(string addressHex)
     signal transferRequested(string fromKeyHex, string toKeyHex, string amount)
+    signal copyToClipboard(string text)
 
-    // Call these from the parent to display results
-    function setBalanceResult(text) {
-        balanceResultText.text = text
-    }
     function setTransferResult(text) {
         transferResultText.text = text
     }
@@ -28,8 +28,8 @@ ColumnLayout {
     // Get balance card
     Rectangle {
         Layout.fillWidth: true
-        implicitHeight: balanceCol.implicitHeight + 2 * Theme.spacing.large
-        Layout.preferredHeight: implicitHeight
+        implicitHeight: transferRect.height
+        Layout.preferredHeight: Math.min(implicitHeight, 400)
         color: Theme.palette.backgroundTertiary
         radius: Theme.spacing.radiusLarge
         border.color: Theme.palette.border
@@ -44,40 +44,32 @@ ColumnLayout {
             spacing: Theme.spacing.large
 
             LogosText {
-                text: qsTr("Get balance")
+                text: qsTr("Accounts")
                 font.pixelSize: Theme.typography.secondaryText
                 font.bold: true
             }
 
-            // Dropdown of known addresses, or type a custom address
-            StyledAddressComboBox {
-                id: balanceAddressCombo
-                model: knownAddresses
+            LogosText {
+                text: qsTr("Start node to see accounts here.")
+                font.pixelSize: Theme.typography.secondaryText
+                color: Theme.palette.textSecondary
+                wrapMode: Text.WordWrap
+                visible: balanceListView.count === 0
             }
 
-            RowLayout {
+            ListView {
+                id: balanceListView
                 Layout.fillWidth: true
-                Layout.preferredHeight: balanceButton.implicitHeight
-                spacing: Theme.spacing.large
+                Layout.preferredHeight: Math.min(contentHeight, 320)
+                clip: true
+                model: root.accountsModel
+                spacing: Theme.spacing.small
 
-                LogosButton {
-                    id: balanceButton
-                    text: qsTr("Get balance")
-                    onClicked: root.getBalanceRequested(balanceAddressCombo.currentText.trim())
-                }
-
-                LogosButton {
-                    Layout.fillWidth: true
-                    enabled: false
-                    padding: Theme.spacing.medium
-                    contentItem: Text {
-                        id: balanceResultText
-                        width: parent.width
-                        color: Theme.palette.textSecondary
-                        font.pixelSize: Theme.typography.secondaryText
-                        font.weight: Theme.typography.weightMedium
-                        wrapMode: Text.WordWrap
-                    }
+                delegate: AccountDelegate {
+                    balanceError: root.lastBalanceErrorAddress === model.address ?
+                                      root.lastBalanceError: ""
+                    onGetBalanceRequested: (addr) => root.getBalanceRequested(addr)
+                    onCopyRequested: (text) => root.copyToClipboard(text)
                 }
             }
         }
@@ -85,6 +77,7 @@ ColumnLayout {
 
     // Transfer funds card
     Rectangle {
+        id: transferRect
         Layout.fillWidth: true
         Layout.preferredHeight: transferCol.height + 2 * Theme.spacing.large
         color: Theme.palette.backgroundTertiary
@@ -108,7 +101,8 @@ ColumnLayout {
 
             StyledAddressComboBox {
                 id: transferFromCombo
-                model: knownAddresses
+                model: root.accountsModel
+                textRole: "address"
             }
 
             LogosTextField {
@@ -128,35 +122,42 @@ ColumnLayout {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: transferButton.implicitHeight
-                spacing: Theme.spacing.large
 
                 LogosButton {
                     id: transferButton
-                    text: qsTr("Transfer")
+                    Layout.preferredWidth: 60
                     Layout.alignment: Qt.AlignRight
+                    text: qsTr("Send")
                     onClicked: root.transferRequested(transferFromCombo.currentText.trim(), transferToField.text.trim(), transferAmountField.text)
                 }
 
                 LogosButton {
                     Layout.fillWidth: true
-                    enabled: false
-                    padding: Theme.spacing.medium
-                    contentItem: Text {
-                        id: transferResultText
+                    enabled: true
+                    padding: Theme.spacing.small
+                    contentItem: RowLayout {
                         width: parent.width
-                        color: Theme.palette.textSecondary
-                        font.pixelSize: Theme.typography.secondaryText
-                        font.weight: Theme.typography.weightMedium
-                        wrapMode: Text.WordWrap
+                        anchors.centerIn: parent
+                        LogosText {
+                            id: transferResultText
+                            Layout.fillWidth: true
+                            color: Theme.palette.textSecondary
+                            font.pixelSize: Theme.typography.secondaryText
+                            font.weight: Theme.typography.weightMedium
+                            wrapMode: Text.WordWrap
+                            elide: Text.ElideRight
+                        }
+                        LogosCopyButton {
+                            Layout.alignment: Qt.AlignRight
+                            Layout.preferredHeight: 40
+                            Layout.preferredWidth: 40
+                            onCopyText: root.copyRequested(transferResultText.text)
+                            visible: transferResultText.text
+                        }
                     }
                 }
             }
         }
-    }
-
-    Item {
-        Layout.fillWidth: true
-        Layout.preferredHeight: Theme.spacing.small
     }
 
     component StyledAddressComboBox: ComboBox {
@@ -195,7 +196,6 @@ ColumnLayout {
                 bottomPadding: 0
                 verticalAlignment: Text.AlignVCenter
                 font.pixelSize: Theme.typography.secondaryText
-                font.bold: true
                 text: comboControl.editText
                 onTextChanged: if (text !== comboControl.editText) comboControl.editText = text
                 selectByMouse: true
@@ -219,7 +219,7 @@ ColumnLayout {
                 height: contentHeight + Theme.spacing.large
                 font.pixelSize: Theme.typography.secondaryText
                 font.bold: true
-                text: modelData
+                text: (typeof model.address !== "undefined" ? model.address : modelData) || ""
                 elide: Text.ElideMiddle
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter

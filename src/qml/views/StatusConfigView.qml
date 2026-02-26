@@ -5,7 +5,7 @@ import QtQuick.Layouts
 import Logos.Theme
 import Logos.Controls
 
-ColumnLayout {
+Rectangle {
     id: root
 
     // --- Public API ---
@@ -21,124 +21,108 @@ ColumnLayout {
     signal stopRequested()
     signal changeConfigRequested()
 
-    spacing: Theme.spacing.large
+    implicitHeight: contentLayout.height + Theme.spacing.large
+    color: Theme.palette.backgroundTertiary
+    radius: Theme.spacing.radiusLarge
+    border.color: Theme.palette.border
+    border.width: 1
 
-    // Status Card
-    Rectangle {
-        Layout.alignment: Qt.AlignTop
-        Layout.preferredWidth: parent.width * 0.9
-        Layout.preferredHeight: implicitHeight
-        implicitHeight: statusContent.implicitHeight + 2 * Theme.spacing.large
-        color: Theme.palette.backgroundTertiary
-        radius: Theme.spacing.radiusLarge
-        border.color: Theme.palette.border
-        border.width: 1
+    RowLayout {
+        id: contentLayout
 
-        ColumnLayout {
-            id: statusContent
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.margins: Theme.spacing.large
+        spacing: Theme.spacing.large
 
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.margins: Theme.spacing.large
+        // Status Card
+        RowLayout {
+            Layout.alignment: Qt.AlignVCenter
             spacing: Theme.spacing.medium
 
-            LogosText {
-                Layout.alignment: Qt.AlignLeft
-                font.bold: true
-                text: root.statusText
-                color: root.statusColor
+            ColumnLayout {
+                LogosText {
+                    font.bold: true
+                    text: root.statusText
+                    color: root.statusColor
+                }
+                LogosText {
+                    text: qsTr("Mainnet - chain ID 1")
+                    font.pixelSize: Theme.typography.secondaryText
+                    color: Theme.palette.textSecondary
+                }
             }
-
-            LogosText {
-                Layout.alignment: Qt.AlignLeft
-                Layout.topMargin: -Theme.spacing.medium
-                text: qsTr("Mainnet - chain ID 1")
-                font.pixelSize: Theme.typography.secondaryText
-                color: Theme.palette.textSecondary
-            }
-
             LogosButton {
-                Layout.alignment: Qt.AlignHCenter
-                Layout.preferredWidth: parent.width
-                Layout.preferredHeight: 50
+                Layout.preferredHeight: 40
+                Layout.preferredWidth: 100
                 enabled: root.canStart
                 text: root.isRunning ? qsTr("Stop Node") : qsTr("Start Node")
                 onClicked: root.isRunning ? root.stopRequested() : root.startRequested()
             }
         }
-    }
 
-    // Config Card
-    Rectangle {
-        Layout.preferredWidth: parent.width * 0.9
-        Layout.preferredHeight: implicitHeight
-        implicitHeight: contentLayout.implicitHeight + 2 * Theme.spacing.large
+        Rectangle {
+            Layout.preferredWidth: 1
+            Layout.fillHeight: true
+            color: Theme.palette.borderSecondary
+        }
 
-        color: Theme.palette.backgroundTertiary
-        radius: Theme.spacing.radiusLarge
-        border.color: Theme.palette.border
-        border.width: 1
-
-        ColumnLayout {
-            id: contentLayout
-
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.margins: Theme.spacing.large
+        // Config Card
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
             spacing: Theme.spacing.medium
 
-            LogosText {
-                text: qsTr("Config")
-                font.bold: true
-            }
-
-            RowLayout {
+            ColumnLayout {
                 Layout.fillWidth: true
-                spacing: Theme.spacing.small
-                LogosText {
-                    text: qsTr("User Config: ")
-                    font.bold: true
-                }
-                LogosText {
-                    Layout.fillWidth: true
-                    text: (root.userConfig || qsTr("No file selected")) +
-                          (root.useGeneratedConfig ? " " + qsTr("(Generated)") : "")
-                    font.pixelSize: Theme.typography.secondaryText
-                    color: Theme.palette.textSecondary
-                    wrapMode: Text.WordWrap
-                }
-            }
 
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.topMargin: -Theme.spacing.small
-                spacing: Theme.spacing.small
-                LogosText {
-                    text: qsTr("Deployment Config: ")
-                    font.bold: true
-                }
-                LogosText {
+                RowLayout {
                     Layout.fillWidth: true
-                    text: (root.useGeneratedConfig && root.deploymentConfig ? root.deploymentConfig :
-                           root.useGeneratedConfig ? qsTr("Devnet (default)") :
-                           (root.deploymentConfig || qsTr("No file selected")))
-                    font.pixelSize: Theme.typography.secondaryText
-                    color: Theme.palette.textSecondary
-                    wrapMode: Text.WordWrap
+                    spacing: Theme.spacing.small
+                    LogosText {
+                        text: qsTr("User Config: ")
+                        font.pixelSize: Theme.typography.secondaryText
+                    }
+                    LogosText {
+                        Layout.fillWidth: true
+                        text: (root.userConfig || qsTr("No file selected")) +
+                              (root.useGeneratedConfig ? " " + qsTr("(Generated)") : "")
+                        font.pixelSize: Theme.typography.secondaryText
+                        color: Theme.palette.textSecondary
+                        wrapMode: Text.WordWrap
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: -Theme.spacing.small
+                    spacing: Theme.spacing.small
+                    LogosText {
+                        text: qsTr("Deployment Config: ")
+                        font.pixelSize: Theme.typography.secondaryText
+                    }
+                    LogosText {
+                        Layout.fillWidth: true
+                        text: (root.useGeneratedConfig && root.deploymentConfig ?
+                                   root.deploymentConfig :
+                                   root.useGeneratedConfig ?
+                                       qsTr("Devnet (default)") :
+                                       (root.deploymentConfig || qsTr("No file selected")))
+                        font.pixelSize: Theme.typography.secondaryText
+                        color: Theme.palette.textSecondary
+                        wrapMode: Text.WordWrap
+                    }
                 }
             }
 
             LogosButton {
                 Layout.alignment: Qt.AlignHCenter
-                Layout.fillWidth: true
-                Layout.preferredHeight: 50
+                Layout.preferredWidth: 100
+                Layout.preferredHeight: 40
                 text: qsTr("Change")
                 onClicked: root.changeConfigRequested()
             }
         }
     }
-
-    Item { Layout.fillHeight: true }
 }

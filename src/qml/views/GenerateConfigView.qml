@@ -94,6 +94,7 @@ ColumnLayout {
             placeholderText: qsTr("Peer addresses, one per line")
             placeholderTextColor: Theme.palette.textTertiary
             font.pixelSize: Theme.typography.secondaryText
+            color: Theme.palette.text
         }
     }
 
