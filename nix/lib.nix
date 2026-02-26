@@ -42,8 +42,8 @@ pkgs.stdenv.mkDerivation {
     fi
 
     # Copy circuits from blockchain module so result/lib/circuits is available
-    if [ -d "${logosBlockchainModule}/lib/circuits" ]; then
-      cp -r "${logosBlockchainModule}/lib/circuits" $out/modules/
+    if [ -d "${logosBlockchainModule}/share/circuits" ]; then
+      cp -r "${logosBlockchainModule}/share/circuits" $out/modules/
     fi
 
     runHook postInstall

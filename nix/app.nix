@@ -174,8 +174,8 @@ pkgs.stdenv.mkDerivation rec {
     fi
 
     # Copy circuits from blockchain module to lib (needed at runtime)
-    if [ -d "${logosBlockchainModule}/lib/circuits" ]; then
-      cp -r "${logosBlockchainModule}/lib/circuits" "$out/modules/"
+    if [ -d "${logosBlockchainModule}/share/circuits" ]; then
+      cp -r "${logosBlockchainModule}/share/circuits" "$out/modules/"
     fi
 
     # Copy blockchain_ui Qt plugin to root directory (not modules, as it's loaded differently)
