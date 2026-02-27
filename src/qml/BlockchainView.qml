@@ -90,12 +90,13 @@ Rectangle {
         SplitView {
             orientation: Qt.Vertical
 
-            RowLayout {
+            ColumnLayout {
                 SplitView.fillWidth: true
                 SplitView.minimumHeight: 200
+                spacing: Theme.spacing.large
 
                 StatusConfigView {
-                    Layout.preferredWidth: parent.width / 2
+                    Layout.fillWidth: true
                     statusText: _d.getStatusString(backend.status)
                     statusColor: _d.getStatusColor(backend.status)
                     userConfig: backend.userConfig
@@ -113,15 +114,27 @@ Rectangle {
 
                 WalletView {
                     id: walletView
-                    Layout.preferredWidth: parent.width / 2
-                    knownAddresses: backend.knownAddresses
+                    accountsModel: backend.accountsModel
 
                     onGetBalanceRequested: function(addressHex) {
-                        walletView.setBalanceResult(backend.getBalance(addressHex))
+                        var result = backend.getBalance(addressHex)
+                        if ((result || "").indexOf("Error") === 0) {
+                            lastBalanceErrorAddress = addressHex
+                            lastBalanceError = result
+                        }
+                        else {
+                            lastBalanceErrorAddress = ""
+                            lastBalanceError = ""
+                        }
                     }
+                    onCopyToClipboard: (text) => backend.copyToClipboard(text)
                     onTransferRequested: function(fromKeyHex, toKeyHex, amount) {
                         walletView.setTransferResult(backend.transferFunds(fromKeyHex, toKeyHex, amount))
                     }
+                }
+
+                Item {
+                    Layout.preferredHeight: Theme.spacing.small
                 }
             }
 

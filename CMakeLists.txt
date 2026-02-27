@@ -85,6 +85,8 @@ endif()
 
 # Source files
 set(SOURCES
+    src/AccountsModel.cpp
+    src/AccountsModel.h
     src/BlockchainPlugin.cpp
     src/BlockchainPlugin.h
     src/BlockchainBackend.cpp

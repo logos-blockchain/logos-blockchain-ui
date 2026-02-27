@@ -6,6 +6,7 @@
 #include <QVariant>
 #include "logos_api.h"
 #include "logos_api_client.h"
+#include "AccountsModel.h"
 #include "LogModel.h"
 
 class BlockchainBackend : public QObject {
@@ -32,7 +33,7 @@ public:
     Q_PROPERTY(QString deploymentConfig READ deploymentConfig WRITE setDeploymentConfig NOTIFY deploymentConfigChanged)
     Q_PROPERTY(bool useGeneratedConfig READ useGeneratedConfig WRITE setUseGeneratedConfig NOTIFY useGeneratedConfigChanged)
     Q_PROPERTY(LogModel* logModel READ logModel CONSTANT)
-    Q_PROPERTY(QStringList knownAddresses READ knownAddresses NOTIFY knownAddressesChanged)
+    Q_PROPERTY(AccountsModel* accountsModel READ accountsModel CONSTANT)
     Q_PROPERTY(QString generatedUserConfigPath READ generatedUserConfigPath CONSTANT)
 
     explicit BlockchainBackend(LogosAPI* logosAPI = nullptr, QObject* parent = nullptr);
@@ -43,7 +44,7 @@ public:
     QString deploymentConfig() const { return m_deploymentConfig; }
     bool useGeneratedConfig() const { return m_useGeneratedConfig; }
     LogModel* logModel() const { return m_logModel; }
-    QStringList knownAddresses() const { return m_knownAddresses; }
+    AccountsModel* accountsModel() const { return m_accountsModel; }
 
     void setUserConfig(const QString& path);
     void setDeploymentConfig(const QString& path);
@@ -57,7 +58,7 @@ public:
         const QString& amountStr);
     Q_INVOKABLE void startBlockchain();
     Q_INVOKABLE void stopBlockchain();
-    Q_INVOKABLE void refreshKnownAddresses();
+    Q_INVOKABLE void refreshAccounts();
     Q_INVOKABLE int generateConfig(const QString& outputPath,
                                    const QStringList& initialPeers,
                                    int netPort,
@@ -78,17 +79,17 @@ signals:
     void userConfigChanged();
     void deploymentConfigChanged();
     void useGeneratedConfigChanged();
-    void knownAddressesChanged();
 
 private:
     void setStatus(BlockchainStatus newStatus);
+    void fetchBalancesForAccounts(const QStringList& list);
 
     BlockchainStatus m_status;
     QString m_userConfig;
     QString m_deploymentConfig;
     bool m_useGeneratedConfig = false;
     LogModel* m_logModel;
-    QStringList m_knownAddresses;
+    AccountsModel* m_accountsModel;
 
     LogosAPI* m_logosAPI;
     LogosAPIClient* m_blockchainClient;

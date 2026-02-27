@@ -7,6 +7,7 @@
 #include <QGuiApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QModelIndex>
 #include <QSettings>
 #include <QTimer>
 #include <QUrl>
@@ -26,6 +27,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
       m_userConfig(""),
       m_deploymentConfig(""),
       m_logModel(new LogModel(this)),
+      m_accountsModel(new AccountsModel(this)),
       m_logosAPI(nullptr),
       m_blockchainClient(nullptr)
 {
@@ -122,11 +124,15 @@ void BlockchainBackend::copyToClipboard(const QString& text)
 
 QString BlockchainBackend::getBalance(const QString& addressHex)
 {
+    QString result;
     if (!m_blockchainClient) {
-        return QStringLiteral("Error: Module not initialized.");
+        result = QStringLiteral("Error: Module not initialized.");
+    } else {
+        QVariant v = m_blockchainClient->invokeRemoteMethod(BLOCKCHAIN_MODULE_NAME, "wallet_get_balance", addressHex);
+        result = v.isValid() ? v.toString() : QStringLiteral("Error: Call failed.");
     }
-    QVariant result = m_blockchainClient->invokeRemoteMethod(BLOCKCHAIN_MODULE_NAME, "wallet_get_balance", addressHex);
-    return result.isValid() ? result.toString() : QStringLiteral("Error: Call failed.");
+    m_accountsModel->setBalanceForAddress(addressHex, result);
+    return result;
 }
 
 QString BlockchainBackend::transferFunds(const QString& fromKeyHex, const QString& toKeyHex, const QString& amountStr)
@@ -160,7 +166,7 @@ void BlockchainBackend::startBlockchain()
 
     if (resultCode == 0 || resultCode == 1) {
         setStatus(Running);
-        QTimer::singleShot(500, this, [this]() { refreshKnownAddresses(); });
+        QTimer::singleShot(500, this, [this]() { refreshAccounts(); });
     } else if (resultCode == 2) {
         setStatus(ErrorConfigMissing);
     } else if (resultCode == 3) {
@@ -170,15 +176,25 @@ void BlockchainBackend::startBlockchain()
     }
 }
 
-void BlockchainBackend::refreshKnownAddresses()
+void BlockchainBackend::refreshAccounts()
 {
     if (!m_blockchainClient) return;
     QVariant result = m_blockchainClient->invokeRemoteMethod(BLOCKCHAIN_MODULE_NAME, "wallet_get_known_addresses");
     QStringList list = result.isValid() && result.canConvert<QStringList>() ? result.toStringList() : QStringList();
     qDebug() << "BlockchainBackend: received from blockchain lib: type=QStringList, count=" << list.size();
-    if (m_knownAddresses != list) {
-        m_knownAddresses = std::move(list);
-        emit knownAddressesChanged();
+    m_accountsModel->setAddresses(list);
+    QTimer::singleShot(0, this, [this, list]() { fetchBalancesForAccounts(list); });
+}
+
+void BlockchainBackend::fetchBalancesForAccounts(const QStringList& list)
+{
+    if (!m_blockchainClient) return;
+    const int n = list.size();
+    for (int i = 0; i < n; ++i) {
+        const QString address = list[i];
+        if (address.isEmpty()) continue;
+        const QString balance = getBalance(address);
+        m_accountsModel->setBalanceForAddress(address, balance);
     }
 }
 
