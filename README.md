@@ -9,6 +9,32 @@ A Qt UI plugin for the Logos Blockchain Module, providing a graphical interface 
 - Check wallet balances
 - Monitor node status and information
 
+## Standalone App Quickstart
+
+1. Build and run the app with
+
+```bash
+nix run '.#app'
+```
+
+2. Generate a new config using the some initial peers that are part of the live testnet. You can find some peers [here](https://www.notion.so/nomos-tech/Logos-Blockchain-Devnet-Lisbon-March-2026-2fe261aa09df8025ad94e380933b4cf9?source=copy_link#319261aa09df80a6ac9bcb7487d14d6a).
+
+3. Start the node, and let it sync with the initial peers. You can track progress by opening a terminal and running:
+
+```bash
+watch -n1 'curl -s localhost:8080/cryptarchia/info'
+```
+
+And comparing the `height` with the block height in the [block explorer](https://devnet.blockchain.logos.co/web/explorer/).
+
+4. In the meantime, you can request funds from the faucet, copy one of the keys visible in the ui and paste it into the [faucet](https://devnet.blockchain.logos.co/web/faucet/). 
+
+5. Once your node finishes syncing, you can refresh your balance and you should see your funds from the faucet.
+
+At this point, you are done. If you leave this node running, your tokens will age sufficiently such that they will become eligible for participation in consensus. This happens automatically, so long as you don't transfer your tokens for ~3.5 hours.
+
+For a video walkthrough of this process, see this [recording](https://drive.google.com/file/d/1hw6rQZnuka3Y_JBpUz0WyLXglTSPiZEc/view?usp=drive_link).
+
 ## How to Build
 
 ### Using Nix (Recommended)
