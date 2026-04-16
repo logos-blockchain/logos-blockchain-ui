@@ -1,27 +1,24 @@
 {
   "name": "blockchain_ui",
   "version": "1.0.0",
-  "description": "Blockchain UI module for the Logos application",
-  "author": "Logos Blockchain Team",
-  "type": "ui",
-  "main": "blockchain_ui",
-  "icon": ":/icons/blockchain.png",
-  "dependencies": ["liblogos_blockchain_module"],
+  "type": "ui_qml",
   "category": "blockchain",
-  "build": {
-    "type": "cmake",
-    "files": [
-      "src/BlockchainPlugin.cpp",
-      "src/BlockchainPlugin.h",
-      "src/BlockchainBackend.cpp",
-      "src/BlockchainBackend.h",
-      "src/LogModel.cpp",
-      "src/LogModel.h",
-      "src/blockchain_resources.qrc"
-    ]
-  },
-  "capabilities": [
-    "ui_components",
-    "blockchain"
-  ]
+  "description": "Blockchain UI module for the Logos application",
+  "main": "blockchain_ui_plugin",
+  "icon": "src/icons/blockchain.png",
+  "view": "qml/BlockchainView.qml",
+  "dependencies": ["liblogos_blockchain_module"],
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": ["qt6.qtdeclarative", "zstd", "krb5", "abseil-cpp"]
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": ["Qt6Gui"],
+      "extra_sources": [],
+      "extra_include_dirs": [],
+      "extra_link_libraries": ["Qt6::Gui"]
+    }
+  }
 }

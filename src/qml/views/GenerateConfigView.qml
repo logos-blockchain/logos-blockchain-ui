@@ -210,7 +210,7 @@ ColumnLayout {
     FileDialog {
         id: deploymentConfigFileDialog
         modality: Qt.NonModal
-        nameFilters: ["YAML files (*.yaml)", "All files (*)"]
+        nameFilters: ["YAML files (*.yaml *.yml)", "All files (*)"]
         currentFolder: StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0]
         onAccepted: customDeploymentField.text = selectedFile
     }

@@ -1,154 +1,100 @@
 #include "BlockchainBackend.h"
+#include "logos_api.h"
+#include "logos_api_client.h"
+
 #include <QByteArray>
 #include <QClipboard>
-#include <QDebug>
 #include <QDateTime>
+#include <QDebug>
 #include <QDir>
 #include <QGuiApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QModelIndex>
 #include <QSettings>
 #include <QTimer>
 #include <QUrl>
 #include <QVariant>
 
-namespace {
-    const char SETTINGS_ORG[] = "Logos";
-    const char SETTINGS_APP[] = "BlockchainUI";
-    const char USER_CONFIG_KEY[] = "userConfigPath";
-    const char DEPLOYMENT_CONFIG_KEY[] = "deploymentConfigPath";
-    const QString BLOCKCHAIN_MODULE_NAME = QStringLiteral("liblogos_blockchain_module");
-}
+const QString BlockchainBackend::BLOCKCHAIN_MODULE_NAME =
+    QStringLiteral("liblogos_blockchain_module");
 
 BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
-    : QObject(parent),
-      m_status(NotStarted),
-      m_userConfig(""),
-      m_deploymentConfig(""),
-      m_logModel(new LogModel(this)),
-      m_accountsModel(new AccountsModel(this)),
-      m_logosAPI(nullptr),
-      m_blockchainClient(nullptr)
+    : BlockchainBackendSimpleSource(parent)
+    , m_logosAPI(logosAPI)
+    , m_accountsModel(new AccountsModel(this))
+    , m_logModel(new LogModel(this))
 {
-    QSettings s(SETTINGS_ORG, SETTINGS_APP);
-    const QString envConfigPath = QString::fromUtf8(qgetenv("LB_CONFIG_PATH"));
-    const QString savedUserConfig = s.value(USER_CONFIG_KEY).toString();
-    const QString savedDeploymentConfig = s.value(DEPLOYMENT_CONFIG_KEY).toString();
+    setStatus(NotStarted);
+    setUseGeneratedConfig(false);
+    setGeneratedUserConfigPath(
+        QDir::currentPath() + QStringLiteral("/user_config.yaml"));
 
-    if (!envConfigPath.isEmpty()) {
-        m_userConfig = envConfigPath;
-    } else if (!savedUserConfig.isEmpty()) {
-        m_userConfig = savedUserConfig;
-    }
-    if (!savedDeploymentConfig.isEmpty()) {
-        m_deploymentConfig = savedDeploymentConfig;
-    }
+    // Restore saved config paths
+    QSettings s("Logos", "BlockchainUI");
+    const QString envConfigPath =
+        QString::fromUtf8(qgetenv("LB_CONFIG_PATH"));
+    const QString savedUserConfig =
+        s.value("userConfigPath").toString();
+    const QString savedDeploymentConfig =
+        s.value("deploymentConfigPath").toString();
 
-    if (!logosAPI) {
-        logosAPI = new LogosAPI("blockchain_ui", this);
-    }
+    if (!envConfigPath.isEmpty())
+        setUserConfig(envConfigPath);
+    else if (!savedUserConfig.isEmpty())
+        setUserConfig(savedUserConfig);
 
-    m_logosAPI = logosAPI;
-    m_blockchainClient = m_logosAPI->getClient(BLOCKCHAIN_MODULE_NAME);
+    if (!savedDeploymentConfig.isEmpty())
+        setDeploymentConfig(savedDeploymentConfig);
 
-    if (!m_blockchainClient) {
-        setStatus(ErrorNotInitialized);
+    // Persist config paths on change
+    connect(this, &BlockchainBackendSimpleSource::userConfigChanged, this, [this]() {
+        QSettings("Logos", "BlockchainUI")
+            .setValue("userConfigPath", userConfig());
+    });
+    connect(this, &BlockchainBackendSimpleSource::deploymentConfigChanged, this, [this]() {
+        QSettings("Logos", "BlockchainUI")
+            .setValue("deploymentConfigPath", deploymentConfig());
+    });
+
+    if (!m_logosAPI) {
+        qWarning() << "BlockchainBackend: constructed without LogosAPI";
         return;
     }
 
-    QObject* replica = m_blockchainClient->requestObject(BLOCKCHAIN_MODULE_NAME);
+    m_blockchainClient = m_logosAPI->getClient(BLOCKCHAIN_MODULE_NAME);
+    if (!m_blockchainClient) {
+        setStatus(ErrorNotInitialized);
+        qWarning() << "BlockchainBackend: failed to get blockchain module client";
+        return;
+    }
+
+    LogosObject* replica =
+        m_blockchainClient->requestObject(BLOCKCHAIN_MODULE_NAME);
     if (replica) {
-        replica->setParent(this);
-        m_blockchainClient->onEvent(replica, this, "newBlock", [this](const QString&, const QVariantList& data) {
-            onNewBlock(data);
-        });
+        m_blockchainClient->onEvent(
+            replica, "newBlock",
+            [this](const QString&, const QVariantList& data) {
+                const QString timestamp =
+                    QDateTime::currentDateTime().toString("HH:mm:ss");
+                QString line;
+                if (!data.isEmpty())
+                    line = QString("[%1] New block: %2")
+                               .arg(timestamp, data.first().toString());
+                else
+                    line = QString("[%1] New block (no data)").arg(timestamp);
+                m_logModel->append(line);
+            });
     } else {
         setStatus(ErrorSubscribeFailed);
     }
+
+    qDebug() << "BlockchainBackend: initialized";
 }
 
 BlockchainBackend::~BlockchainBackend()
 {
-    stopBlockchain();
-}
-
-void BlockchainBackend::setStatus(BlockchainStatus newStatus)
-{
-    if (m_status != newStatus) {
-        m_status = newStatus;
-        emit statusChanged();
-    }
-}
-
-void BlockchainBackend::setUserConfig(const QString& path)
-{
-    const QString localPath = QUrl::fromUserInput(path).toLocalFile();
-    if (m_userConfig != localPath) {
-        m_userConfig = localPath;
-        QSettings s(SETTINGS_ORG, SETTINGS_APP);
-        s.setValue(USER_CONFIG_KEY, m_userConfig);
-        emit userConfigChanged();
-    }
-}
-
-void BlockchainBackend::setDeploymentConfig(const QString& path)
-{
-    const QString localPath = QUrl::fromUserInput(path).toLocalFile();
-    if (m_deploymentConfig != localPath) {
-        m_deploymentConfig = localPath;
-        QSettings s(SETTINGS_ORG, SETTINGS_APP);
-        s.setValue(DEPLOYMENT_CONFIG_KEY, m_deploymentConfig);
-        emit deploymentConfigChanged();
-    }
-}
-
-void BlockchainBackend::setUseGeneratedConfig(bool useGenerated)
-{
-    if (m_useGeneratedConfig != useGenerated) {
-        m_useGeneratedConfig = useGenerated;
-        emit useGeneratedConfigChanged();
-    }
-}
-
-void BlockchainBackend::clearLogs()
-{
-    m_logModel->clear();
-}
-
-void BlockchainBackend::copyToClipboard(const QString& text)
-{
-    if (QGuiApplication::clipboard())
-        QGuiApplication::clipboard()->setText(text);
-}
-
-QString BlockchainBackend::getBalance(const QString& addressHex)
-{
-    QString result;
-    if (!m_blockchainClient) {
-        result = QStringLiteral("Error: Module not initialized.");
-    } else {
-        QVariant v = m_blockchainClient->invokeRemoteMethod(BLOCKCHAIN_MODULE_NAME, "wallet_get_balance", addressHex);
-        result = v.isValid() ? v.toString() : QStringLiteral("Error: Call failed.");
-    }
-    m_accountsModel->setBalanceForAddress(addressHex, result);
-    return result;
-}
-
-QString BlockchainBackend::transferFunds(const QString& fromKeyHex, const QString& toKeyHex, const QString& amountStr)
-{
-    if (!m_blockchainClient) {
-        return QStringLiteral("Error: Module not initialized.");
-    }
-    QVariant result = m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME,
-        "wallet_transfer_funds",
-        fromKeyHex,
-        fromKeyHex,
-        toKeyHex,
-        amountStr,
-        QString());
-    return result.isValid() ? result.toString() : QStringLiteral("Error: Call failed.");
+    if (status() == Running || status() == Starting)
+        stopBlockchain();
 }
 
 void BlockchainBackend::startBlockchain()
@@ -161,7 +107,7 @@ void BlockchainBackend::startBlockchain()
     setStatus(Starting);
 
     QVariant result = m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, "start", m_userConfig, m_deploymentConfig);
+        BLOCKCHAIN_MODULE_NAME, "start", userConfig(), deploymentConfig());
     int resultCode = result.isValid() ? result.toInt() : -1;
 
     if (resultCode == 0 || resultCode == 1) {
@@ -169,40 +115,15 @@ void BlockchainBackend::startBlockchain()
         QTimer::singleShot(500, this, [this]() { refreshAccounts(); });
     } else if (resultCode == 2) {
         setStatus(ErrorConfigMissing);
-    } else if (resultCode == 3) {
-        setStatus(ErrorStartFailed);
     } else {
         setStatus(ErrorStartFailed);
     }
 }
 
-void BlockchainBackend::refreshAccounts()
-{
-    if (!m_blockchainClient) return;
-    QVariant result = m_blockchainClient->invokeRemoteMethod(BLOCKCHAIN_MODULE_NAME, "wallet_get_known_addresses");
-    QStringList list = result.isValid() && result.canConvert<QStringList>() ? result.toStringList() : QStringList();
-    qDebug() << "BlockchainBackend: received from blockchain lib: type=QStringList, count=" << list.size();
-    m_accountsModel->setAddresses(list);
-    QTimer::singleShot(0, this, [this, list]() { fetchBalancesForAccounts(list); });
-}
-
-void BlockchainBackend::fetchBalancesForAccounts(const QStringList& list)
-{
-    if (!m_blockchainClient) return;
-    const int n = list.size();
-    for (int i = 0; i < n; ++i) {
-        const QString address = list[i];
-        if (address.isEmpty()) continue;
-        const QString balance = getBalance(address);
-        m_accountsModel->setBalanceForAddress(address, balance);
-    }
-}
-
 void BlockchainBackend::stopBlockchain()
 {
-    if (m_status != Running && m_status != Starting) {
+    if (status() != Running && status() != Starting)
         return;
-    }
 
     if (!m_blockchainClient) {
         setStatus(ErrorNotInitialized);
@@ -211,27 +132,69 @@ void BlockchainBackend::stopBlockchain()
 
     setStatus(Stopping);
 
-    QVariant result = m_blockchainClient->invokeRemoteMethod(BLOCKCHAIN_MODULE_NAME, "stop");
+    QVariant result = m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, "stop");
     int resultCode = result.isValid() ? result.toInt() : -1;
 
-    if (resultCode == 0 || resultCode == 1) {
+    if (resultCode == 0 || resultCode == 1)
         setStatus(Stopped);
-    } else {
+    else
         setStatus(ErrorStopFailed);
+}
+
+void BlockchainBackend::refreshAccounts()
+{
+    if (!m_blockchainClient) return;
+
+    QVariant result = m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, "wallet_get_known_addresses");
+    QStringList list =
+        result.isValid() && result.canConvert<QStringList>()
+            ? result.toStringList()
+            : QStringList();
+
+    m_accountsModel->setAddresses(list);
+
+    QTimer::singleShot(0, this,
+                       [this, list]() { fetchBalancesForAccounts(list); });
+}
+
+void BlockchainBackend::fetchBalancesForAccounts(const QStringList& list)
+{
+    if (!m_blockchainClient) return;
+    for (const QString& address : list) {
+        if (address.isEmpty()) continue;
+        getBalance(address);
     }
 }
 
-void BlockchainBackend::onNewBlock(const QVariantList& data)
+QString BlockchainBackend::getBalance(QString addressHex)
 {
-    QString timestamp = QDateTime::currentDateTime().toString("HH:mm:ss");
-    QString line;
-    if (!data.isEmpty()) {
-        QString blockInfo = data.first().toString();
-        line = QString("[%1] 📦 New block: %2").arg(timestamp, blockInfo);
+    QString result;
+    if (!m_blockchainClient) {
+        result = QStringLiteral("Error: Module not initialized.");
     } else {
-        line = QString("[%1] 📦 New block (no data)").arg(timestamp);
+        QVariant v = m_blockchainClient->invokeRemoteMethod(
+            BLOCKCHAIN_MODULE_NAME, "wallet_get_balance", addressHex);
+        result = v.isValid() ? v.toString()
+                             : QStringLiteral("Error: Call failed.");
     }
-    m_logModel->append(line);
+
+    m_accountsModel->setBalanceForAddress(addressHex, result);
+    return result;
+}
+
+QString BlockchainBackend::transferFunds(
+    QString fromKeyHex, QString toKeyHex, QString amountStr)
+{
+    if (!m_blockchainClient)
+        return QStringLiteral("Error: Module not initialized.");
+
+    QVariant result = m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, "wallet_transfer_funds",
+        fromKeyHex, fromKeyHex, toKeyHex, amountStr, QString());
+    return result.isValid() ? result.toString()
+                            : QStringLiteral("Error: Call failed.");
 }
 
 static QString toLocalPath(const QString& pathInput)
@@ -241,30 +204,22 @@ static QString toLocalPath(const QString& pathInput)
     return QUrl::fromUserInput(pathInput).toLocalFile();
 }
 
-int BlockchainBackend::generateConfig(const QString& outputPath,
-                                      const QStringList& initialPeers,
-                                      int netPort,
-                                      int blendPort,
-                                      const QString& httpAddr,
-                                      const QString& externalAddress,
-                                      bool noPublicIpCheck,
-                                      int deploymentMode,
-                                      const QString& deploymentConfigPath,
-                                      const QString& statePath)
+int BlockchainBackend::generateConfig(
+    QString outputPath, QStringList initialPeers, int netPort, int blendPort,
+    QString httpAddr, QString externalAddress, bool noPublicIpCheck,
+    int deploymentMode, QString deploymentConfigPath, QString statePath)
 {
-    if (!m_blockchainClient) {
+    if (!m_blockchainClient)
         return -1;
-    }
+
     QVariantMap normalized;
 
-    // Output path: default if empty, then normalize
     QString out = outputPath.trimmed();
-    if (out.isEmpty()) {
+    if (out.isEmpty())
         out = generatedUserConfigPath();
-    } else {
+    else
         out = toLocalPath(out);
-    }
-    normalized.insert(QStringLiteral("output"), out);
+    normalized.insert("output", out);
 
     if (!initialPeers.isEmpty()) {
         QVariantList peersList;
@@ -273,40 +228,48 @@ int BlockchainBackend::generateConfig(const QString& outputPath,
                 peersList.append(p.trimmed());
         }
         if (!peersList.isEmpty())
-            normalized.insert(QStringLiteral("initial_peers"), peersList);
+            normalized.insert("initial_peers", peersList);
     }
     if (netPort > 0)
-        normalized.insert(QStringLiteral("net_port"), netPort);
+        normalized.insert("net_port", netPort);
     if (blendPort > 0)
-        normalized.insert(QStringLiteral("blend_port"), blendPort);
+        normalized.insert("blend_port", blendPort);
     if (!httpAddr.trimmed().isEmpty())
-        normalized.insert(QStringLiteral("http_addr"), httpAddr.trimmed());
+        normalized.insert("http_addr", httpAddr.trimmed());
     if (!externalAddress.trimmed().isEmpty())
-        normalized.insert(QStringLiteral("external_address"), externalAddress.trimmed());
+        normalized.insert("external_address", externalAddress.trimmed());
     if (noPublicIpCheck)
-        normalized.insert(QStringLiteral("no_public_ip_check"), true);
+        normalized.insert("no_public_ip_check", true);
     if (deploymentMode == 0) {
         QVariantMap deployment;
-        deployment.insert(QStringLiteral("well_known_deployment"), QStringLiteral("devnet"));
-        normalized.insert(QStringLiteral("deployment"), deployment);
-    } else if (deploymentMode == 1 && !deploymentConfigPath.trimmed().isEmpty()) {
+        deployment.insert("well_known_deployment", "devnet");
+        normalized.insert("deployment", deployment);
+    } else if (deploymentMode == 1
+               && !deploymentConfigPath.trimmed().isEmpty()) {
         QVariantMap deployment;
-        deployment.insert(QStringLiteral("config_path"), toLocalPath(deploymentConfigPath.trimmed()));
-        normalized.insert(QStringLiteral("deployment"), deployment);
+        deployment.insert("config_path",
+                          toLocalPath(deploymentConfigPath.trimmed()));
+        normalized.insert("deployment", deployment);
     }
     if (!statePath.trimmed().isEmpty())
-        normalized.insert(QStringLiteral("state_path"), toLocalPath(statePath.trimmed()));
+        normalized.insert("state_path", toLocalPath(statePath.trimmed()));
 
     const QJsonDocument doc = QJsonDocument::fromVariant(normalized);
-    const QByteArray jsonBytes = doc.toJson(QJsonDocument::Compact);
-    const QString jsonToSend = QString::fromUtf8(jsonBytes);
+    const QString jsonToSend =
+        QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
 
     QVariant result = m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "generate_user_config_from_str", jsonToSend);
     return result.isValid() ? result.toInt() : -1;
 }
 
-QString BlockchainBackend::generatedUserConfigPath() const
+void BlockchainBackend::clearLogs()
 {
-    return QDir::currentPath() + QStringLiteral("/user_config.yaml");
+    m_logModel->clear();
+}
+
+void BlockchainBackend::copyToClipboard(QString text)
+{
+    if (QGuiApplication::clipboard())
+        QGuiApplication::clipboard()->setText(text);
 }
