@@ -11,12 +11,20 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QTimer>
 #include <QUrl>
 #include <QVariant>
 
 const QString BlockchainBackend::BLOCKCHAIN_MODULE_NAME =
     QStringLiteral("liblogos_blockchain_module");
+
+static QString toLocalPath(const QString& pathInput)
+{
+    if (pathInput.trimmed().isEmpty())
+        return pathInput;
+    return QUrl::fromUserInput(pathInput).toLocalFile();
+}
 
 BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     : BlockchainBackendSimpleSource(parent)
@@ -39,19 +47,31 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         s.value("deploymentConfigPath").toString();
 
     if (!envConfigPath.isEmpty())
-        setUserConfig(envConfigPath);
+        setUserConfig(toLocalPath(envConfigPath));
     else if (!savedUserConfig.isEmpty())
-        setUserConfig(savedUserConfig);
+        setUserConfig(toLocalPath(savedUserConfig));
 
     if (!savedDeploymentConfig.isEmpty())
-        setDeploymentConfig(savedDeploymentConfig);
+        setDeploymentConfig(toLocalPath(savedDeploymentConfig));
 
-    // Persist config paths on change
+    // Re-apply pre-.rep behavior: normalize file URLs, then persist (as master did in setters).
     connect(this, &BlockchainBackendSimpleSource::userConfigChanged, this, [this]() {
+        const QString p = userConfig();
+        const QString n = toLocalPath(p);
+        if (n != p) {
+            QSignalBlocker b(this);
+            setUserConfig(n);
+        }
         QSettings("Logos", "BlockchainUI")
             .setValue("userConfigPath", userConfig());
     });
     connect(this, &BlockchainBackendSimpleSource::deploymentConfigChanged, this, [this]() {
+        const QString p = deploymentConfig();
+        const QString n = toLocalPath(p);
+        if (n != p) {
+            QSignalBlocker b(this);
+            setDeploymentConfig(n);
+        }
         QSettings("Logos", "BlockchainUI")
             .setValue("deploymentConfigPath", deploymentConfig());
     });
@@ -195,13 +215,6 @@ QString BlockchainBackend::transferFunds(
         fromKeyHex, fromKeyHex, toKeyHex, amountStr, QString());
     return result.isValid() ? result.toString()
                             : QStringLiteral("Error: Call failed.");
-}
-
-static QString toLocalPath(const QString& pathInput)
-{
-    if (pathInput.trimmed().isEmpty())
-        return pathInput;
-    return QUrl::fromUserInput(pathInput).toLocalFile();
 }
 
 int BlockchainBackend::generateConfig(
