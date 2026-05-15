@@ -78,14 +78,14 @@ ColumnLayout {
     FileDialog {
         id: userConfigFileDialog
         modality: Qt.NonModal
-        nameFilters: ["YAML files (*.yaml)"]
+        nameFilters: ["YAML files (*.yaml *.yml)", "All files (*)"]
         onAccepted: root.userConfigPathSelected(selectedFile)
     }
 
     FileDialog {
         id: deploymentConfigFileDialog
         modality: Qt.NonModal
-        nameFilters: ["YAML files (*.yaml)"]
+        nameFilters: ["YAML files (*.yaml *.yml)", "All files (*)"]
         onAccepted: root.deploymentConfigPathSelected(selectedFile)
     }
 }

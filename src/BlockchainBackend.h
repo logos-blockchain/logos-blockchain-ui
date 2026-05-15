@@ -1,96 +1,70 @@
-#pragma once
+#ifndef BLOCKCHAIN_BACKEND_H
+#define BLOCKCHAIN_BACKEND_H
 
 #include <QObject>
 #include <QString>
 #include <QStringList>
-#include <QVariant>
-#include "logos_api.h"
-#include "logos_api_client.h"
+#include <QVariantList>
+
+#include "rep_BlockchainBackend_source.h"
+
 #include "AccountsModel.h"
 #include "LogModel.h"
 
-class BlockchainBackend : public QObject {
+class LogosAPI;
+class LogosAPIClient;
+
+// Source-side implementation of the BlockchainBackend .rep interface.
+//
+// Inheriting from BlockchainBackendSimpleSource gives us the generated PROPs,
+// SLOTs and SIGNALs from BlockchainBackend.rep.
+//
+// AccountsModel* / LogModel* are subclass-only Q_PROPERTYs — QAbstractItemModel*
+// can't flow through a .rep, so ui-host auto-remotes each such property as
+// "<module>/<propertyName>" (see logos-view-module-runtime/ui-host/main.cpp).
+// QML acquires them via logos.model("blockchain_ui", "accounts"|"logs").
+class BlockchainBackend : public BlockchainBackendSimpleSource
+{
     Q_OBJECT
+    Q_PROPERTY(AccountsModel* accounts READ accounts CONSTANT)
+    Q_PROPERTY(LogModel* logs READ logs CONSTANT)
 
 public:
-    enum BlockchainStatus {
-        NotStarted = 0,
-        Starting,
-        Running,
-        Stopping,
-        Stopped,
-        Error,
-        ErrorNotInitialized,
-        ErrorConfigMissing,
-        ErrorStartFailed,
-        ErrorStopFailed,
-        ErrorSubscribeFailed
-    };
-    Q_ENUM(BlockchainStatus)
+    explicit BlockchainBackend(LogosAPI* logosAPI, QObject* parent = nullptr);
+    ~BlockchainBackend() override;
 
-    Q_PROPERTY(BlockchainStatus status READ status NOTIFY statusChanged)
-    Q_PROPERTY(QString userConfig READ userConfig WRITE setUserConfig NOTIFY userConfigChanged)
-    Q_PROPERTY(QString deploymentConfig READ deploymentConfig WRITE setDeploymentConfig NOTIFY deploymentConfigChanged)
-    Q_PROPERTY(bool useGeneratedConfig READ useGeneratedConfig WRITE setUseGeneratedConfig NOTIFY useGeneratedConfigChanged)
-    Q_PROPERTY(LogModel* logModel READ logModel CONSTANT)
-    Q_PROPERTY(AccountsModel* accountsModel READ accountsModel CONSTANT)
-    Q_PROPERTY(QString generatedUserConfigPath READ generatedUserConfigPath CONSTANT)
-
-    explicit BlockchainBackend(LogosAPI* logosAPI = nullptr, QObject* parent = nullptr);
-    ~BlockchainBackend();
-
-    BlockchainStatus status() const { return m_status; }
-    QString userConfig() const { return m_userConfig; }
-    QString deploymentConfig() const { return m_deploymentConfig; }
-    bool useGeneratedConfig() const { return m_useGeneratedConfig; }
-    LogModel* logModel() const { return m_logModel; }
-    AccountsModel* accountsModel() const { return m_accountsModel; }
-
-    void setUserConfig(const QString& path);
-    void setDeploymentConfig(const QString& path);
-    void setUseGeneratedConfig(bool useGenerated);
-    Q_INVOKABLE void clearLogs();
-    Q_INVOKABLE void copyToClipboard(const QString& text);
-    Q_INVOKABLE QString getBalance(const QString& addressHex);
-    Q_INVOKABLE QString transferFunds(
-        const QString& fromKeyHex, 
-        const QString& toKeyHex, 
-        const QString& amountStr);
-    Q_INVOKABLE void startBlockchain();
-    Q_INVOKABLE void stopBlockchain();
-    Q_INVOKABLE void refreshAccounts();
-    Q_INVOKABLE int generateConfig(const QString& outputPath,
-                                   const QStringList& initialPeers,
-                                   int netPort,
-                                   int blendPort,
-                                   const QString& httpAddr,
-                                   const QString& externalAddress,
-                                   bool noPublicIpCheck,
-                                   int deploymentMode,
-                                   const QString& deploymentConfigPath,
-                                   const QString& statePath);
-    Q_INVOKABLE QString generatedUserConfigPath() const;
+    AccountsModel* accounts() const { return m_accountsModel; }
+    LogModel* logs() const { return m_logModel; }
 
 public slots:
-    void onNewBlock(const QVariantList& data);
-
-signals:
-    void statusChanged();
-    void userConfigChanged();
-    void deploymentConfigChanged();
-    void useGeneratedConfigChanged();
+    // Overrides of the pure-virtual slots generated from the .rep.
+    void startBlockchain() override;
+    void stopBlockchain() override;
+    void refreshAccounts() override;
+    QString getBalance(QString addressHex) override;
+    QString transferFunds(QString fromKeyHex, QString toKeyHex, QString amountStr) override;
+    int generateConfig(QString outputPath, QStringList initialPeers, int netPort,
+                       int blendPort, QString httpAddr, QString externalAddress,
+                       bool noPublicIpCheck, int deploymentMode,
+                       QString deploymentConfigPath, QString statePath) override;
+    void clearLogs() override;
+    void copyToClipboard(QString text) override;
 
 private:
-    void setStatus(BlockchainStatus newStatus);
     void fetchBalancesForAccounts(const QStringList& list);
+    // Subscribes to the backend "newBlock" event. Deferred out of the
+    // constructor because requestObject() blocks until the backend module is
+    // running; calling it during the synchronous initLogos() would stall
+    // ui-host past its readiness deadline and the view would fail to load.
+    void subscribeToBlockEvents();
 
-    BlockchainStatus m_status;
-    QString m_userConfig;
-    QString m_deploymentConfig;
-    bool m_useGeneratedConfig = false;
-    LogModel* m_logModel;
-    AccountsModel* m_accountsModel;
+    LogosAPI* m_logosAPI = nullptr;
+    LogosAPIClient* m_blockchainClient = nullptr;
+    AccountsModel* m_accountsModel = nullptr;
+    LogModel* m_logModel = nullptr;
+    bool m_blockEventsSubscribed = false;
 
-    LogosAPI* m_logosAPI;
-    LogosAPIClient* m_blockchainClient;
+    static const QString BLOCKCHAIN_MODULE_NAME;
 };
+
+#endif // BLOCKCHAIN_BACKEND_H

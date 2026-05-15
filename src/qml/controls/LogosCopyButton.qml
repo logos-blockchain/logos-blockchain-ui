@@ -1,6 +1,8 @@
 import QtQuick
 import QtQuick.Controls
 
+import Logos.Theme
+
 Button {
     id: root
 
@@ -11,7 +13,7 @@ Button {
     display: AbstractButton.IconOnly
     flat: true
 
-    property string iconSource: "qrc:/icons/copy.svg"
+    property string iconSource: Qt.resolvedUrl("../icons/copy.svg")
 
     icon.source: root.iconSource
     icon.width: 24
@@ -19,7 +21,7 @@ Button {
     icon.color: Theme.palette.textSecondary
 
     function reset() {
-        iconSource = "qrc:/icons/copy.svg"
+        iconSource = Qt.resolvedUrl("../icons/copy.svg")
     }
 
     Timer {
@@ -31,7 +33,7 @@ Button {
 
     onClicked: {
         root.copyText()
-        root.iconSource = "qrc:/icons/checkmark.svg"
+        root.iconSource = Qt.resolvedUrl("../icons/checkmark.svg")
         resetTimer.restart()
     }
 }

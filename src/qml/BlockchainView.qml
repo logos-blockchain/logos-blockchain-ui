@@ -2,91 +2,160 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-import BlockchainBackend
 import Logos.Theme
+// BlockchainStatus enum (NotStarted/Starting/Running/.../ErrorSubscribeFailed)
+// declared in BlockchainBackend.rep — registered with QML by the replica
+// factory plugin.
+import Logos.BlockchainBackend 1.0
 
 import "views"
 
 Rectangle {
     id: root
 
+    readonly property var backend: logos.module("blockchain_ui")
+    // `ready` can't be a binding on logos.isViewModuleReady(): that's a
+    // Q_INVOKABLE method, not a Q_PROPERTY, so the binding wouldn't refresh
+    // when the replica transitions to Valid. Drive it from the bridge's
+    // viewModuleReadyChanged signal instead.
+    property bool ready: false
+
+    Connections {
+        target: logos
+        function onViewModuleReadyChanged(moduleName, isReady) {
+            if (moduleName === "blockchain_ui")
+                root.ready = isReady && root.backend !== null
+        }
+    }
+
+    Component.onCompleted: {
+        // Cover the case where the replica is already Valid by the time
+        // we attach the Connections handler.
+        root.ready = root.backend !== null && logos.isViewModuleReady("blockchain_ui")
+    }
+
+    // Models live on the C++ backend and are auto-remoted by ui-host as
+    // "<module>/<propertyName>". QML acquires them via logos.model(...).
+    readonly property var accountsModel: logos.model("blockchain_ui", "accounts")
+    readonly property var logModel: logos.model("blockchain_ui", "logs")
+
     QtObject {
         id: _d
-        function getStatusString(status) {
-            switch(status) {
-            case BlockchainBackend.NotStarted: return qsTr("Not Started");
-            case BlockchainBackend.Starting: return qsTr("Starting...");
-            case BlockchainBackend.Running: return qsTr("Running");
-            case BlockchainBackend.Stopping: return qsTr("Stopping...");
-            case BlockchainBackend.Stopped: return qsTr("Stopped");
-            case BlockchainBackend.Error: return qsTr("Error");
-            case BlockchainBackend.ErrorNotInitialized: return qsTr("Error: Module not initialized");
-            case BlockchainBackend.ErrorConfigMissing: return qsTr("Error: Config path missing");
-            case BlockchainBackend.ErrorStartFailed: return qsTr("Error: Failed to start node");
-            case BlockchainBackend.ErrorStopFailed: return qsTr("Error: Failed to stop node");
-            case BlockchainBackend.ErrorSubscribeFailed: return qsTr("Error: Failed to subscribe to events");
-            default: return qsTr("Unknown");
+        function getStatusString(s) {
+            switch(s) {
+            case BlockchainBackend.NotStarted: return qsTr("Not Started")
+            case BlockchainBackend.Starting: return qsTr("Starting...")
+            case BlockchainBackend.Running: return qsTr("Running")
+            case BlockchainBackend.Stopping: return qsTr("Stopping...")
+            case BlockchainBackend.Stopped: return qsTr("Stopped")
+            case BlockchainBackend.Error: return qsTr("Error")
+            case BlockchainBackend.ErrorNotInitialized: return qsTr("Error: Module not initialized")
+            case BlockchainBackend.ErrorConfigMissing: return qsTr("Error: Config path missing")
+            case BlockchainBackend.ErrorStartFailed: return qsTr("Error: Failed to start node")
+            case BlockchainBackend.ErrorStopFailed: return qsTr("Error: Failed to stop node")
+            case BlockchainBackend.ErrorSubscribeFailed: return qsTr("Error: Failed to subscribe to events")
+            default: return qsTr("Unknown")
             }
         }
-        function getStatusColor(status) {
-            switch(status) {
-            case BlockchainBackend.Running: return Theme.palette.success;
-            case BlockchainBackend.Starting: return Theme.palette.warning;
-            case BlockchainBackend.Stopping: return Theme.palette.warning;
-            case BlockchainBackend.NotStarted: return Theme.palette.error;
-            case BlockchainBackend.Stopped: return Theme.palette.error;
-            case BlockchainBackend.Error:
-            case BlockchainBackend.ErrorNotInitialized:
-            case BlockchainBackend.ErrorConfigMissing:
-            case BlockchainBackend.ErrorStartFailed:
-            case BlockchainBackend.ErrorStopFailed:
-            case BlockchainBackend.ErrorSubscribeFailed: return Theme.palette.error;
-            default: return Theme.palette.textSecondary;
+        function getStatusColor(s) {
+            switch(s) {
+            case BlockchainBackend.Running: return Theme.palette.success
+            case BlockchainBackend.Starting:
+            case BlockchainBackend.Stopping: return Theme.palette.warning
+            default: return Theme.palette.error
             }
         }
-        property int currentPage: 0  // 0 = config choice (page 1), 1 = node + wallet + logs (page 2)
+        property int currentPage: 0
     }
 
     color: Theme.palette.background
+
+    // Loading state before backend connects
+    ColumnLayout {
+        anchors.centerIn: parent
+        visible: !root.ready
+        spacing: 12
+        Text {
+            Layout.alignment: Qt.AlignHCenter
+            text: qsTr("Connecting to blockchain backend...")
+            color: Theme.palette.textSecondary
+            font.pixelSize: Theme.typography.secondaryText
+        }
+        BusyIndicator { Layout.alignment: Qt.AlignHCenter; running: !root.ready }
+    }
 
     StackLayout {
         anchors.fill: parent
         anchors.margins: Theme.spacing.large
         currentIndex: _d.currentPage
+        visible: root.ready
 
-        // Page 1: Config choice (Option 1: Generate own config, Option 2: Set path to configs)
+        // Page 1: Config choice
         ScrollView {
             id: configChoiceScrollView
             clip: true
             ConfigChoiceView {
                 id: configChoiceView
                 width: configChoiceScrollView.availableWidth
-                userConfigPath: backend.userConfig
-                deploymentConfigPath: backend.deploymentConfig
-                generatedUserConfigPath: backend.generatedUserConfigPath
-                onUserConfigPathSelected: function(path) { backend.userConfig = path }
-                onDeploymentConfigPathSelected: function(path) { backend.deploymentConfig = path }
+                userConfigPath: root.backend ? root.backend.userConfig : ""
+                deploymentConfigPath: root.backend ? root.backend.deploymentConfig : ""
+                generatedUserConfigPath: root.backend ? root.backend.generatedUserConfigPath : ""
+                onUserConfigPathSelected: function(path) {
+                    if (root.backend) root.backend.userConfig = path
+                }
+                onDeploymentConfigPathSelected: function(path) {
+                    if (root.backend) root.backend.deploymentConfig = path
+                }
                 onSetPathToConfigsRequested: function() {
-                    backend.useGeneratedConfig = false
+                    if (root.backend) root.backend.useGeneratedConfig = false
                     _d.currentPage = 1
                 }
                 onGenerateRequested: function(outputPath, initialPeers, netPort, blendPort, httpAddr, externalAddress, noPublicIpCheck, deploymentMode, deploymentConfigPath, statePath) {
+                    if (!root.backend) return
+                    console.log("[BlockchainView] generateRequested: outputPath=", outputPath,
+                                "initialPeers=", JSON.stringify(initialPeers),
+                                "netPort=", netPort, "blendPort=", blendPort,
+                                "httpAddr=", httpAddr, "externalAddress=", externalAddress,
+                                "noPublicIpCheck=", noPublicIpCheck, "deploymentMode=", deploymentMode,
+                                "deploymentConfigPath=", deploymentConfigPath, "statePath=", statePath)
                     configChoiceView.generateResultSuccess = false
                     configChoiceView.generateResultMessage = ""
-                    var code = backend.generateConfig(outputPath, initialPeers, netPort, blendPort, httpAddr, externalAddress, noPublicIpCheck, deploymentMode, deploymentConfigPath, statePath)
-                    configChoiceView.generateResultSuccess = (code === 0)
-                    configChoiceView.generateResultMessage = code === 0 ? qsTr("Config generated successfully.") : qsTr("Generate failed (code: %1).").arg(code)
-                    if (code === 0) {
-                        backend.userConfig = (outputPath !== "") ? outputPath : backend.generatedUserConfigPath
-                        backend.deploymentConfig = (deploymentMode === 1 && deploymentConfigPath !== "") ? deploymentConfigPath : ""
-                        backend.useGeneratedConfig = true
-                        _d.currentPage = 1
-                    }
+                    logos.watch(
+                        root.backend.generateConfig(
+                            outputPath, initialPeers, netPort, blendPort,
+                            httpAddr, externalAddress, noPublicIpCheck,
+                            deploymentMode, deploymentConfigPath, statePath),
+                        function(code) {
+                            // logos.watch stringifies the returned int — coerce back.
+                            var rc = parseInt(code, 10)
+                            console.log("[BlockchainView] generateConfig success callback: code=", code, "type=", typeof code, "→ rc=", rc)
+                            configChoiceView.generateResultSuccess = (rc === 0)
+                            configChoiceView.generateResultMessage =
+                                rc === 0
+                                    ? qsTr("Config generated successfully.")
+                                    : qsTr("Generate failed (code: %1).").arg(rc)
+                            if (rc === 0) {
+                                root.backend.userConfig = (outputPath !== "")
+                                    ? outputPath : root.backend.generatedUserConfigPath
+                                root.backend.deploymentConfig =
+                                    (deploymentMode === 1 && deploymentConfigPath !== "")
+                                        ? deploymentConfigPath : ""
+                                root.backend.useGeneratedConfig = true
+                                _d.currentPage = 1
+                            }
+                        },
+                        function(error) {
+                            console.log("[BlockchainView] generateConfig error callback: error=", error)
+                            configChoiceView.generateResultSuccess = false
+                            configChoiceView.generateResultMessage =
+                                qsTr("Generate failed: %1").arg(error)
+                        }
+                    )
                 }
             }
         }
 
-        // Page 2: Start node, balances, transfer, logs
+        // Page 2: Node control, wallet, logs
         SplitView {
             orientation: Qt.Vertical
 
@@ -97,39 +166,61 @@ Rectangle {
 
                 StatusConfigView {
                     Layout.fillWidth: true
-                    statusText: _d.getStatusString(backend.status)
-                    statusColor: _d.getStatusColor(backend.status)
-                    userConfig: backend.userConfig
-                    deploymentConfig: backend.deploymentConfig
-                    useGeneratedConfig: backend.useGeneratedConfig
-                    canStart: !!backend.userConfig
-                             && backend.status !== BlockchainBackend.Starting
-                             && backend.status !== BlockchainBackend.Stopping
-                    isRunning: backend.status === BlockchainBackend.Running
+                    statusText: root.backend
+                        ? _d.getStatusString(root.backend.status)
+                        : qsTr("Not Connected")
+                    statusColor: root.backend
+                        ? _d.getStatusColor(root.backend.status)
+                        : Theme.palette.error
+                    userConfig: root.backend ? root.backend.userConfig : ""
+                    deploymentConfig: root.backend ? root.backend.deploymentConfig : ""
+                    useGeneratedConfig: root.backend ? root.backend.useGeneratedConfig : false
+                    canStart: root.backend
+                              && !!root.backend.userConfig
+                              && root.backend.status !== BlockchainBackend.Starting
+                              && root.backend.status !== BlockchainBackend.Stopping
+                    isRunning: root.backend
+                               ? root.backend.status === BlockchainBackend.Running
+                               : false
 
-                    onStartRequested: backend.startBlockchain()
-                    onStopRequested: backend.stopBlockchain()
+                    onStartRequested: if (root.backend) root.backend.startBlockchain()
+                    onStopRequested: if (root.backend) root.backend.stopBlockchain()
                     onChangeConfigRequested: _d.currentPage = 0
                 }
 
                 WalletView {
                     id: walletView
-                    accountsModel: backend.accountsModel
+                    accountsModel: root.accountsModel
 
                     onGetBalanceRequested: function(addressHex) {
-                        var result = backend.getBalance(addressHex)
-                        if ((result || "").indexOf("Error") === 0) {
-                            lastBalanceErrorAddress = addressHex
-                            lastBalanceError = result
-                        }
-                        else {
-                            lastBalanceErrorAddress = ""
-                            lastBalanceError = ""
-                        }
+                        if (!root.backend) return
+                        logos.watch(
+                            root.backend.getBalance(addressHex),
+                            function(result) {
+                                if ((result || "").indexOf("Error") === 0) {
+                                    walletView.lastBalanceErrorAddress = addressHex
+                                    walletView.lastBalanceError = result
+                                } else {
+                                    walletView.lastBalanceErrorAddress = ""
+                                    walletView.lastBalanceError = ""
+                                }
+                            },
+                            function(error) {
+                                walletView.lastBalanceErrorAddress = addressHex
+                                walletView.lastBalanceError = "Error: " + error
+                            }
+                        )
                     }
-                    onCopyToClipboard: (text) => backend.copyToClipboard(text)
+                    onCopyToClipboard: (text) => {
+                        if (root.backend) root.backend.copyToClipboard(text)
+                    }
                     onTransferRequested: function(fromKeyHex, toKeyHex, amount) {
-                        walletView.setTransferResult(backend.transferFunds(fromKeyHex, toKeyHex, amount))
+                        if (!root.backend) return
+                        logos.watch(
+                            root.backend.transferFunds(fromKeyHex, toKeyHex, amount),
+                            function(result) { walletView.setTransferResult(result) },
+                            function(error) { walletView.setTransferResult("Error: " + error) }
+                        )
                     }
                 }
 
@@ -142,11 +233,12 @@ Rectangle {
                 SplitView.fillWidth: true
                 SplitView.minimumHeight: 150
 
-                logModel: backend.logModel
-                onClearRequested: backend.clearLogs()
-                onCopyToClipboard: (text) => backend.copyToClipboard(text)
+                logModel: root.logModel
+                onClearRequested: if (root.backend) root.backend.clearLogs()
+                onCopyToClipboard: (text) => {
+                    if (root.backend) root.backend.copyToClipboard(text)
+                }
             }
         }
     }
-
 }
