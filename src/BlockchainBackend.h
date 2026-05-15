@@ -52,11 +52,17 @@ public slots:
 
 private:
     void fetchBalancesForAccounts(const QStringList& list);
+    // Subscribes to the backend "newBlock" event. Deferred out of the
+    // constructor because requestObject() blocks until the backend module is
+    // running; calling it during the synchronous initLogos() would stall
+    // ui-host past its readiness deadline and the view would fail to load.
+    void subscribeToBlockEvents();
 
     LogosAPI* m_logosAPI = nullptr;
     LogosAPIClient* m_blockchainClient = nullptr;
     AccountsModel* m_accountsModel = nullptr;
     LogModel* m_logModel = nullptr;
+    bool m_blockEventsSubscribed = false;
 
     static const QString BLOCKCHAIN_MODULE_NAME;
 };

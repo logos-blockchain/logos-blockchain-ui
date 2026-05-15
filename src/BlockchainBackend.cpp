@@ -88,27 +88,42 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         return;
     }
 
+    // NOTE: do NOT call requestObject() here. ui-host invokes initLogos()
+    // (and therefore this constructor) synchronously via Qt::DirectConnection
+    // and only signals "READY" once it returns. requestObject() blocks for up
+    // to its 20s timeout when the backend module isn't running yet — which is
+    // the normal case, since the node is started later from this UI. Blocking
+    // here makes ui-host miss its readiness deadline, so the host kills it and
+    // the whole view fails to load. The newBlock subscription is only
+    // meaningful once the node is running, so it is deferred to
+    // subscribeToBlockEvents(), called after a successful startBlockchain().
+    qDebug() << "BlockchainBackend: initialized";
+}
+
+void BlockchainBackend::subscribeToBlockEvents()
+{
+    if (m_blockEventsSubscribed || !m_blockchainClient)
+        return;
+
     LogosObject* replica =
         m_blockchainClient->requestObject(BLOCKCHAIN_MODULE_NAME);
-    if (replica) {
-        m_blockchainClient->onEvent(
-            replica, "newBlock",
-            [this](const QString&, const QVariantList& data) {
-                const QString timestamp =
-                    QDateTime::currentDateTime().toString("HH:mm:ss");
-                QString line;
-                if (!data.isEmpty())
-                    line = QString("[%1] New block: %2")
-                               .arg(timestamp, data.first().toString());
-                else
-                    line = QString("[%1] New block (no data)").arg(timestamp);
-                m_logModel->append(line);
-            });
-    } else {
-        setStatus(ErrorSubscribeFailed);
-    }
+    if (!replica)
+        return;
 
-    qDebug() << "BlockchainBackend: initialized";
+    m_blockchainClient->onEvent(
+        replica, "newBlock",
+        [this](const QString&, const QVariantList& data) {
+            const QString timestamp =
+                QDateTime::currentDateTime().toString("HH:mm:ss");
+            QString line;
+            if (!data.isEmpty())
+                line = QString("[%1] New block: %2")
+                           .arg(timestamp, data.first().toString());
+            else
+                line = QString("[%1] New block (no data)").arg(timestamp);
+            m_logModel->append(line);
+        });
+    m_blockEventsSubscribed = true;
 }
 
 BlockchainBackend::~BlockchainBackend()
@@ -132,6 +147,7 @@ void BlockchainBackend::startBlockchain()
 
     if (resultCode == 0 || resultCode == 1) {
         setStatus(Running);
+        subscribeToBlockEvents();
         QTimer::singleShot(500, this, [this]() { refreshAccounts(); });
     } else if (resultCode == 2) {
         setStatus(ErrorConfigMissing);
