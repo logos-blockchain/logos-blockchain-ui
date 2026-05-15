@@ -50,7 +50,7 @@ ItemDelegate {
                 Layout.preferredWidth: 40
                 display: AbstractButton.IconOnly
                 flat: true
-                icon.source: "qrc:/icons/refresh.svg"
+                icon.source: Qt.resolvedUrl("../icons/refresh.svg")
                 icon.color: Theme.palette.textSecondary
                 font.pixelSize: Theme.typography.secondaryText
                 padding: 4
