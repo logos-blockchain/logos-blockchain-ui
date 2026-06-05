@@ -1,6 +1,8 @@
 # logos-blockchain-ui
 
-A Qt UI plugin for the Logos Blockchain Module, providing a graphical interface to control and monitor the Logos blockchain node.
+A QML + C++ backend UI module for the [Logos](https://logos.co) platform that provides a graphical interface to control and monitor the Logos blockchain node.
+
+Built with [`logos-module-builder`](https://github.com/logos-co/logos-module-builder) using the `mkLogosQmlModule` pattern (QML frontend + C++ backend with Qt Remote Objects).
 
 ## Features
 
@@ -8,139 +10,119 @@ A Qt UI plugin for the Logos Blockchain Module, providing a graphical interface 
 - Configure node parameters (config path, deployment)
 - Check wallet balances
 - Monitor node status and information
+- Account management
 
 ## Standalone App Quickstart
 
-1. Build and run the app with
+1. Build and run the app:
 
 ```bash
-nix run '.#app'
+nix run
 ```
 
-2. Generate a new config using the some initial peers that are part of the live testnet. You can find some peers [here](https://www.notion.so/nomos-tech/Logos-Blockchain-Devnet-Lisbon-March-2026-2fe261aa09df8025ad94e380933b4cf9?source=copy_link#319261aa09df80a6ac9bcb7487d14d6a).
+2. Generate a new config using initial peers from the live testnet. Find peers [here](https://www.notion.so/nomos-tech/Logos-Blockchain-Devnet-Lisbon-March-2026-2fe261aa09df8025ad94e380933b4cf9?source=copy_link#319261aa09df80a6ac9bcb7487d14d6a).
 
-3. Start the node, and let it sync with the initial peers. You can track progress by opening a terminal and running:
+3. Start the node and let it sync. Track progress:
 
 ```bash
 watch -n1 'curl -s localhost:8080/cryptarchia/info'
 ```
 
-And comparing the `height` with the block height in the [block explorer](https://devnet.blockchain.logos.co/web/explorer/).
+Compare the `height` with the [block explorer](https://devnet.blockchain.logos.co/web/explorer/).
 
-4. In the meantime, you can request funds from the faucet, copy one of the keys visible in the ui and paste it into the [faucet](https://devnet.blockchain.logos.co/web/faucet/). 
+4. Request funds from the [faucet](https://devnet.blockchain.logos.co/web/faucet/) — copy one of the keys from the UI and paste it there.
 
-5. Once your node finishes syncing, you can refresh your balance and you should see your funds from the faucet.
+5. Once synced, refresh your balance to see your funds.
 
-At this point, you are done. If you leave this node running, your tokens will age sufficiently such that they will become eligible for participation in consensus. This happens automatically, so long as you don't transfer your tokens for ~3.5 hours.
+Leaving the node running for ~3.5 hours allows your tokens to age and become eligible for consensus participation (automatic).
 
-For a video walkthrough of this process, see this [recording](https://drive.google.com/file/d/1hw6rQZnuka3Y_JBpUz0WyLXglTSPiZEc/view?usp=drive_link).
+For a video walkthrough, see this [recording](https://drive.google.com/file/d/1hw6rQZnuka3Y_JBpUz0WyLXglTSPiZEc/view?usp=drive_link).
 
-## How to Build
+## How to Run
 
-### Using Nix (Recommended)
-
-#### Build Complete UI Plugin
+### Standalone (recommended for development)
 
 ```bash
-# Build everything (default)
-nix build
+# Run directly
+nix run
 
-# Or explicitly
-nix build '.#default'
+# With local workspace overrides
+nix run --override-input liblogos_blockchain_module path:../logos-blockchain-module \
+        --override-input liblogos_blockchain_module/logos-module-builder path:../logos-module-builder
 ```
 
-The result will include:
-- `/lib/blockchain_ui.dylib` (or `.so` on Linux) - The Blockchain UI plugin
-
-#### Build Individual Components
+### In Basecamp
 
 ```bash
-# Build only the library (plugin)
-nix build '.#lib'
+# Build LGX
+nix build .#lgx
 
-# Build the standalone Qt application
-nix build '.#app'
+# Install into Basecamp's plugin directory
+lgpm --ui-plugins-dir ~/Library/Application\ Support/Logos/LogosBasecampDev/plugins \
+     install --file result/*.lgx
 ```
 
-#### Development Shell
+Or from the workspace:
 
 ```bash
-# Enter development shell with all dependencies
-nix develop
+ws bundle logos-blockchain-ui --auto-local
 ```
 
-**Note:** In zsh, you need to quote the target (e.g., `'.#default'`) to prevent glob expansion.
-
-If you don't have flakes enabled globally, add experimental flags:
+### Build Targets
 
 ```bash
-nix build --extra-experimental-features 'nix-command flakes'
+nix build            # default — combined plugin + QML output
+nix build .#lgx      # .lgx package for distribution
+nix build .#install  # lgpm-installed output (modules/ + plugins/)
+nix run              # standalone app with blockchain module
+nix develop          # enter development shell
 ```
 
-The compiled artifacts can be found at `result/`
+## Module Structure
 
-#### Running the Standalone App
-
-After building the app with `nix build '.#app'`, you can run it:
-
-```bash
-# Run the standalone Qt application
-./result/bin/logos-blockchain-ui-app
 ```
-
-The app will automatically load the required modules (capability_module, liblogos_blockchain_module) and the blockchain_ui Qt plugin. All dependencies are bundled in the Nix store layout.
-
-#### Nix Organization
-
-The nix build system is organized into modular files in the `/nix` directory:
-- `nix/default.nix` - Common configuration (dependencies, flags, metadata)
-- `nix/lib.nix` - UI plugin compilation
-- `nix/app.nix` - Standalone Qt application compilation
-
-## Output Structure
-
-When built with Nix:
-
-**Library build (`nix build '.#lib'`):**
-```
-result/
-└── lib/
-    └── blockchain_ui.dylib    # Logos Blockchain UI plugin
-```
-
-**App build (`nix build '.#app'`):**
-```
-result/
-├── bin/
-│   ├── logos-blockchain-ui-app    # Standalone Qt application
-│   ├── logos_host                 # Logos host executable (for plugins)
-│   └── logoscore                  # Logos core executable
-├── lib/
-│   ├── liblogos_core.dylib        # Logos core library
-│   ├── liblogos_sdk.dylib         # Logos SDK library
-│   └── Logos/DesignSystem/        # QML design system
-├── modules/
-│   ├── capability_module_plugin.dylib
-│   ├── liblogos_blockchain_module.dylib
-│   └── liblogos_blockchain.dylib
-└── blockchain_ui.dylib            # Qt plugin (loaded by app)
+logos-blockchain-ui/
+├── flake.nix                       # mkLogosQmlModule
+├── metadata.json                   # Module config (ui_qml type)
+├── CMakeLists.txt                  # logos_module() macro
+└── src/
+    ├── BlockchainBackend.rep       # RemoteObject interface
+    ├── BlockchainBackend.h/cpp     # Business logic (extends BlockchainBackendSimpleSource)
+    ├── BlockchainPlugin.h/cpp      # Thin plugin entry point
+    ├── BlockchainPluginInterface.h # Plugin interface marker
+    ├── AccountsModel.h/cpp         # QAbstractListModel for accounts
+    ├── LogModel.h/cpp              # QAbstractListModel for logs
+    └── qml/
+        └── BlockchainView.qml     # QML frontend (+ sub-views)
 ```
 
 ## Configuration
 
 ### Blockchain Node Configuration
 
-The blockchain node can be configured in two ways:
-
-1. **Via UI**: Enter the config path in the "Config Path" field
-2. **Via Environment Variable**: Set `LB_CONFIG_PATH` to your configuration file path
-
-Example configuration file can be found in the logos-blockchain-module repository at `config/node_config.yaml`.
+- **Via UI**: Enter the config path in the "Config Path" field
+- **Via Environment Variable**: Set `LB_CONFIG_PATH` to your configuration file path
 
 ### QML Hot Reload
 
-During development, you can enable QML hot reload by setting an environment variable:
+During development, set the environment variable to load QML from disk:
+
 ```bash
 export BLOCKCHAIN_UI_QML_PATH=/path/to/logos-blockchain-ui/src/qml
 ```
-This allows you to edit the QML file and see changes by reloading the plugin without recompiling.
+
+## Dependencies
+
+| Dependency | Purpose |
+|---|---|
+| Qt6 Core, Gui, RemoteObjects, Declarative | UI framework + IPC |
+| [`logos-module-builder`](https://github.com/logos-co/logos-module-builder) | Build system (mkLogosQmlModule) |
+| [`logos-blockchain-module`](https://github.com/logos-blockchain/logos-blockchain-module) | Blockchain backend module |
+
+## Related Repositories
+
+| Repository | Role |
+|---|---|
+| [`logos-blockchain-module`](https://github.com/logos-blockchain/logos-blockchain-module) | Blockchain backend — this UI's required dependency |
+| [`logos-module-builder`](https://github.com/logos-co/logos-module-builder) | Module build system |
+| [`logos-liblogos`](https://github.com/logos-co/logos-liblogos) | Logos Core platform |

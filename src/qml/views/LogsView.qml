@@ -9,7 +9,7 @@ Control {
     id: root
 
     // --- Public API ---
-    required property var logModel   // LogModel (QAbstractListModel with "text" role)
+    required property var logModel   // ListModel with "text" role
 
     signal clearRequested()
     signal copyToClipboard(string text)
@@ -61,6 +61,12 @@ Control {
                 model: root.logModel
                 spacing: 2
 
+                // Auto-scroll to the latest log on insert. Use the ListView's
+                // own `count` (it's always available and emits countChanged) —
+                // the model replica is a QAbstractItemModelReplica and does
+                // not carry the source-side `count` Q_PROPERTY through QtRO.
+                onCountChanged: if (count > 0) positionViewAtEnd()
+
                 delegate: ItemDelegate{
                     width: ListView.view.width
                     contentItem: LogosText {
@@ -76,19 +82,14 @@ Control {
                 }
 
                 LogosText {
-                    visible: !root.logModel || root.logModel.count === 0
+                    // ListView's `count` reflects the model row count and has
+                    // a NOTIFY signal — using it here gives the binding
+                    // automatic refresh, unlike `root.logModel.count`.
+                    visible: logsListView.count === 0
                     anchors.centerIn: parent
                     text: qsTr("No logs yet...")
                     font.pixelSize: Theme.typography.secondaryText
                     color: Theme.palette.textSecondary
-                }
-
-                Connections {
-                    target: root.logModel
-                    function onCountChanged() {
-                        if (root.logModel.count > 0)
-                            logsListView.positionViewAtEnd()
-                    }
                 }
             }
         }

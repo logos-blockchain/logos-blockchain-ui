@@ -85,17 +85,13 @@ ColumnLayout {
                 resultSuccess: root.generateResultSuccess
                 resultMessage: root.generateResultMessage
                 Layout.fillWidth: true
-                onGenerateRequested: root.generateRequested(
-                                         outputPath,
-                                         initialPeers,
-                                         netPort,
-                                         blendPort,
-                                         httpAddr,
-                                         externalAddress,
-                                         noPublicIpCheck,
-                                         deploymentMode,
-                                         deploymentConfigPath,
-                                         statePath)
+                onGenerateRequested: function(outputPath, initialPeers, netPort, blendPort,
+                                              httpAddr, externalAddress, noPublicIpCheck,
+                                              deploymentMode, deploymentConfigPath, statePath) {
+                    root.generateRequested(outputPath, initialPeers, netPort, blendPort,
+                                           httpAddr, externalAddress, noPublicIpCheck,
+                                           deploymentMode, deploymentConfigPath, statePath)
+                }
             }
         }
     }
