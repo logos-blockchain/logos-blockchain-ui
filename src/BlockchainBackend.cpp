@@ -210,9 +210,10 @@ QString BlockchainBackend::transferFunds(
     if (!m_blockchainClient)
         return QStringLiteral("Error: Module not initialized.");
 
+    QStringList senders{fromKeyHex};
     QVariant result = m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "wallet_transfer_funds",
-        fromKeyHex, fromKeyHex, toKeyHex, amountStr, QString());
+        fromKeyHex, senders, toKeyHex, amountStr, QString());
     return result.isValid() ? result.toString()
                             : QStringLiteral("Error: Call failed.");
 }
@@ -272,7 +273,7 @@ int BlockchainBackend::generateConfig(
         QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
 
     QVariant result = m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, "generate_user_config_from_str", jsonToSend);
+        BLOCKCHAIN_MODULE_NAME, "generate_user_config", jsonToSend);
     return result.isValid() ? result.toInt() : -1;
 }
 
