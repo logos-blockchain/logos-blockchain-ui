@@ -217,6 +217,14 @@ Rectangle {
                             function(error) { walletView.setTransferResult("Error: " + error) }
                         )
                     }
+                    onClaimLeaderRewardsRequested: function() {
+                        if (!root.backend) return
+                        logos.watch(
+                            root.backend.claimLeaderRewards(),
+                            function(result) { walletView.setLeaderClaimResult(result) },
+                            function(error) { walletView.setLeaderClaimResult("Error: " + error) }
+                        )
+                    }
                 }
 
                 Item {

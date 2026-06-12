@@ -17,10 +17,15 @@ RowLayout {
 
     signal getBalanceRequested(string addressHex)
     signal transferRequested(string fromKeyHex, string toKeyHex, string amount)
+    signal claimLeaderRewardsRequested()
     signal copyToClipboard(string text)
 
     function setTransferResult(text) {
         transferResultText.text = text
+    }
+
+    function setLeaderClaimResult(text) {
+        leaderClaimResultText.text = text
     }
 
     spacing: Theme.spacing.medium
@@ -28,7 +33,7 @@ RowLayout {
     // Get balance card
     Rectangle {
         Layout.fillWidth: true
-        implicitHeight: transferRect.height
+        implicitHeight: actionsCol.height
         Layout.preferredHeight: Math.min(implicitHeight, 400)
         color: Theme.palette.backgroundTertiary
         radius: Theme.spacing.radiusLarge
@@ -75,84 +80,156 @@ RowLayout {
         }
     }
 
-    // Transfer funds card
-    Rectangle {
-        id: transferRect
+    ColumnLayout {
+        id: actionsCol
+
         Layout.fillWidth: true
-        Layout.preferredHeight: transferCol.height + 2 * Theme.spacing.large
-        color: Theme.palette.backgroundTertiary
-        radius: Theme.spacing.radiusLarge
-        border.color: Theme.palette.border
-        border.width: 1
+        spacing: Theme.spacing.large
 
-        ColumnLayout {
-            id: transferCol
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.margins: Theme.spacing.large
-            spacing: Theme.spacing.small
+        // Transfer funds card
+        Rectangle {
+            id: transferRect
 
-            LogosText {
-                text: qsTr("Transfer funds")
-                font.pixelSize: Theme.typography.secondaryText
-                font.bold: true
-            }
+            Layout.fillWidth: true
+            Layout.preferredHeight: transferCol.height + 2 * Theme.spacing.large
+            color: Theme.palette.backgroundTertiary
+            radius: Theme.spacing.radiusLarge
+            border.color: Theme.palette.border
+            border.width: 1
 
-            StyledAddressComboBox {
-                id: transferFromCombo
-                model: root.accountsModel
-                textRole: "address"
-            }
+            ColumnLayout {
+                id: transferCol
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: Theme.spacing.large
+                spacing: Theme.spacing.small
 
-            LogosTextField {
-                id: transferToField
-                Layout.fillWidth: true
-                Layout.preferredHeight: 30
-                placeholderText: qsTr("To key (64 hex chars)")
-            }
-
-            LogosTextField {
-                id: transferAmountField
-                Layout.fillWidth: true
-                Layout.preferredHeight: 30
-                placeholderText: qsTr("Amount")
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.preferredHeight: transferButton.implicitHeight
-
-                LogosButton {
-                    id: transferButton
-                    Layout.preferredWidth: 60
-                    Layout.alignment: Qt.AlignRight
-                    text: qsTr("Send")
-                    onClicked: root.transferRequested(transferFromCombo.currentText.trim(), transferToField.text.trim(), transferAmountField.text)
+                LogosText {
+                    text: qsTr("Transfer funds")
+                    font.pixelSize: Theme.typography.secondaryText
+                    font.bold: true
                 }
 
-                LogosButton {
+                StyledAddressComboBox {
+                    id: transferFromCombo
+                    model: root.accountsModel
+                    textRole: "address"
+                }
+
+                LogosTextField {
+                    id: transferToField
                     Layout.fillWidth: true
-                    enabled: true
-                    padding: Theme.spacing.small
-                    contentItem: RowLayout {
-                        width: parent.width
-                        anchors.centerIn: parent
-                        LogosText {
-                            id: transferResultText
-                            Layout.fillWidth: true
-                            color: Theme.palette.textSecondary
-                            font.pixelSize: Theme.typography.secondaryText
-                            font.weight: Theme.typography.weightMedium
-                            wrapMode: Text.WordWrap
-                            elide: Text.ElideRight
+                    Layout.preferredHeight: 30
+                    placeholderText: qsTr("To key (64 hex chars)")
+                }
+
+                LogosTextField {
+                    id: transferAmountField
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 30
+                    placeholderText: qsTr("Amount")
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: transferButton.implicitHeight
+
+                    LogosButton {
+                        id: transferButton
+                        Layout.preferredWidth: 60
+                        Layout.alignment: Qt.AlignRight
+                        text: qsTr("Send")
+                        onClicked: root.transferRequested(transferFromCombo.currentText.trim(), transferToField.text.trim(), transferAmountField.text)
+                    }
+
+                    LogosButton {
+                        Layout.fillWidth: true
+                        enabled: true
+                        padding: Theme.spacing.small
+                        contentItem: RowLayout {
+                            width: parent.width
+                            anchors.centerIn: parent
+                            LogosText {
+                                id: transferResultText
+                                Layout.fillWidth: true
+                                color: Theme.palette.textSecondary
+                                font.pixelSize: Theme.typography.secondaryText
+                                font.weight: Theme.typography.weightMedium
+                                wrapMode: Text.WordWrap
+                                elide: Text.ElideRight
+                            }
+                            LogosCopyButton {
+                                Layout.alignment: Qt.AlignRight
+                                Layout.preferredHeight: 40
+                                Layout.preferredWidth: 40
+                                onCopyText: root.copyToClipboard(transferResultText.text)
+                                visible: transferResultText.text
+                            }
                         }
-                        LogosCopyButton {
-                            Layout.alignment: Qt.AlignRight
-                            Layout.preferredHeight: 40
-                            Layout.preferredWidth: 40
-                            onCopyText: root.copyRequested(transferResultText.text)
-                            visible: transferResultText.text
+                    }
+                }
+            }
+        }
+
+        // Leader rewards card
+        Rectangle {
+            id: leaderRewardsRect
+
+            Layout.fillWidth: true
+            Layout.preferredHeight: leaderRewardsCol.height + 2 * Theme.spacing.large
+            color: Theme.palette.backgroundTertiary
+            radius: Theme.spacing.radiusLarge
+            border.color: Theme.palette.border
+            border.width: 1
+
+            ColumnLayout {
+                id: leaderRewardsCol
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: Theme.spacing.large
+                spacing: Theme.spacing.small
+
+                LogosText {
+                    text: qsTr("Leader rewards")
+                    font.pixelSize: Theme.typography.secondaryText
+                    font.bold: true
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    LogosButton {
+                        id: leaderClaimButton
+                        Layout.preferredWidth: 140
+                        text: qsTr("Claim")
+                        onClicked: root.claimLeaderRewardsRequested()
+                    }
+
+                    LogosButton {
+                        Layout.fillWidth: true
+                        enabled: true
+                        padding: Theme.spacing.small
+                        contentItem: RowLayout {
+                            width: parent.width
+                            anchors.centerIn: parent
+                            LogosText {
+                                id: leaderClaimResultText
+                                Layout.fillWidth: true
+                                color: Theme.palette.textSecondary
+                                font.pixelSize: Theme.typography.secondaryText
+                                font.weight: Theme.typography.weightMedium
+                                wrapMode: Text.WordWrap
+                                elide: Text.ElideRight
+                            }
+                            LogosCopyButton {
+                                Layout.alignment: Qt.AlignRight
+                                Layout.preferredHeight: 40
+                                Layout.preferredWidth: 40
+                                onCopyText: root.copyToClipboard(leaderClaimResultText.text)
+                                visible: leaderClaimResultText.text
+                            }
                         }
                     }
                 }
