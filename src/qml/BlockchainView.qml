@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 import Logos.Theme
-// BlockchainStatus enum (NotStarted/Starting/Running/.../ErrorSubscribeFailed)
+// BlockchainStatus enum (NotStarted/Starting/Running/Stopping/Stopped/Error)
 // declared in BlockchainBackend.rep — registered with QML by the replica
 // factory plugin.
 import Logos.BlockchainBackend 1.0
@@ -48,12 +48,7 @@ Rectangle {
             case BlockchainBackend.Running: return qsTr("Running")
             case BlockchainBackend.Stopping: return qsTr("Stopping...")
             case BlockchainBackend.Stopped: return qsTr("Stopped")
-            case BlockchainBackend.Error: return qsTr("Error")
-            case BlockchainBackend.ErrorNotInitialized: return qsTr("Error: Module not initialized")
-            case BlockchainBackend.ErrorConfigMissing: return qsTr("Error: Config path missing")
-            case BlockchainBackend.ErrorStartFailed: return qsTr("Error: Failed to start node")
-            case BlockchainBackend.ErrorStopFailed: return qsTr("Error: Failed to stop node")
-            case BlockchainBackend.ErrorSubscribeFailed: return qsTr("Error: Failed to subscribe to events")
+            case BlockchainBackend.Error: return qsTr("Error: %1").arg(root.backend.lastErrorMessage)
             default: return qsTr("Unknown")
             }
         }
