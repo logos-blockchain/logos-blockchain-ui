@@ -39,9 +39,10 @@ static LogosResult err(const QString& message)
     return LogosResult{false, QVariant(), message};
 }
 
-// invokeRemoteMethod() returns an invalid QVariant (not a LogosResult) when
-// the call itself fails to get a reply (timeout, disconnected module, etc.),
-// as opposed to the remote method running and reporting failure normally.
+// Normalises a `QVariant` (e.g. from a `invokeRemoteMethod()`) call to a `LogosResult`.
+//
+// `invokeRemoteMethod()` might return an invalid `QVariant` when the call itself fails to get a reply (e.g.: timeout).
+// This function normalises the reply for the `LogosResult` case.
 static LogosResult toLogosResult(const QVariant& reply)
 {
     if (!reply.isValid())
@@ -54,9 +55,9 @@ static QString toErrorMessage(const LogosResult& result)
     return QStringLiteral("Error: %1").arg(result.error.toString());
 }
 
-// Renders the balance column text in AccountsModel. getBalance() and
-// transferFunds() return the LogosResult itself (see toVariantMap) so QML
-// branches on success/error directly instead of re-parsing a string.
+// Returns a stringified version of a `LogosResult`.
+//
+// Used in some places that consume the success and error properties in the same manner.
 static QString toDisplayMessage(const LogosResult& result)
 {
     return result.success ? result.value.toString() : toErrorMessage(result);
