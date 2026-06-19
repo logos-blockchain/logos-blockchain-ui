@@ -52,6 +52,7 @@ public slots:
 
 private:
     void fetchBalancesForAccounts(const QStringList& list);
+    void setError(const QString& message);
 
     LogosAPI* m_logosAPI = nullptr;
     LogosAPIClient* m_blockchainClient = nullptr;
