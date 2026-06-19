@@ -32,13 +32,20 @@ static QString toLocalPath(const QString& pathInput)
     return QUrl::fromUserInput(pathInput).toLocalFile();
 }
 
+namespace result {
+
+static LogosResult err(const QString& message)
+{
+    return LogosResult{false, QVariant(), message};
+}
+
 // invokeRemoteMethod() returns an invalid QVariant (not a LogosResult) when
 // the call itself fails to get a reply (timeout, disconnected module, etc.),
 // as opposed to the remote method running and reporting failure normally.
 static LogosResult toLogosResult(const QVariant& reply)
 {
     if (!reply.isValid())
-        return LogosResult{false, QVariant(), QStringLiteral("Call failed.")};
+        return err(QStringLiteral("Call failed."));
     return reply.value<LogosResult>();
 }
 
@@ -63,6 +70,8 @@ static QVariantMap toVariantMap(const LogosResult& result)
         {"error", result.error},
     };
 }
+
+} // namespace result
 
 BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     : BlockchainBackendSimpleSource(parent)
@@ -158,9 +167,9 @@ BlockchainBackend::~BlockchainBackend()
 QVariantMap BlockchainBackend::claimLeaderRewards()
 {
     if (!m_blockchainClient)
-        return toVariantMap(LogosResult{false, QVariant(), QStringLiteral("Module not initialized.")});
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
 
-    return toVariantMap(toLogosResult(m_blockchainClient->invokeRemoteMethod(
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "leader_claim")));
 }
 
@@ -173,14 +182,14 @@ void BlockchainBackend::startBlockchain()
 
     setStatus(Starting);
 
-    const LogosResult result = toLogosResult(m_blockchainClient->invokeRemoteMethod(
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "start", userConfig(), deploymentConfig()));
 
-    if (result.success) {
+    if (r.success) {
         setStatus(Running);
         QTimer::singleShot(500, this, [this]() { refreshAccounts(); });
     } else {
-        setError(result.error.toString());
+        setError(r.error.toString());
     }
 }
 
@@ -196,13 +205,13 @@ void BlockchainBackend::stopBlockchain()
 
     setStatus(Stopping);
 
-    const LogosResult result = toLogosResult(m_blockchainClient->invokeRemoteMethod(
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "stop"));
 
-    if (result.success) {
+    if (r.success) {
         setStatus(Stopped);
     } else {
-        setError(result.error.toString());
+        setError(r.error.toString());
     }
 }
 
@@ -210,12 +219,12 @@ void BlockchainBackend::refreshAccounts()
 {
     if (!m_blockchainClient) return;
 
-    const LogosResult result = toLogosResult(m_blockchainClient->invokeRemoteMethod(
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "wallet_get_known_addresses"));
 
     QStringList list;
-    if (result.success && result.value.canConvert<QStringList>())
-        list = result.value.toStringList();
+    if (r.success && r.value.canConvert<QStringList>())
+        list = r.value.toStringList();
 
     m_accountsModel->setAddresses(list);
 
@@ -235,22 +244,22 @@ void BlockchainBackend::fetchBalancesForAccounts(const QStringList& list)
 QVariantMap BlockchainBackend::getBalance(QString addressHex)
 {
     const LogosResult lr = m_blockchainClient
-        ? toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        ? result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
               BLOCKCHAIN_MODULE_NAME, "wallet_get_balance", addressHex))
-        : LogosResult{false, QVariant(), QStringLiteral("Module not initialized.")};
+        : result::err(QStringLiteral("Module not initialized."));
 
-    m_accountsModel->setBalanceForAddress(addressHex, toDisplayMessage(lr));
-    return toVariantMap(lr);
+    m_accountsModel->setBalanceForAddress(addressHex, result::toDisplayMessage(lr));
+    return result::toVariantMap(lr);
 }
 
 QVariantMap BlockchainBackend::transferFunds(
     QString fromKeyHex, QString toKeyHex, QString amountStr)
 {
     if (!m_blockchainClient)
-        return toVariantMap(LogosResult{false, QVariant(), QStringLiteral("Module not initialized.")});
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
 
     QStringList senders{fromKeyHex};
-    return toVariantMap(toLogosResult(m_blockchainClient->invokeRemoteMethod(
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "wallet_transfer_funds",
         fromKeyHex, senders, toKeyHex, amountStr, QString())));
 }
@@ -261,7 +270,7 @@ QVariantMap BlockchainBackend::generateConfig(
     int deploymentMode, QString deploymentConfigPath, QString statePath)
 {
     if (!m_blockchainClient)
-        return toVariantMap(LogosResult{false, QVariant(), QStringLiteral("Module not initialized.")});
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
 
     QVariantMap normalized;
 
@@ -309,7 +318,7 @@ QVariantMap BlockchainBackend::generateConfig(
     const QString jsonToSend =
         QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
 
-    return toVariantMap(toLogosResult(m_blockchainClient->invokeRemoteMethod(
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "generate_user_config", jsonToSend)));
 }
 
