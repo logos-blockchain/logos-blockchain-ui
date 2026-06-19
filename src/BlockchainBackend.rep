@@ -1,18 +1,20 @@
 class BlockchainBackend
 {
-    ENUM BlockchainStatus { NotStarted=0, Starting=1, Running=2, Stopping=3, Stopped=4, Error=5, ErrorNotInitialized=6, ErrorConfigMissing=7, ErrorStartFailed=8, ErrorStopFailed=9, ErrorSubscribeFailed=10 }
+    ENUM BlockchainStatus { NotStarted=0, Starting=1, Running=2, Stopping=3, Stopped=4, Error=5 }
 
     PROP(BlockchainStatus status READONLY)
     PROP(QString userConfig READWRITE)
     PROP(QString deploymentConfig READWRITE)
     PROP(bool useGeneratedConfig READWRITE)
     PROP(QString generatedUserConfigPath READONLY)
+    PROP(QString lastErrorMessage READONLY)
 
     SLOT(void startBlockchain())
     SLOT(void stopBlockchain())
     SLOT(void refreshAccounts())
     SLOT(QString getBalance(QString addressHex))
     SLOT(QString transferFunds(QString fromKeyHex, QString toKeyHex, QString amountStr))
+    SLOT(QString claimLeaderRewards())
     SLOT(int generateConfig(QString outputPath, QStringList initialPeers, int netPort, int blendPort, QString httpAddr, QString externalAddress, bool noPublicIpCheck, int deploymentMode, QString deploymentConfigPath, QString statePath))
     SLOT(QString getNotes(QString walletAddressHex, QString optionalTipHex))
     SLOT(QString channelDepositWithNotes(QString channelIdHex, QStringList inputNoteIdHexes, QString metadataHex, QString changePublicKeyHex, QStringList fundingPublicKeyHexes, QString maxTxFee, QString optionalTipHex))

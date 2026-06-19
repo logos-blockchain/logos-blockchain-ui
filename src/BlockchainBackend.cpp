@@ -19,11 +19,41 @@
 const QString BlockchainBackend::BLOCKCHAIN_MODULE_NAME =
     QStringLiteral("liblogos_blockchain_module");
 
+void BlockchainBackend::setError(const QString& message)
+{
+    setLastErrorMessage(message);
+    setStatus(Error);
+}
+
 static QString toLocalPath(const QString& pathInput)
 {
     if (pathInput.trimmed().isEmpty())
         return pathInput;
     return QUrl::fromUserInput(pathInput).toLocalFile();
+}
+
+// invokeRemoteMethod() returns an invalid QVariant (not a LogosResult) when
+// the call itself fails to get a reply (timeout, disconnected module, etc.),
+// as opposed to the remote method running and reporting failure normally.
+static LogosResult toLogosResult(const QVariant& reply)
+{
+    if (!reply.isValid())
+        return LogosResult{false, QVariant(), QStringLiteral("Call failed.")};
+    return reply.value<LogosResult>();
+}
+
+static QString toErrorMessage(const LogosResult& result)
+{
+    return QStringLiteral("Error: %1").arg(result.error.toString());
+}
+
+// QML callers distinguish success from failure by sniffing for an "Error"
+// prefix (see BlockchainView.qml), so both branches must share this type.
+// TODO: Currently functions are returning a string (for ok and ko cases), which is later re-parsed to know if the call
+//  succeeded or failed. We can simplify this by returning the result itself upward.
+static QString toDisplayMessage(const LogosResult& result)
+{
+    return result.success ? result.value.toString() : toErrorMessage(result);
 }
 
 BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
@@ -83,7 +113,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
 
     m_blockchainClient = m_logosAPI->getClient(BLOCKCHAIN_MODULE_NAME);
     if (!m_blockchainClient) {
-        setStatus(ErrorNotInitialized);
+        setError(QStringLiteral("Module not initialized"));
         qWarning() << "BlockchainBackend: failed to get blockchain module client";
         return;
     }
@@ -105,7 +135,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
                 m_logModel->append(line);
             });
     } else {
-        setStatus(ErrorSubscribeFailed);
+        setError(QStringLiteral("Failed to subscribe to events"));
     }
 
     qDebug() << "BlockchainBackend: initialized";
@@ -117,26 +147,32 @@ BlockchainBackend::~BlockchainBackend()
         stopBlockchain();
 }
 
+QString BlockchainBackend::claimLeaderRewards()
+{
+    if (!m_blockchainClient)
+        return QStringLiteral("Error: Module not initialized.");
+
+    return toDisplayMessage(toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, "leader_claim")));
+}
+
 void BlockchainBackend::startBlockchain()
 {
     if (!m_blockchainClient) {
-        setStatus(ErrorNotInitialized);
+        setError(QStringLiteral("Module not initialized"));
         return;
     }
 
     setStatus(Starting);
 
-    QVariant result = m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, "start", userConfig(), deploymentConfig());
-    int resultCode = result.isValid() ? result.toInt() : -1;
+    const LogosResult result = toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, "start", userConfig(), deploymentConfig()));
 
-    if (resultCode == 0 || resultCode == 1) {
+    if (result.success) {
         setStatus(Running);
         QTimer::singleShot(500, this, [this]() { refreshAccounts(); });
-    } else if (resultCode == 2) {
-        setStatus(ErrorConfigMissing);
     } else {
-        setStatus(ErrorStartFailed);
+        setError(result.error.toString());
     }
 }
 
@@ -146,32 +182,32 @@ void BlockchainBackend::stopBlockchain()
         return;
 
     if (!m_blockchainClient) {
-        setStatus(ErrorNotInitialized);
+        setError(QStringLiteral("Module not initialized"));
         return;
     }
 
     setStatus(Stopping);
 
-    QVariant result = m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, "stop");
-    int resultCode = result.isValid() ? result.toInt() : -1;
+    const LogosResult result = toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, "stop"));
 
-    if (resultCode == 0 || resultCode == 1)
+    if (result.success) {
         setStatus(Stopped);
-    else
-        setStatus(ErrorStopFailed);
+    } else {
+        setError(result.error.toString());
+    }
 }
 
 void BlockchainBackend::refreshAccounts()
 {
     if (!m_blockchainClient) return;
 
-    QVariant result = m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, "wallet_get_known_addresses");
-    QStringList list =
-        result.isValid() && result.canConvert<QStringList>()
-            ? result.toStringList()
-            : QStringList();
+    const LogosResult result = toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, "wallet_get_known_addresses"));
+
+    QStringList list;
+    if (result.success && result.value.canConvert<QStringList>())
+        list = result.value.toStringList();
 
     m_accountsModel->setAddresses(list);
 
@@ -194,10 +230,8 @@ QString BlockchainBackend::getBalance(QString addressHex)
     if (!m_blockchainClient) {
         result = QStringLiteral("Error: Module not initialized.");
     } else {
-        QVariant v = m_blockchainClient->invokeRemoteMethod(
-            BLOCKCHAIN_MODULE_NAME, "wallet_get_balance", addressHex);
-        result = v.isValid() ? v.toString()
-                             : QStringLiteral("Error: Call failed.");
+        result = toDisplayMessage(toLogosResult(m_blockchainClient->invokeRemoteMethod(
+            BLOCKCHAIN_MODULE_NAME, "wallet_get_balance", addressHex)));
     }
 
     m_accountsModel->setBalanceForAddress(addressHex, result);
@@ -211,11 +245,9 @@ QString BlockchainBackend::transferFunds(
         return QStringLiteral("Error: Module not initialized.");
 
     QStringList senders{fromKeyHex};
-    QVariant result = m_blockchainClient->invokeRemoteMethod(
+    return toDisplayMessage(toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "wallet_transfer_funds",
-        fromKeyHex, senders, toKeyHex, amountStr, QString());
-    return result.isValid() ? result.toString()
-                            : QStringLiteral("Error: Call failed.");
+        fromKeyHex, senders, toKeyHex, amountStr, QString())));
 }
 
 int BlockchainBackend::generateConfig(
@@ -272,9 +304,10 @@ int BlockchainBackend::generateConfig(
     const QString jsonToSend =
         QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
 
-    QVariant result = m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, "generate_user_config", jsonToSend);
-    return result.isValid() ? result.toInt() : -1;
+    const LogosResult result = toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, "generate_user_config", jsonToSend));
+
+    return result.success ? 0 : -1;
 }
 
 QString BlockchainBackend::getNotes(QString walletAddressHex, QString optionalTipHex)
@@ -282,11 +315,9 @@ QString BlockchainBackend::getNotes(QString walletAddressHex, QString optionalTi
     if (!m_blockchainClient)
         return QStringLiteral("Error: Module not initialized.");
 
-    QVariant result = m_blockchainClient->invokeRemoteMethod(
+    return toDisplayMessage(toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "wallet_get_notes",
-        walletAddressHex, optionalTipHex);
-    return result.isValid() ? result.toString()
-                            : QStringLiteral("Error: Call failed.");
+        walletAddressHex, optionalTipHex)));
 }
 
 QString BlockchainBackend::channelDepositWithNotes(
@@ -303,11 +334,9 @@ QString BlockchainBackend::channelDepositWithNotes(
     args << channelIdHex << inputNoteIdHexes << metadataHex << changePublicKeyHex
          << fundingPublicKeyHexes << maxTxFee << optionalTipHex;
 
-    QVariant result = m_blockchainClient->invokeRemoteMethod(
+    return toDisplayMessage(toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("channel_deposit_with_notes"),
-        args);
-    return result.isValid() ? result.toString()
-                            : QStringLiteral("Error: Call failed.");
+        args)));
 }
 
 void BlockchainBackend::clearLogs()
