@@ -1,5 +1,6 @@
 {
   "name": "blockchain_ui",
+  "display_name": "Blockchain",
   "version": "1.0.0",
   "type": "ui_qml",
   "category": "blockchain",
