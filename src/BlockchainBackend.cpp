@@ -47,13 +47,21 @@ static QString toErrorMessage(const LogosResult& result)
     return QStringLiteral("Error: %1").arg(result.error.toString());
 }
 
-// QML callers distinguish success from failure by sniffing for an "Error"
-// prefix (see BlockchainView.qml), so both branches must share this type.
-// TODO: Currently functions are returning a string (for ok and ko cases), which is later re-parsed to know if the call
-//  succeeded or failed. We can simplify this by returning the result itself upward.
+// Renders the balance column text in AccountsModel. getBalance() and
+// transferFunds() return the LogosResult itself (see toVariantMap) so QML
+// branches on success/error directly instead of re-parsing a string.
 static QString toDisplayMessage(const LogosResult& result)
 {
     return result.success ? result.value.toString() : toErrorMessage(result);
+}
+
+static QVariantMap toVariantMap(const LogosResult& result)
+{
+    return QVariantMap{
+        {"success", result.success},
+        {"value", result.value},
+        {"error", result.error},
+    };
 }
 
 BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
@@ -147,12 +155,12 @@ BlockchainBackend::~BlockchainBackend()
         stopBlockchain();
 }
 
-QString BlockchainBackend::claimLeaderRewards()
+QVariantMap BlockchainBackend::claimLeaderRewards()
 {
     if (!m_blockchainClient)
-        return QStringLiteral("Error: Module not initialized.");
+        return toVariantMap(LogosResult{false, QVariant(), QStringLiteral("Module not initialized.")});
 
-    return toDisplayMessage(toLogosResult(m_blockchainClient->invokeRemoteMethod(
+    return toVariantMap(toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "leader_claim")));
 }
 
@@ -224,39 +232,36 @@ void BlockchainBackend::fetchBalancesForAccounts(const QStringList& list)
     }
 }
 
-QString BlockchainBackend::getBalance(QString addressHex)
+QVariantMap BlockchainBackend::getBalance(QString addressHex)
 {
-    QString result;
-    if (!m_blockchainClient) {
-        result = QStringLiteral("Error: Module not initialized.");
-    } else {
-        result = toDisplayMessage(toLogosResult(m_blockchainClient->invokeRemoteMethod(
-            BLOCKCHAIN_MODULE_NAME, "wallet_get_balance", addressHex)));
-    }
+    const LogosResult lr = m_blockchainClient
+        ? toLogosResult(m_blockchainClient->invokeRemoteMethod(
+              BLOCKCHAIN_MODULE_NAME, "wallet_get_balance", addressHex))
+        : LogosResult{false, QVariant(), QStringLiteral("Module not initialized.")};
 
-    m_accountsModel->setBalanceForAddress(addressHex, result);
-    return result;
+    m_accountsModel->setBalanceForAddress(addressHex, toDisplayMessage(lr));
+    return toVariantMap(lr);
 }
 
-QString BlockchainBackend::transferFunds(
+QVariantMap BlockchainBackend::transferFunds(
     QString fromKeyHex, QString toKeyHex, QString amountStr)
 {
     if (!m_blockchainClient)
-        return QStringLiteral("Error: Module not initialized.");
+        return toVariantMap(LogosResult{false, QVariant(), QStringLiteral("Module not initialized.")});
 
     QStringList senders{fromKeyHex};
-    return toDisplayMessage(toLogosResult(m_blockchainClient->invokeRemoteMethod(
+    return toVariantMap(toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "wallet_transfer_funds",
         fromKeyHex, senders, toKeyHex, amountStr, QString())));
 }
 
-int BlockchainBackend::generateConfig(
+QVariantMap BlockchainBackend::generateConfig(
     QString outputPath, QStringList initialPeers, int netPort, int blendPort,
     QString httpAddr, QString externalAddress, bool noPublicIpCheck,
     int deploymentMode, QString deploymentConfigPath, QString statePath)
 {
     if (!m_blockchainClient)
-        return -1;
+        return toVariantMap(LogosResult{false, QVariant(), QStringLiteral("Module not initialized.")});
 
     QVariantMap normalized;
 
@@ -304,10 +309,8 @@ int BlockchainBackend::generateConfig(
     const QString jsonToSend =
         QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
 
-    const LogosResult result = toLogosResult(m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, "generate_user_config", jsonToSend));
-
-    return result.success ? 0 : -1;
+    return toVariantMap(toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, "generate_user_config", jsonToSend)));
 }
 
 void BlockchainBackend::clearLogs()

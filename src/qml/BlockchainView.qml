@@ -41,6 +41,10 @@ Rectangle {
 
     QtObject {
         id: _d
+        function errorText(message) {
+            return qsTr("Error: %1").arg(message)
+        }
+
         function getStatusString(s) {
             switch(s) {
             case BlockchainBackend.NotStarted: return qsTr("Not Started")
@@ -48,7 +52,7 @@ Rectangle {
             case BlockchainBackend.Running: return qsTr("Running")
             case BlockchainBackend.Stopping: return qsTr("Stopping...")
             case BlockchainBackend.Stopped: return qsTr("Stopped")
-            case BlockchainBackend.Error: return qsTr("Error: %1").arg(root.backend.lastErrorMessage)
+            case BlockchainBackend.Error: return _d.errorText(root.backend.lastErrorMessage)
             default: return qsTr("Unknown")
             }
         }
@@ -120,16 +124,14 @@ Rectangle {
                             outputPath, initialPeers, netPort, blendPort,
                             httpAddr, externalAddress, noPublicIpCheck,
                             deploymentMode, deploymentConfigPath, statePath),
-                        function(code) {
-                            // logos.watch stringifies the returned int — coerce back.
-                            var rc = parseInt(code, 10)
-                            console.log("[BlockchainView] generateConfig success callback: code=", code, "type=", typeof code, "→ rc=", rc)
-                            configChoiceView.generateResultSuccess = (rc === 0)
+                        function(result) {
+                            console.log("[BlockchainView] generateConfig success callback: result=", JSON.stringify(result))
+                            configChoiceView.generateResultSuccess = result.success
                             configChoiceView.generateResultMessage =
-                                rc === 0
+                                result.success
                                     ? qsTr("Config generated successfully.")
-                                    : qsTr("Generate failed (code: %1).").arg(rc)
-                            if (rc === 0) {
+                                    : qsTr("Generate failed: %1").arg(result.error)
+                            if (result.success) {
                                 root.backend.userConfig = (outputPath !== "")
                                     ? outputPath : root.backend.generatedUserConfigPath
                                 root.backend.deploymentConfig =
@@ -192,17 +194,17 @@ Rectangle {
                         logos.watch(
                             root.backend.getBalance(addressHex),
                             function(result) {
-                                if ((result || "").indexOf("Error") === 0) {
-                                    walletView.lastBalanceErrorAddress = addressHex
-                                    walletView.lastBalanceError = result
-                                } else {
+                                if (result.success) {
                                     walletView.lastBalanceErrorAddress = ""
                                     walletView.lastBalanceError = ""
+                                } else {
+                                    walletView.lastBalanceErrorAddress = addressHex
+                                    walletView.lastBalanceError = _d.errorText(result.error)
                                 }
                             },
                             function(error) {
                                 walletView.lastBalanceErrorAddress = addressHex
-                                walletView.lastBalanceError = "Error: " + error
+                                walletView.lastBalanceError = _d.errorText(error)
                             }
                         )
                     }
@@ -213,16 +215,28 @@ Rectangle {
                         if (!root.backend) return
                         logos.watch(
                             root.backend.transferFunds(fromKeyHex, toKeyHex, amount),
-                            function(result) { walletView.setTransferResult(result) },
-                            function(error) { walletView.setTransferResult("Error: " + error) }
+                            function(result) {
+                                if (result.success) {
+                                    walletView.setTransferResult(result.value)
+                                } else {
+                                    walletView.setTransferResult(_d.errorText(result.error))
+                                }
+                            },
+                            function(error) { walletView.setTransferResult(_d.errorText(error)) }
                         )
                     }
                     onClaimLeaderRewardsRequested: function() {
                         if (!root.backend) return
                         logos.watch(
                             root.backend.claimLeaderRewards(),
-                            function(result) { walletView.setLeaderClaimResult(result) },
-                            function(error) { walletView.setLeaderClaimResult("Error: " + error) }
+                            function(result) {
+                                if (result.success) {
+                                    walletView.setLeaderClaimResult(result.value)
+                                } else {
+                                    walletView.setLeaderClaimResult(_d.errorText(result.error))
+                                }
+                            },
+                            function(error) { walletView.setLeaderClaimResult(_d.errorText(error)) }
                         )
                     }
                 }
