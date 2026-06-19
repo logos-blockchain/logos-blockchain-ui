@@ -4,6 +4,7 @@
 
 #include <QByteArray>
 #include <QClipboard>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
@@ -205,9 +206,28 @@ void BlockchainBackend::refreshAccounts()
     const LogosResult result = toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "wallet_get_known_addresses"));
 
+    if (!result.success) {
+        qWarning() << "refreshAccounts: failed:" << result.error.toString();
+        return;
+    }
+
+    // The SDK marshals the JSON array into a QVariantList; rely on toList()
+    // rather than canConvert<QStringList>() (which is unreliable for a
+    // QVariantList under Qt6), and fall back to toStringList() for the rare
+    // case where the value already arrives as a QStringList.
     QStringList list;
-    if (result.success && result.value.canConvert<QStringList>())
+    const QVariantList items = result.value.toList();
+    if (!items.isEmpty()) {
+        for (const QVariant& item : items) {
+            const QString addr = item.toString();
+            if (!addr.isEmpty())
+                list << addr;
+        }
+    } else {
         list = result.value.toStringList();
+    }
+
+    qDebug() << "refreshAccounts: loaded" << list.size() << "addresses";
 
     m_accountsModel->setAddresses(list);
 
@@ -346,6 +366,14 @@ void BlockchainBackend::clearLogs()
 
 void BlockchainBackend::copyToClipboard(QString text)
 {
-    if (QGuiApplication::clipboard())
-        QGuiApplication::clipboard()->setText(text);
+    // The backend runs in a non-GUI ViewModuleHost subprocess, where there is
+    // no QGuiApplication and accessing the clipboard segfaults. Clipboard is
+    // handled QML-side (see BlockchainView.copyText); guard here so any stray
+    // call is a no-op rather than a crash.
+    if (!qobject_cast<QGuiApplication*>(QCoreApplication::instance())) {
+        qWarning() << "copyToClipboard: no GUI application; ignoring";
+        return;
+    }
+    if (QClipboard* clipboard = QGuiApplication::clipboard())
+        clipboard->setText(text);
 }

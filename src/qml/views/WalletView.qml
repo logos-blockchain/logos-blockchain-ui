@@ -16,6 +16,7 @@ RowLayout {
     property string lastBalanceErrorAddress: ""
 
     signal getBalanceRequested(string addressHex)
+    signal refreshAccountsRequested()
     signal transferRequested(string fromKeyHex, string toKeyHex, string amount)
     signal claimLeaderRewardsRequested()
     signal copyToClipboard(string text)
@@ -48,10 +49,19 @@ RowLayout {
             anchors.margins: Theme.spacing.large
             spacing: Theme.spacing.large
 
-            LogosText {
-                text: qsTr("Accounts")
-                font.pixelSize: Theme.typography.secondaryText
-                font.bold: true
+            RowLayout {
+                Layout.fillWidth: true
+                LogosText {
+                    text: qsTr("Accounts")
+                    font.pixelSize: Theme.typography.secondaryText
+                    font.bold: true
+                }
+                Item { Layout.fillWidth: true }
+                LogosButton {
+                    text: qsTr("Refresh")
+                    padding: Theme.spacing.small
+                    onClicked: root.refreshAccountsRequested()
+                }
             }
 
             LogosText {
