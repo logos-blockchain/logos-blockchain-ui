@@ -21,7 +21,7 @@ ColumnLayout {
     property bool nodeRunning: false
 
     signal getNotesRequested(string addressHex, string optionalTipHex)
-    signal submitRequested(string channelIdHex, var inputNoteIdHexes, string metadataHex, string changePublicKeyHex, var fundingPublicKeyHexes, string maxTxFee, string optionalTipHex)
+    signal submitRequested(string channelIdHex, var inputNoteIdHexes, string metadataBase58, string changePublicKeyHex, var fundingPublicKeyHexes, string maxTxFee, string optionalTipHex)
     signal copyToClipboard(string text)
 
     // --- Called by the parent after async backend calls return ---
@@ -77,6 +77,18 @@ ColumnLayout {
                 .filter(function(s) { return s.length > 0 })
         }
 
+        // --- Metadata (base58-encoded bytes) ---
+
+        // The actual base58 → bytes decoding happens in the C++ backend; here we
+        // only check the input uses the base58 (Bitcoin) alphabet. Plain base58
+        // has no checksum, so a valid-alphabet string always decodes.
+        function metadataIsValid() {
+            var s = metadataField.text.trim()
+            if (s === "")
+                return true // optional
+            return /^[1-9A-HJ-NP-Za-km-z]+$/.test(s)
+        }
+
         function canAdvance() {
             switch (step) {
             case 0:
@@ -86,6 +98,7 @@ ColumnLayout {
                     && changeKeyField.text.trim().length > 0
                     && fundingKeyList().length > 0
                     && maxFeeField.text.trim().length > 0
+                    && metadataIsValid()
             default:
                 return true
             }
@@ -151,7 +164,7 @@ ColumnLayout {
                 { k: qsTr("Change public key"), v: changeKeyField.text.trim() },
                 { k: qsTr("Funding public keys"), v: fundingKeyList().join("\n") },
                 { k: qsTr("Max tx fee"), v: maxFeeField.text.trim() },
-                { k: qsTr("Metadata hex"), v: metadataField.text.trim() || qsTr("(none)") },
+                { k: qsTr("Metadata (base58)"), v: metadataField.text.trim() || qsTr("(none)") },
                 { k: qsTr("Optional tip hex"), v: tipField.text.trim() || qsTr("(current tip)") }
             ]
         }
@@ -326,13 +339,28 @@ ColumnLayout {
                 }
 
                 LogosText {
-                    text: qsTr("Metadata hex (optional)")
+                    text: qsTr("Metadata (base58, optional)")
                     font.pixelSize: Theme.typography.secondaryText
                 }
                 LogosTextField {
                     id: metadataField
                     Layout.fillWidth: true
-                    placeholderText: qsTr("Metadata hex")
+                    placeholderText: qsTr("Base58-encoded metadata bytes")
+                }
+                LogosText {
+                    Layout.fillWidth: true
+                    text: qsTr("Input must be base58-encoded; it is decoded to bytes before submission.")
+                    color: Theme.palette.textSecondary
+                    font.pixelSize: Theme.typography.secondaryText
+                    wrapMode: Text.WordWrap
+                }
+                LogosText {
+                    Layout.fillWidth: true
+                    visible: metadataField.text.trim() !== "" && !d.metadataIsValid()
+                    text: qsTr("Invalid base58 input")
+                    color: Theme.palette.error
+                    font.pixelSize: Theme.typography.secondaryText
+                    wrapMode: Text.WordWrap
                 }
 
                 LogosText {

@@ -298,11 +298,11 @@ Rectangle {
                             function(error) { channelDepositView.setNotesResult("Error: " + error) }
                         )
                     }
-                    onSubmitRequested: function(channelIdHex, inputNoteIdHexes, metadataHex, changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex) {
+                    onSubmitRequested: function(channelIdHex, inputNoteIdHexes, metadataBase58, changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex) {
                         if (!root.backend) return
                         logos.watch(
                             root.backend.channelDepositWithNotes(
-                                channelIdHex, inputNoteIdHexes, metadataHex,
+                                channelIdHex, inputNoteIdHexes, metadataBase58,
                                 changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex),
                             function(result) { channelDepositView.setSubmitResult(result) },
                             function(error) { channelDepositView.setSubmitResult("Error: " + error) }

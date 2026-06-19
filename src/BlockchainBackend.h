@@ -51,7 +51,7 @@ public slots:
     QString getNotes(QString walletAddressHex, QString optionalTipHex) override;
     QString channelDepositWithNotes(QString channelIdHex,
                                     QStringList inputNoteIdHexes,
-                                    QString metadataHex,
+                                    QString metadataBase58,
                                     QString changePublicKeyHex,
                                     QStringList fundingPublicKeyHexes,
                                     QString maxTxFee,

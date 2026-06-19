@@ -17,6 +17,8 @@
 #include <QUrl>
 #include <QVariant>
 
+#include <algorithm>
+
 const QString BlockchainBackend::BLOCKCHAIN_MODULE_NAME =
     QStringLiteral("liblogos_blockchain_module");
 
@@ -55,6 +57,44 @@ static QString toErrorMessage(const LogosResult& result)
 static QString toDisplayMessage(const LogosResult& result)
 {
     return result.success ? result.value.toString() : toErrorMessage(result);
+}
+
+// Decode a base58 (Bitcoin alphabet) string to raw bytes. On an invalid
+// character *ok is set to false and an empty array is returned.
+static QByteArray decodeBase58(const QString& input, bool* ok)
+{
+    static const QByteArray kAlphabet =
+        "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+    const QByteArray s = input.trimmed().toLatin1();
+    QByteArray bytes; // little-endian while building, reversed at the end
+    bytes.append('\0');
+
+    for (const char c : s) {
+        const int value = kAlphabet.indexOf(c);
+        if (value < 0) {
+            if (ok) *ok = false;
+            return {};
+        }
+        int carry = value;
+        for (int j = 0; j < bytes.size(); ++j) {
+            carry += static_cast<unsigned char>(bytes[j]) * 58;
+            bytes[j] = static_cast<char>(carry & 0xff);
+            carry >>= 8;
+        }
+        while (carry > 0) {
+            bytes.append(static_cast<char>(carry & 0xff));
+            carry >>= 8;
+        }
+    }
+
+    // Each leading '1' maps to a leading zero byte.
+    for (int i = 0; i < s.size() && s[i] == '1'; ++i)
+        bytes.append('\0');
+
+    std::reverse(bytes.begin(), bytes.end());
+    if (ok) *ok = true;
+    return bytes;
 }
 
 BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
@@ -341,12 +381,23 @@ QString BlockchainBackend::getNotes(QString walletAddressHex, QString optionalTi
 }
 
 QString BlockchainBackend::channelDepositWithNotes(
-    QString channelIdHex, QStringList inputNoteIdHexes, QString metadataHex,
+    QString channelIdHex, QStringList inputNoteIdHexes, QString metadataBase58,
     QString changePublicKeyHex, QStringList fundingPublicKeyHexes,
     QString maxTxFee, QString optionalTipHex)
 {
     if (!m_blockchainClient)
         return QStringLiteral("Error: Module not initialized.");
+
+    // The metadata arrives base58-encoded; the module expects metadata_hex, so
+    // decode to bytes and hex-encode. Empty stays empty (metadata is optional).
+    QString metadataHex;
+    if (!metadataBase58.trimmed().isEmpty()) {
+        bool ok = false;
+        const QByteArray bytes = decodeBase58(metadataBase58, &ok);
+        if (!ok)
+            return QStringLiteral("Error: Invalid base58 metadata.");
+        metadataHex = QString::fromLatin1(bytes.toHex());
+    }
 
     // 7 positional args exceed the variadic invokeRemoteMethod overloads
     // (max 5), so pass them through the QVariantList form.
