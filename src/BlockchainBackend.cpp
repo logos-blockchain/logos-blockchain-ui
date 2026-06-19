@@ -277,6 +277,39 @@ int BlockchainBackend::generateConfig(
     return result.isValid() ? result.toInt() : -1;
 }
 
+QString BlockchainBackend::getNotes(QString walletAddressHex, QString optionalTipHex)
+{
+    if (!m_blockchainClient)
+        return QStringLiteral("Error: Module not initialized.");
+
+    QVariant result = m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, "wallet_get_notes",
+        walletAddressHex, optionalTipHex);
+    return result.isValid() ? result.toString()
+                            : QStringLiteral("Error: Call failed.");
+}
+
+QString BlockchainBackend::channelDepositWithNotes(
+    QString channelIdHex, QStringList inputNoteIdHexes, QString metadataHex,
+    QString changePublicKeyHex, QStringList fundingPublicKeyHexes,
+    QString maxTxFee, QString optionalTipHex)
+{
+    if (!m_blockchainClient)
+        return QStringLiteral("Error: Module not initialized.");
+
+    // 7 positional args exceed the variadic invokeRemoteMethod overloads
+    // (max 5), so pass them through the QVariantList form.
+    QVariantList args;
+    args << channelIdHex << inputNoteIdHexes << metadataHex << changePublicKeyHex
+         << fundingPublicKeyHexes << maxTxFee << optionalTipHex;
+
+    QVariant result = m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("channel_deposit_with_notes"),
+        args);
+    return result.isValid() ? result.toString()
+                            : QStringLiteral("Error: Call failed.");
+}
+
 void BlockchainBackend::clearLogs()
 {
     m_logModel->clear();

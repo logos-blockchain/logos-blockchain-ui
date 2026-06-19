@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 import Logos.Theme
+import Logos.Controls
 // BlockchainStatus enum (NotStarted/Starting/Running/.../ErrorSubscribeFailed)
 // declared in BlockchainBackend.rep — registered with QML by the replica
 // factory plugin.
@@ -155,7 +156,27 @@ Rectangle {
             }
         }
 
-        // Page 2: Node control, wallet, logs
+        // Page 2: Node control, wallet, logs + Channel Deposit (tabbed)
+        ColumnLayout {
+            spacing: Theme.spacing.medium
+
+            LogosTabBar {
+                id: operationTabBar
+                Layout.fillWidth: true
+                LogosTabButton { text: qsTr("Node & Wallet") }
+                LogosTabButton {
+                    text: qsTr("Channel Deposit")
+                    enabled: root.backend
+                             && root.backend.status === BlockchainBackend.Running
+                }
+            }
+
+            StackLayout {
+                id: operationStack
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                currentIndex: operationTabBar.currentIndex
+
         SplitView {
             orientation: Qt.Vertical
 
@@ -237,6 +258,38 @@ Rectangle {
                 onClearRequested: if (root.backend) root.backend.clearLogs()
                 onCopyToClipboard: (text) => {
                     if (root.backend) root.backend.copyToClipboard(text)
+                }
+            }
+        }
+
+                ChannelDepositView {
+                    id: channelDepositView
+                    accountsModel: root.accountsModel
+                    nodeRunning: root.backend
+                                 ? root.backend.status === BlockchainBackend.Running
+                                 : false
+
+                    onGetNotesRequested: function(addressHex, optionalTipHex) {
+                        if (!root.backend) return
+                        logos.watch(
+                            root.backend.getNotes(addressHex, optionalTipHex),
+                            function(result) { channelDepositView.setNotesResult(result) },
+                            function(error) { channelDepositView.setNotesResult("Error: " + error) }
+                        )
+                    }
+                    onSubmitRequested: function(channelIdHex, inputNoteIdHexes, metadataHex, changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex) {
+                        if (!root.backend) return
+                        logos.watch(
+                            root.backend.channelDepositWithNotes(
+                                channelIdHex, inputNoteIdHexes, metadataHex,
+                                changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex),
+                            function(result) { channelDepositView.setSubmitResult(result) },
+                            function(error) { channelDepositView.setSubmitResult("Error: " + error) }
+                        )
+                    }
+                    onCopyToClipboard: (text) => {
+                        if (root.backend) root.backend.copyToClipboard(text)
+                    }
                 }
             }
         }
