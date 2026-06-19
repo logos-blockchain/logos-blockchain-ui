@@ -147,6 +147,15 @@ BlockchainBackend::~BlockchainBackend()
         stopBlockchain();
 }
 
+QString BlockchainBackend::claimLeaderRewards()
+{
+    if (!m_blockchainClient)
+        return QStringLiteral("Error: Module not initialized.");
+
+    return toDisplayMessage(toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, "leader_claim")));
+}
+
 void BlockchainBackend::startBlockchain()
 {
     if (!m_blockchainClient) {

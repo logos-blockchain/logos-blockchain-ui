@@ -43,6 +43,7 @@ public slots:
     void refreshAccounts() override;
     QString getBalance(QString addressHex) override;
     QString transferFunds(QString fromKeyHex, QString toKeyHex, QString amountStr) override;
+    QString claimLeaderRewards() override;
     int generateConfig(QString outputPath, QStringList initialPeers, int netPort,
                        int blendPort, QString httpAddr, QString externalAddress,
                        bool noPublicIpCheck, int deploymentMode,

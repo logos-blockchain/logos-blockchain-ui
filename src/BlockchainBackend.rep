@@ -14,6 +14,7 @@ class BlockchainBackend
     SLOT(void refreshAccounts())
     SLOT(QString getBalance(QString addressHex))
     SLOT(QString transferFunds(QString fromKeyHex, QString toKeyHex, QString amountStr))
+    SLOT(QString claimLeaderRewards())
     SLOT(int generateConfig(QString outputPath, QStringList initialPeers, int netPort, int blendPort, QString httpAddr, QString externalAddress, bool noPublicIpCheck, int deploymentMode, QString deploymentConfigPath, QString statePath))
     SLOT(void clearLogs())
     SLOT(void copyToClipboard(QString text))
