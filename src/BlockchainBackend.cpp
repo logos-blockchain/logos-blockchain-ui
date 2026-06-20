@@ -35,13 +35,21 @@ static QString toLocalPath(const QString& pathInput)
     return QUrl::fromUserInput(pathInput).toLocalFile();
 }
 
-// invokeRemoteMethod() returns an invalid QVariant (not a LogosResult) when
-// the call itself fails to get a reply (timeout, disconnected module, etc.),
-// as opposed to the remote method running and reporting failure normally.
+namespace result {
+
+static LogosResult err(const QString& message)
+{
+    return LogosResult{false, QVariant(), message};
+}
+
+// Normalises a `QVariant` (e.g. from a `invokeRemoteMethod()`) call to a `LogosResult`.
+//
+// `invokeRemoteMethod()` might return an invalid `QVariant` when the call itself fails to get a reply (e.g.: timeout).
+// This function normalises the reply for the `LogosResult` case.
 static LogosResult toLogosResult(const QVariant& reply)
 {
     if (!reply.isValid())
-        return LogosResult{false, QVariant(), QStringLiteral("Call failed.")};
+        return err(QStringLiteral("Call failed."));
     return reply.value<LogosResult>();
 }
 
@@ -50,14 +58,24 @@ static QString toErrorMessage(const LogosResult& result)
     return QStringLiteral("Error: %1").arg(result.error.toString());
 }
 
-// QML callers distinguish success from failure by sniffing for an "Error"
-// prefix (see BlockchainView.qml), so both branches must share this type.
-// TODO: Currently functions are returning a string (for ok and ko cases), which is later re-parsed to know if the call
-//  succeeded or failed. We can simplify this by returning the result itself upward.
+// Returns a stringified version of a `LogosResult`.
+//
+// Used in some places that consume the success and error properties in the same manner.
 static QString toDisplayMessage(const LogosResult& result)
 {
     return result.success ? result.value.toString() : toErrorMessage(result);
 }
+
+static QVariantMap toVariantMap(const LogosResult& result)
+{
+    return QVariantMap{
+        {"success", result.success},
+        {"value", result.value},
+        {"error", result.error},
+    };
+}
+
+} // namespace result
 
 // Decode a base58 (Bitcoin alphabet) string to raw bytes. On an invalid
 // character *ok is set to false and an empty array is returned.
@@ -188,12 +206,12 @@ BlockchainBackend::~BlockchainBackend()
         stopBlockchain();
 }
 
-QString BlockchainBackend::claimLeaderRewards()
+QVariantMap BlockchainBackend::claimLeaderRewards()
 {
     if (!m_blockchainClient)
-        return QStringLiteral("Error: Module not initialized.");
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
 
-    return toDisplayMessage(toLogosResult(m_blockchainClient->invokeRemoteMethod(
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "leader_claim")));
 }
 
@@ -206,14 +224,14 @@ void BlockchainBackend::startBlockchain()
 
     setStatus(Starting);
 
-    const LogosResult result = toLogosResult(m_blockchainClient->invokeRemoteMethod(
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "start", userConfig(), deploymentConfig()));
 
-    if (result.success) {
+    if (r.success) {
         setStatus(Running);
         QTimer::singleShot(500, this, [this]() { refreshAccounts(); });
     } else {
-        setError(result.error.toString());
+        setError(r.error.toString());
     }
 }
 
@@ -229,13 +247,13 @@ void BlockchainBackend::stopBlockchain()
 
     setStatus(Stopping);
 
-    const LogosResult result = toLogosResult(m_blockchainClient->invokeRemoteMethod(
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "stop"));
 
-    if (result.success) {
+    if (r.success) {
         setStatus(Stopped);
     } else {
-        setError(result.error.toString());
+        setError(r.error.toString());
     }
 }
 
@@ -243,11 +261,11 @@ void BlockchainBackend::refreshAccounts()
 {
     if (!m_blockchainClient) return;
 
-    const LogosResult result = toLogosResult(m_blockchainClient->invokeRemoteMethod(
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "wallet_get_known_addresses"));
 
-    if (!result.success) {
-        qWarning() << "refreshAccounts: failed:" << result.error.toString();
+    if (!r.success) {
+        qWarning() << "refreshAccounts: failed:" << r.error.toString();
         return;
     }
 
@@ -256,7 +274,7 @@ void BlockchainBackend::refreshAccounts()
     // QVariantList under Qt6), and fall back to toStringList() for the rare
     // case where the value already arrives as a QStringList.
     QStringList list;
-    const QVariantList items = result.value.toList();
+    const QVariantList items = r.value.toList();
     if (!items.isEmpty()) {
         for (const QVariant& item : items) {
             const QString addr = item.toString();
@@ -264,7 +282,7 @@ void BlockchainBackend::refreshAccounts()
                 list << addr;
         }
     } else {
-        list = result.value.toStringList();
+        list = r.value.toStringList();
     }
 
     qDebug() << "refreshAccounts: loaded" << list.size() << "addresses";
@@ -284,39 +302,36 @@ void BlockchainBackend::fetchBalancesForAccounts(const QStringList& list)
     }
 }
 
-QString BlockchainBackend::getBalance(QString addressHex)
+QVariantMap BlockchainBackend::getBalance(QString addressHex)
 {
-    QString result;
-    if (!m_blockchainClient) {
-        result = QStringLiteral("Error: Module not initialized.");
-    } else {
-        result = toDisplayMessage(toLogosResult(m_blockchainClient->invokeRemoteMethod(
-            BLOCKCHAIN_MODULE_NAME, "wallet_get_balance", addressHex)));
-    }
+    const LogosResult lr = m_blockchainClient
+        ? result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+              BLOCKCHAIN_MODULE_NAME, "wallet_get_balance", addressHex))
+        : result::err(QStringLiteral("Module not initialized."));
 
-    m_accountsModel->setBalanceForAddress(addressHex, result);
-    return result;
+    m_accountsModel->setBalanceForAddress(addressHex, result::toDisplayMessage(lr));
+    return result::toVariantMap(lr);
 }
 
-QString BlockchainBackend::transferFunds(
+QVariantMap BlockchainBackend::transferFunds(
     QString fromKeyHex, QString toKeyHex, QString amountStr)
 {
     if (!m_blockchainClient)
-        return QStringLiteral("Error: Module not initialized.");
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
 
     QStringList senders{fromKeyHex};
-    return toDisplayMessage(toLogosResult(m_blockchainClient->invokeRemoteMethod(
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "wallet_transfer_funds",
         fromKeyHex, senders, toKeyHex, amountStr, QString())));
 }
 
-int BlockchainBackend::generateConfig(
+QVariantMap BlockchainBackend::generateConfig(
     QString outputPath, QStringList initialPeers, int netPort, int blendPort,
     QString httpAddr, QString externalAddress, bool noPublicIpCheck,
     int deploymentMode, QString deploymentConfigPath, QString statePath)
 {
     if (!m_blockchainClient)
-        return -1;
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
 
     QVariantMap normalized;
 
@@ -364,29 +379,27 @@ int BlockchainBackend::generateConfig(
     const QString jsonToSend =
         QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
 
-    const LogosResult result = toLogosResult(m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, "generate_user_config", jsonToSend));
-
-    return result.success ? 0 : -1;
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, "generate_user_config", jsonToSend)));
 }
 
-QString BlockchainBackend::getNotes(QString walletAddressHex, QString optionalTipHex)
+QVariantMap BlockchainBackend::getNotes(QString walletAddressHex, QString optionalTipHex)
 {
     if (!m_blockchainClient)
-        return QStringLiteral("Error: Module not initialized.");
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
 
-    return toDisplayMessage(toLogosResult(m_blockchainClient->invokeRemoteMethod(
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "wallet_get_notes",
         walletAddressHex, optionalTipHex)));
 }
 
-QString BlockchainBackend::channelDepositWithNotes(
+QVariantMap BlockchainBackend::channelDepositWithNotes(
     QString channelIdHex, QStringList inputNoteIdHexes, QString metadataBase58,
     QString changePublicKeyHex, QStringList fundingPublicKeyHexes,
     QString maxTxFee, QString optionalTipHex)
 {
     if (!m_blockchainClient)
-        return QStringLiteral("Error: Module not initialized.");
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
 
     // The metadata arrives base58-encoded; the module expects metadata_hex, so
     // decode to bytes and hex-encode. Empty stays empty (metadata is optional).
@@ -395,7 +408,7 @@ QString BlockchainBackend::channelDepositWithNotes(
         bool ok = false;
         const QByteArray bytes = decodeBase58(metadataBase58, &ok);
         if (!ok)
-            return QStringLiteral("Error: Invalid base58 metadata.");
+            return result::toVariantMap(result::err(QStringLiteral("Invalid base58 metadata.")));
         metadataHex = QString::fromLatin1(bytes.toHex());
     }
 
@@ -405,7 +418,7 @@ QString BlockchainBackend::channelDepositWithNotes(
     args << channelIdHex << inputNoteIdHexes << metadataHex << changePublicKeyHex
          << fundingPublicKeyHexes << maxTxFee << optionalTipHex;
 
-    return toDisplayMessage(toLogosResult(m_blockchainClient->invokeRemoteMethod(
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("channel_deposit_with_notes"),
         args)));
 }

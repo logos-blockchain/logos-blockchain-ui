@@ -5,6 +5,7 @@
 #include <QString>
 #include <QStringList>
 #include <QVariantList>
+#include <QVariantMap>
 
 #include "rep_BlockchainBackend_source.h"
 
@@ -41,15 +42,15 @@ public slots:
     void startBlockchain() override;
     void stopBlockchain() override;
     void refreshAccounts() override;
-    QString getBalance(QString addressHex) override;
-    QString transferFunds(QString fromKeyHex, QString toKeyHex, QString amountStr) override;
-    QString claimLeaderRewards() override;
-    int generateConfig(QString outputPath, QStringList initialPeers, int netPort,
+    QVariantMap getBalance(QString addressHex) override;
+    QVariantMap transferFunds(QString fromKeyHex, QString toKeyHex, QString amountStr) override;
+    QVariantMap claimLeaderRewards() override;
+    QVariantMap generateConfig(QString outputPath, QStringList initialPeers, int netPort,
                        int blendPort, QString httpAddr, QString externalAddress,
                        bool noPublicIpCheck, int deploymentMode,
                        QString deploymentConfigPath, QString statePath) override;
-    QString getNotes(QString walletAddressHex, QString optionalTipHex) override;
-    QString channelDepositWithNotes(QString channelIdHex,
+    QVariantMap getNotes(QString walletAddressHex, QString optionalTipHex) override;
+    QVariantMap channelDepositWithNotes(QString channelIdHex,
                                     QStringList inputNoteIdHexes,
                                     QString metadataBase58,
                                     QString changePublicKeyHex,

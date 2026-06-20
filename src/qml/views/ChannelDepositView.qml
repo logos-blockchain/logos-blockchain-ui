@@ -31,14 +31,9 @@ ColumnLayout {
         noteSelector.errorText = ""
     }
 
-    function setNotesResult(jsonStr) {
+    function setNotes(jsonStr) {
         noteSelector.loading = false
         var s = jsonStr || ""
-        if (s.indexOf("Error") === 0) {
-            noteSelector.errorText = s
-            noteSelector.notes = []
-            return
-        }
         try {
             var parsed = JSON.parse(s)
             d.notesTip = parsed.tip || ""
@@ -50,11 +45,16 @@ ColumnLayout {
         }
     }
 
-    function setSubmitResult(resultStr) {
+    function setNotesError(message) {
+        noteSelector.loading = false
+        noteSelector.errorText = message
+        noteSelector.notes = []
+    }
+
+    function setSubmitResult(success, text) {
         d.resultPending = false
-        var s = resultStr || ""
-        d.resultSuccess = (s.indexOf("Error") !== 0)
-        d.resultText = s
+        d.resultSuccess = success
+        d.resultText = text
     }
 
     spacing: Theme.spacing.large
