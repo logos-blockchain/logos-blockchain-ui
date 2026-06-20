@@ -38,7 +38,7 @@ Rectangle {
     // Models live on the C++ backend and are auto-remoted by ui-host as
     // "<module>/<propertyName>". QML acquires them via logos.model(...).
     readonly property var accountsModel: logos.model("blockchain_ui", "accounts")
-    readonly property var logModel: logos.model("blockchain_ui", "logs")
+    readonly property var blockModel: logos.model("blockchain_ui", "blocks")
 
     // Clipboard must be handled here in the UI-host (GUI) process. The backend
     // .rep source runs in a separate, non-GUI ViewModuleHost subprocess where
@@ -240,12 +240,12 @@ Rectangle {
                         }
                     }
 
-                    LogsView {
+                    BlocksView {
                         SplitView.fillWidth: true
                         SplitView.minimumHeight: 150
 
-                        logModel: root.logModel
-                        onClearRequested: if (root.backend) root.backend.clearLogs()
+                        blockModel: root.blockModel
+                        onClearRequested: if (root.backend) root.backend.clearBlocks()
                         onCopyToClipboard: (text) => {
                             root.copyText(text)
                         }
