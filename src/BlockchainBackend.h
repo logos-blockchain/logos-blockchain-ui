@@ -48,6 +48,14 @@ public slots:
                        int blendPort, QString httpAddr, QString externalAddress,
                        bool noPublicIpCheck, int deploymentMode,
                        QString deploymentConfigPath, QString statePath) override;
+    QString getNotes(QString walletAddressHex, QString optionalTipHex) override;
+    QString channelDepositWithNotes(QString channelIdHex,
+                                    QStringList inputNoteIdHexes,
+                                    QString metadataBase58,
+                                    QString changePublicKeyHex,
+                                    QStringList fundingPublicKeyHexes,
+                                    QString maxTxFee,
+                                    QString optionalTipHex) override;
     void clearLogs() override;
     void copyToClipboard(QString text) override;
 

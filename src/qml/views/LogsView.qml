@@ -70,7 +70,9 @@ Control {
                 delegate: ItemDelegate{
                     width: ListView.view.width
                     contentItem: LogosText {
-                        text: model.text
+                        // The remoted log model can briefly report an undefined
+                        // "text" role while the replica syncs — coerce to "".
+                        text: model.text || ""
                         font.pixelSize: Theme.typography.secondaryText
                         wrapMode: Text.Wrap
                     }
@@ -78,7 +80,7 @@ Control {
                         color: hovered ? Theme.palette.background: "transparent"
                         radius: 2
                     }
-                    onClicked: root.copyToClipboard(model.text)
+                    onClicked: root.copyToClipboard(model.text || "")
                 }
 
                 LogosText {

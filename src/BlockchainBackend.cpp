@@ -4,6 +4,7 @@
 
 #include <QByteArray>
 #include <QClipboard>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
@@ -15,6 +16,8 @@
 #include <QTimer>
 #include <QUrl>
 #include <QVariant>
+
+#include <algorithm>
 
 const QString BlockchainBackend::BLOCKCHAIN_MODULE_NAME =
     QStringLiteral("liblogos_blockchain_module");
@@ -54,6 +57,44 @@ static QString toErrorMessage(const LogosResult& result)
 static QString toDisplayMessage(const LogosResult& result)
 {
     return result.success ? result.value.toString() : toErrorMessage(result);
+}
+
+// Decode a base58 (Bitcoin alphabet) string to raw bytes. On an invalid
+// character *ok is set to false and an empty array is returned.
+static QByteArray decodeBase58(const QString& input, bool* ok)
+{
+    static const QByteArray kAlphabet =
+        "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+    const QByteArray s = input.trimmed().toLatin1();
+    QByteArray bytes; // little-endian while building, reversed at the end
+    bytes.append('\0');
+
+    for (const char c : s) {
+        const int value = kAlphabet.indexOf(c);
+        if (value < 0) {
+            if (ok) *ok = false;
+            return {};
+        }
+        int carry = value;
+        for (int j = 0; j < bytes.size(); ++j) {
+            carry += static_cast<unsigned char>(bytes[j]) * 58;
+            bytes[j] = static_cast<char>(carry & 0xff);
+            carry >>= 8;
+        }
+        while (carry > 0) {
+            bytes.append(static_cast<char>(carry & 0xff));
+            carry >>= 8;
+        }
+    }
+
+    // Each leading '1' maps to a leading zero byte.
+    for (int i = 0; i < s.size() && s[i] == '1'; ++i)
+        bytes.append('\0');
+
+    std::reverse(bytes.begin(), bytes.end());
+    if (ok) *ok = true;
+    return bytes;
 }
 
 BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
@@ -205,9 +246,28 @@ void BlockchainBackend::refreshAccounts()
     const LogosResult result = toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "wallet_get_known_addresses"));
 
+    if (!result.success) {
+        qWarning() << "refreshAccounts: failed:" << result.error.toString();
+        return;
+    }
+
+    // The SDK marshals the JSON array into a QVariantList; rely on toList()
+    // rather than canConvert<QStringList>() (which is unreliable for a
+    // QVariantList under Qt6), and fall back to toStringList() for the rare
+    // case where the value already arrives as a QStringList.
     QStringList list;
-    if (result.success && result.value.canConvert<QStringList>())
+    const QVariantList items = result.value.toList();
+    if (!items.isEmpty()) {
+        for (const QVariant& item : items) {
+            const QString addr = item.toString();
+            if (!addr.isEmpty())
+                list << addr;
+        }
+    } else {
         list = result.value.toStringList();
+    }
+
+    qDebug() << "refreshAccounts: loaded" << list.size() << "addresses";
 
     m_accountsModel->setAddresses(list);
 
@@ -310,6 +370,46 @@ int BlockchainBackend::generateConfig(
     return result.success ? 0 : -1;
 }
 
+QString BlockchainBackend::getNotes(QString walletAddressHex, QString optionalTipHex)
+{
+    if (!m_blockchainClient)
+        return QStringLiteral("Error: Module not initialized.");
+
+    return toDisplayMessage(toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, "wallet_get_notes",
+        walletAddressHex, optionalTipHex)));
+}
+
+QString BlockchainBackend::channelDepositWithNotes(
+    QString channelIdHex, QStringList inputNoteIdHexes, QString metadataBase58,
+    QString changePublicKeyHex, QStringList fundingPublicKeyHexes,
+    QString maxTxFee, QString optionalTipHex)
+{
+    if (!m_blockchainClient)
+        return QStringLiteral("Error: Module not initialized.");
+
+    // The metadata arrives base58-encoded; the module expects metadata_hex, so
+    // decode to bytes and hex-encode. Empty stays empty (metadata is optional).
+    QString metadataHex;
+    if (!metadataBase58.trimmed().isEmpty()) {
+        bool ok = false;
+        const QByteArray bytes = decodeBase58(metadataBase58, &ok);
+        if (!ok)
+            return QStringLiteral("Error: Invalid base58 metadata.");
+        metadataHex = QString::fromLatin1(bytes.toHex());
+    }
+
+    // 7 positional args exceed the variadic invokeRemoteMethod overloads
+    // (max 5), so pass them through the QVariantList form.
+    QVariantList args;
+    args << channelIdHex << inputNoteIdHexes << metadataHex << changePublicKeyHex
+         << fundingPublicKeyHexes << maxTxFee << optionalTipHex;
+
+    return toDisplayMessage(toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("channel_deposit_with_notes"),
+        args)));
+}
+
 void BlockchainBackend::clearLogs()
 {
     m_logModel->clear();
@@ -317,6 +417,14 @@ void BlockchainBackend::clearLogs()
 
 void BlockchainBackend::copyToClipboard(QString text)
 {
-    if (QGuiApplication::clipboard())
-        QGuiApplication::clipboard()->setText(text);
+    // The backend runs in a non-GUI ViewModuleHost subprocess, where there is
+    // no QGuiApplication and accessing the clipboard segfaults. Clipboard is
+    // handled QML-side (see BlockchainView.copyText); guard here so any stray
+    // call is a no-op rather than a crash.
+    if (!qobject_cast<QGuiApplication*>(QCoreApplication::instance())) {
+        qWarning() << "copyToClipboard: no GUI application; ignoring";
+        return;
+    }
+    if (QClipboard* clipboard = QGuiApplication::clipboard())
+        clipboard->setText(text);
 }

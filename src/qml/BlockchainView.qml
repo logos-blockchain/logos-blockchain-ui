@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 import Logos.Theme
+import Logos.Controls
 // BlockchainStatus enum (NotStarted/Starting/Running/Stopping/Stopped/Error)
 // declared in BlockchainBackend.rep — registered with QML by the replica
 // factory plugin.
@@ -38,6 +39,23 @@ Rectangle {
     // "<module>/<propertyName>". QML acquires them via logos.model(...).
     readonly property var accountsModel: logos.model("blockchain_ui", "accounts")
     readonly property var logModel: logos.model("blockchain_ui", "logs")
+
+    // Clipboard must be handled here in the UI-host (GUI) process. The backend
+    // .rep source runs in a separate, non-GUI ViewModuleHost subprocess where
+    // QGuiApplication::clipboard() segfaults (process exits with code 11), so
+    // we copy from QML via a hidden TextEdit instead of calling the backend.
+    function copyText(text) {
+        clipboardHelper.text = text || ""
+        clipboardHelper.selectAll()
+        clipboardHelper.copy()
+        clipboardHelper.deselect()
+        clipboardHelper.text = ""
+    }
+
+    TextEdit {
+        id: clipboardHelper
+        visible: false
+    }
 
     QtObject {
         id: _d
@@ -150,7 +168,27 @@ Rectangle {
             }
         }
 
-        // Page 2: Node control, wallet, logs
+        // Page 2: Node control, wallet, logs + Channel Deposit (tabbed)
+        ColumnLayout {
+            spacing: Theme.spacing.medium
+
+            LogosTabBar {
+                id: operationTabBar
+                Layout.fillWidth: true
+                LogosTabButton { text: qsTr("Node & Wallet") }
+                LogosTabButton {
+                    text: qsTr("Channel Deposit")
+                    enabled: root.backend
+                             && root.backend.status === BlockchainBackend.Running
+                }
+            }
+
+            StackLayout {
+                id: operationStack
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                currentIndex: operationTabBar.currentIndex
+
         SplitView {
             orientation: Qt.Vertical
 
@@ -207,7 +245,7 @@ Rectangle {
                         )
                     }
                     onCopyToClipboard: (text) => {
-                        if (root.backend) root.backend.copyToClipboard(text)
+                        root.copyText(text)
                     }
                     onTransferRequested: function(fromKeyHex, toKeyHex, amount) {
                         if (!root.backend) return
@@ -225,6 +263,7 @@ Rectangle {
                             function(error) { walletView.setLeaderClaimResult("Error: " + error) }
                         )
                     }
+                    onRefreshAccountsRequested: if (root.backend) root.backend.refreshAccounts()
                 }
 
                 Item {
@@ -239,7 +278,39 @@ Rectangle {
                 logModel: root.logModel
                 onClearRequested: if (root.backend) root.backend.clearLogs()
                 onCopyToClipboard: (text) => {
-                    if (root.backend) root.backend.copyToClipboard(text)
+                    root.copyText(text)
+                }
+            }
+        }
+
+                ChannelDepositView {
+                    id: channelDepositView
+                    accountsModel: root.accountsModel
+                    nodeRunning: root.backend
+                                 ? root.backend.status === BlockchainBackend.Running
+                                 : false
+
+                    onGetNotesRequested: function(addressHex, optionalTipHex) {
+                        if (!root.backend) return
+                        logos.watch(
+                            root.backend.getNotes(addressHex, optionalTipHex),
+                            function(result) { channelDepositView.setNotesResult(result) },
+                            function(error) { channelDepositView.setNotesResult("Error: " + error) }
+                        )
+                    }
+                    onSubmitRequested: function(channelIdHex, inputNoteIdHexes, metadataBase58, changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex) {
+                        if (!root.backend) return
+                        logos.watch(
+                            root.backend.channelDepositWithNotes(
+                                channelIdHex, inputNoteIdHexes, metadataBase58,
+                                changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex),
+                            function(result) { channelDepositView.setSubmitResult(result) },
+                            function(error) { channelDepositView.setSubmitResult("Error: " + error) }
+                        )
+                    }
+                    onCopyToClipboard: (text) => {
+                        root.copyText(text)
+                    }
                 }
             }
         }
