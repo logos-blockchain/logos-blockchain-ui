@@ -210,6 +210,15 @@ QVariantMap BlockchainBackend::claimLeaderRewards()
         BLOCKCHAIN_MODULE_NAME, "leader_claim")));
 }
 
+QVariantMap BlockchainBackend::getCryptarchiaInfo()
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_cryptarchia_info"))));
+}
+
 void BlockchainBackend::startBlockchain()
 {
     if (!m_blockchainClient) {

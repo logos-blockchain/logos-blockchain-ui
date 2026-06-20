@@ -57,6 +57,34 @@ Rectangle {
         visible: false
     }
 
+    // Live Cryptarchia consensus state, polled while the node runs.
+    property string cryptarchiaInfoJson: ""
+    property string cryptarchiaInfoError: ""
+
+    Timer {
+        id: cryptarchiaTimer
+        interval: 2000
+        repeat: true
+        triggeredOnStart: true
+        running: root.ready && root.backend
+                 && root.backend.status === BlockchainBackend.Running
+        onTriggered: {
+            if (!root.backend) return
+            logos.watch(
+                root.backend.getCryptarchiaInfo(),
+                function(result) {
+                    if (result.success) {
+                        root.cryptarchiaInfoJson = result.value
+                        root.cryptarchiaInfoError = ""
+                    } else {
+                        root.cryptarchiaInfoError = _d.errorText(result.error)
+                    }
+                },
+                function(error) { root.cryptarchiaInfoError = _d.errorText(error) }
+            )
+        }
+    }
+
     QtObject {
         id: _d
         function errorText(message) {
@@ -236,6 +264,14 @@ Rectangle {
                             onStartRequested: if (root.backend) root.backend.startBlockchain()
                             onStopRequested: if (root.backend) root.backend.stopBlockchain()
                             onChangeConfigRequested: _d.currentPage = 0
+                        }
+
+                        CryptarchiaInfoView {
+                            Layout.fillWidth: true
+                            visible: opPage.nodeRunning
+                            infoJson: root.cryptarchiaInfoJson
+                            errorText: root.cryptarchiaInfoError
+                            onCopyToClipboard: (text) => root.copyText(text)
                         }
 
                         Item {

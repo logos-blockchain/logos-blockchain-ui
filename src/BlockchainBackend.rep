@@ -15,6 +15,7 @@ class BlockchainBackend
     SLOT(QVariantMap getBalance(QString addressHex))
     SLOT(QVariantMap transferFunds(QString fromKeyHex, QString toKeyHex, QString amountStr))
     SLOT(QVariantMap claimLeaderRewards())
+    SLOT(QVariantMap getCryptarchiaInfo())
     SLOT(QVariantMap generateConfig(QString outputPath, QStringList initialPeers, int netPort, int blendPort, QString httpAddr, QString externalAddress, bool noPublicIpCheck, int deploymentMode, QString deploymentConfigPath, QString statePath))
     SLOT(QVariantMap getNotes(QString walletAddressHex, QString optionalTipHex))
     SLOT(QVariantMap channelDepositWithNotes(QString channelIdHex, QStringList inputNoteIdHexes, QString metadataBase58, QString changePublicKeyHex, QStringList fundingPublicKeyHexes, QString maxTxFee, QString optionalTipHex))
