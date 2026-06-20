@@ -170,19 +170,32 @@ Rectangle {
             }
         }
 
-        // Page 2: Node control, wallet, logs + Channel Deposit (tabbed)
+        // Page 2: Node information + Wallet operations (tabbed)
         ColumnLayout {
+            id: opPage
             spacing: Theme.spacing.medium
+
+            // Selected operation inside the Operations tab's sidebar nav.
+            //   0 Accounts · 1 Transfer · 2 Leader Rewards · 3 Channel Deposit
+            property int operationIndex: 0
+
+            readonly property bool nodeRunning: root.backend
+                ? root.backend.status === BlockchainBackend.Running
+                : false
+
+            // Channel Deposit requires a running node. If the node stops while
+            // it's selected, fall back to Accounts so the user isn't stranded
+            // on a disabled nav item.
+            onNodeRunningChanged: {
+                if (!nodeRunning && operationIndex === 3)
+                    operationIndex = 0
+            }
 
             LogosTabBar {
                 id: operationTabBar
                 Layout.fillWidth: true
-                LogosTabButton { text: qsTr("Node & Wallet") }
-                LogosTabButton {
-                    text: qsTr("Channel Deposit")
-                    enabled: root.backend
-                             && root.backend.status === BlockchainBackend.Running
-                }
+                LogosTabButton { text: qsTr("Node") }
+                LogosTabButton { text: qsTr("Operations") }
             }
 
             StackLayout {
@@ -191,150 +204,240 @@ Rectangle {
                 Layout.fillHeight: true
                 currentIndex: operationTabBar.currentIndex
 
-        SplitView {
-            orientation: Qt.Vertical
+                // ---- Tab 0: Node information (status + logs) ----
+                SplitView {
+                    orientation: Qt.Vertical
 
-            ColumnLayout {
-                SplitView.fillWidth: true
-                SplitView.minimumHeight: 200
-                spacing: Theme.spacing.large
+                    ColumnLayout {
+                        SplitView.fillWidth: true
+                        SplitView.minimumHeight: 120
+                        spacing: Theme.spacing.large
 
-                StatusConfigView {
-                    Layout.fillWidth: true
-                    statusText: root.backend
-                        ? _d.getStatusString(root.backend.status)
-                        : qsTr("Not Connected")
-                    statusColor: root.backend
-                        ? _d.getStatusColor(root.backend.status)
-                        : Theme.palette.error
-                    userConfig: root.backend ? root.backend.userConfig : ""
-                    deploymentConfig: root.backend ? root.backend.deploymentConfig : ""
-                    useGeneratedConfig: root.backend ? root.backend.useGeneratedConfig : false
-                    canStart: root.backend
-                              && !!root.backend.userConfig
-                              && root.backend.status !== BlockchainBackend.Starting
-                              && root.backend.status !== BlockchainBackend.Stopping
-                    isRunning: root.backend
-                               ? root.backend.status === BlockchainBackend.Running
-                               : false
+                        StatusConfigView {
+                            Layout.fillWidth: true
+                            statusText: root.backend
+                                ? _d.getStatusString(root.backend.status)
+                                : qsTr("Not Connected")
+                            statusColor: root.backend
+                                ? _d.getStatusColor(root.backend.status)
+                                : Theme.palette.error
+                            userConfig: root.backend ? root.backend.userConfig : ""
+                            deploymentConfig: root.backend ? root.backend.deploymentConfig : ""
+                            useGeneratedConfig: root.backend ? root.backend.useGeneratedConfig : false
+                            canStart: root.backend
+                                      && !!root.backend.userConfig
+                                      && root.backend.status !== BlockchainBackend.Starting
+                                      && root.backend.status !== BlockchainBackend.Stopping
+                            isRunning: opPage.nodeRunning
 
-                    onStartRequested: if (root.backend) root.backend.startBlockchain()
-                    onStopRequested: if (root.backend) root.backend.stopBlockchain()
-                    onChangeConfigRequested: _d.currentPage = 0
+                            onStartRequested: if (root.backend) root.backend.startBlockchain()
+                            onStopRequested: if (root.backend) root.backend.stopBlockchain()
+                            onChangeConfigRequested: _d.currentPage = 0
+                        }
+
+                        Item {
+                            Layout.preferredHeight: Theme.spacing.small
+                        }
+                    }
+
+                    LogsView {
+                        SplitView.fillWidth: true
+                        SplitView.minimumHeight: 150
+
+                        logModel: root.logModel
+                        onClearRequested: if (root.backend) root.backend.clearLogs()
+                        onCopyToClipboard: (text) => {
+                            root.copyText(text)
+                        }
+                    }
                 }
 
-                WalletView {
-                    id: walletView
-                    accountsModel: root.accountsModel
+                // ---- Tab 1: Wallet operations (sidebar nav + panels) ----
+                RowLayout {
+                    spacing: Theme.spacing.large
 
-                    onGetBalanceRequested: function(addressHex) {
-                        if (!root.backend) return
-                        logos.watch(
-                            root.backend.getBalance(addressHex),
-                            function(result) {
-                                if (result.success) {
-                                    walletView.lastBalanceErrorAddress = ""
-                                    walletView.lastBalanceError = ""
-                                } else {
-                                    walletView.lastBalanceErrorAddress = addressHex
-                                    walletView.lastBalanceError = _d.errorText(result.error)
-                                }
-                            },
-                            function(error) {
-                                walletView.lastBalanceErrorAddress = addressHex
-                                walletView.lastBalanceError = _d.errorText(error)
+                    // Sidebar navigation
+                    ColumnLayout {
+                        Layout.preferredWidth: 180
+                        Layout.fillHeight: true
+                        Layout.alignment: Qt.AlignTop
+                        spacing: Theme.spacing.small
+
+                        NavItem { label: qsTr("Accounts"); index: 0 }
+                        NavItem { label: qsTr("Transfer"); index: 1 }
+                        NavItem { label: qsTr("Leader Rewards"); index: 2 }
+                        NavItem {
+                            label: qsTr("Channel Deposit")
+                            index: 3
+                            itemEnabled: opPage.nodeRunning
+                        }
+
+                        Item { Layout.fillHeight: true }
+                    }
+
+                    Rectangle {
+                        Layout.preferredWidth: 1
+                        Layout.fillHeight: true
+                        color: Theme.palette.borderSecondary
+                    }
+
+                    // Operation panels
+                    StackLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        currentIndex: opPage.operationIndex
+
+                        AccountsView {
+                            id: accountsView
+                            accountsModel: root.accountsModel
+
+                            onGetBalanceRequested: function(addressHex) {
+                                if (!root.backend) return
+                                logos.watch(
+                                    root.backend.getBalance(addressHex),
+                                    function(result) {
+                                        if (result.success) {
+                                            accountsView.lastBalanceErrorAddress = ""
+                                            accountsView.lastBalanceError = ""
+                                        } else {
+                                            accountsView.lastBalanceErrorAddress = addressHex
+                                            accountsView.lastBalanceError = _d.errorText(result.error)
+                                        }
+                                    },
+                                    function(error) {
+                                        accountsView.lastBalanceErrorAddress = addressHex
+                                        accountsView.lastBalanceError = _d.errorText(error)
+                                    }
+                                )
                             }
-                        )
-                    }
-                    onCopyToClipboard: (text) => {
-                        root.copyText(text)
-                    }
-                    onTransferRequested: function(fromKeyHex, toKeyHex, amount) {
-                        if (!root.backend) return
-                        logos.watch(
-                            root.backend.transferFunds(fromKeyHex, toKeyHex, amount),
-                            function(result) {
-                                if (result.success) {
-                                    walletView.setTransferResult(result.value)
-                                } else {
-                                    walletView.setTransferResult(_d.errorText(result.error))
-                                }
-                            },
-                            function(error) { walletView.setTransferResult(_d.errorText(error)) }
-                        )
-                    }
-                    onClaimLeaderRewardsRequested: function() {
-                        if (!root.backend) return
-                        logos.watch(
-                            root.backend.claimLeaderRewards(),
-                            function(result) {
-                                if (result.success) {
-                                    walletView.setLeaderClaimResult(result.value)
-                                } else {
-                                    walletView.setLeaderClaimResult(_d.errorText(result.error))
-                                }
-                            },
-                            function(error) { walletView.setLeaderClaimResult(_d.errorText(error)) }
-                        )
-                    }
-                    onRefreshAccountsRequested: if (root.backend) root.backend.refreshAccounts()
-                }
+                            onRefreshAccountsRequested: if (root.backend) root.backend.refreshAccounts()
+                            onCopyToClipboard: (text) => {
+                                root.copyText(text)
+                            }
+                        }
 
-                Item {
-                    Layout.preferredHeight: Theme.spacing.small
+                        TransferView {
+                            id: transferView
+                            accountsModel: root.accountsModel
+
+                            onTransferRequested: function(fromKeyHex, toKeyHex, amount) {
+                                if (!root.backend) return
+                                logos.watch(
+                                    root.backend.transferFunds(fromKeyHex, toKeyHex, amount),
+                                    function(result) {
+                                        if (result.success) {
+                                            transferView.setTransferResult(result.value)
+                                        } else {
+                                            transferView.setTransferResult(_d.errorText(result.error))
+                                        }
+                                    },
+                                    function(error) { transferView.setTransferResult(_d.errorText(error)) }
+                                )
+                            }
+                            onCopyToClipboard: (text) => {
+                                root.copyText(text)
+                            }
+                        }
+
+                        LeaderRewardsView {
+                            id: leaderRewardsView
+
+                            onClaimLeaderRewardsRequested: function() {
+                                if (!root.backend) return
+                                logos.watch(
+                                    root.backend.claimLeaderRewards(),
+                                    function(result) {
+                                        if (result.success) {
+                                            leaderRewardsView.setLeaderClaimResult(result.value)
+                                        } else {
+                                            leaderRewardsView.setLeaderClaimResult(_d.errorText(result.error))
+                                        }
+                                    },
+                                    function(error) { leaderRewardsView.setLeaderClaimResult(_d.errorText(error)) }
+                                )
+                            }
+                            onCopyToClipboard: (text) => {
+                                root.copyText(text)
+                            }
+                        }
+
+                        ChannelDepositView {
+                            id: channelDepositView
+                            accountsModel: root.accountsModel
+                            nodeRunning: opPage.nodeRunning
+
+                            onGetNotesRequested: function(addressHex, optionalTipHex) {
+                                if (!root.backend) return
+                                logos.watch(
+                                    root.backend.getNotes(addressHex, optionalTipHex),
+                                    function(result) {
+                                        if (result.success)
+                                            channelDepositView.setNotes(result.value)
+                                        else
+                                            channelDepositView.setNotesError(_d.errorText(result.error))
+                                    },
+                                    function(error) { channelDepositView.setNotesError(_d.errorText(error)) }
+                                )
+                            }
+                            onSubmitRequested: function(channelIdHex, inputNoteIdHexes, metadataBase58, changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex) {
+                                if (!root.backend) return
+                                logos.watch(
+                                    root.backend.channelDepositWithNotes(
+                                        channelIdHex, inputNoteIdHexes, metadataBase58,
+                                        changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex),
+                                    function(result) {
+                                        if (result.success)
+                                            channelDepositView.setSubmitResult(true, result.value)
+                                        else
+                                            channelDepositView.setSubmitResult(false, _d.errorText(result.error))
+                                    },
+                                    function(error) { channelDepositView.setSubmitResult(false, _d.errorText(error)) }
+                                )
+                            }
+                            onCopyToClipboard: (text) => {
+                                root.copyText(text)
+                            }
+                        }
+                    }
                 }
             }
 
-            LogsView {
-                SplitView.fillWidth: true
-                SplitView.minimumHeight: 150
+            // Sidebar nav entry used by the Operations tab.
+            component NavItem: Rectangle {
+                property string label
+                property int index
+                property bool itemEnabled: true
 
-                logModel: root.logModel
-                onClearRequested: if (root.backend) root.backend.clearLogs()
-                onCopyToClipboard: (text) => {
-                    root.copyText(text)
+                Layout.fillWidth: true
+                Layout.preferredHeight: 40
+                radius: Theme.spacing.radiusSmall
+                color: opPage.operationIndex === index
+                    ? Theme.palette.backgroundTertiary
+                    : (navMouse.containsMouse ? Theme.palette.backgroundSecondary : "transparent")
+                opacity: itemEnabled ? 1.0 : 0.4
+
+                LogosText {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: Theme.spacing.medium
+                    anchors.rightMargin: Theme.spacing.medium
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: label
+                    elide: Text.ElideRight
+                    font.pixelSize: Theme.typography.secondaryText
+                    font.bold: opPage.operationIndex === index
+                    color: opPage.operationIndex === index
+                        ? Theme.palette.primary
+                        : Theme.palette.text
                 }
-            }
-        }
 
-                ChannelDepositView {
-                    id: channelDepositView
-                    accountsModel: root.accountsModel
-                    nodeRunning: root.backend
-                                 ? root.backend.status === BlockchainBackend.Running
-                                 : false
-
-                    onGetNotesRequested: function(addressHex, optionalTipHex) {
-                        if (!root.backend) return
-                        logos.watch(
-                            root.backend.getNotes(addressHex, optionalTipHex),
-                            function(result) {
-                                if (result.success)
-                                    channelDepositView.setNotes(result.value)
-                                else
-                                    channelDepositView.setNotesError(_d.errorText(result.error))
-                            },
-                            function(error) { channelDepositView.setNotesError(_d.errorText(error)) }
-                        )
-                    }
-                    onSubmitRequested: function(channelIdHex, inputNoteIdHexes, metadataBase58, changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex) {
-                        if (!root.backend) return
-                        logos.watch(
-                            root.backend.channelDepositWithNotes(
-                                channelIdHex, inputNoteIdHexes, metadataBase58,
-                                changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex),
-                            function(result) {
-                                if (result.success)
-                                    channelDepositView.setSubmitResult(true, result.value)
-                                else
-                                    channelDepositView.setSubmitResult(false, _d.errorText(result.error))
-                            },
-                            function(error) { channelDepositView.setSubmitResult(false, _d.errorText(error)) }
-                        )
-                    }
-                    onCopyToClipboard: (text) => {
-                        root.copyText(text)
-                    }
+                MouseArea {
+                    id: navMouse
+                    anchors.fill: parent
+                    enabled: itemEnabled
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: opPage.operationIndex = index
                 }
             }
         }
