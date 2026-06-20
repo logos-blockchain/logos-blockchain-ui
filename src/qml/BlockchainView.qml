@@ -183,19 +183,22 @@ Rectangle {
                 ? root.backend.status === BlockchainBackend.Running
                 : false
 
-            // Channel Deposit requires a running node. If the node stops while
-            // it's selected, fall back to Accounts so the user isn't stranded
-            // on a disabled nav item.
+            // Wallet operations require a running node. If the node stops while
+            // the Operations tab is open, fall back to the Node tab so the user
+            // isn't stranded on a disabled tab.
             onNodeRunningChanged: {
-                if (!nodeRunning && operationIndex === 3)
-                    operationIndex = 0
+                if (!nodeRunning)
+                    operationTabBar.currentIndex = 0
             }
 
             LogosTabBar {
                 id: operationTabBar
                 Layout.fillWidth: true
                 LogosTabButton { text: qsTr("Node") }
-                LogosTabButton { text: qsTr("Operations") }
+                LogosTabButton {
+                    text: qsTr("Operations")
+                    enabled: opPage.nodeRunning
+                }
             }
 
             StackLayout {
@@ -266,11 +269,7 @@ Rectangle {
                         NavItem { label: qsTr("Accounts"); index: 0 }
                         NavItem { label: qsTr("Transfer"); index: 1 }
                         NavItem { label: qsTr("Leader Rewards"); index: 2 }
-                        NavItem {
-                            label: qsTr("Channel Deposit")
-                            index: 3
-                            itemEnabled: opPage.nodeRunning
-                        }
+                        NavItem { label: qsTr("Channel Deposit"); index: 3 }
 
                         Item { Layout.fillHeight: true }
                     }
@@ -406,7 +405,6 @@ Rectangle {
             component NavItem: Rectangle {
                 property string label
                 property int index
-                property bool itemEnabled: true
 
                 Layout.fillWidth: true
                 Layout.preferredHeight: 40
@@ -414,7 +412,6 @@ Rectangle {
                 color: opPage.operationIndex === index
                     ? Theme.palette.backgroundTertiary
                     : (navMouse.containsMouse ? Theme.palette.backgroundSecondary : "transparent")
-                opacity: itemEnabled ? 1.0 : 0.4
 
                 LogosText {
                     anchors.left: parent.left
@@ -434,7 +431,6 @@ Rectangle {
                 MouseArea {
                     id: navMouse
                     anchors.fill: parent
-                    enabled: itemEnabled
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: opPage.operationIndex = index
