@@ -514,31 +514,29 @@ Rectangle {
                             : Theme.palette.text
                     }
 
-                    // Pin toggle (Accounts only). A 📌 that lights up when
-                    // pinned; its MouseArea sits above the nav background so a
-                    // click toggles the pin without also selecting the item.
-                    Item {
+                    // Pin toggle (Accounts only). A flat icon button matching
+                    // the other SVG icons; the pin colours up when pinned. Its
+                    // own click handling stops the nav-background MouseArea
+                    // below from also selecting the item.
+                    Button {
                         visible: pinnable
                         Layout.alignment: Qt.AlignVCenter
-                        Layout.preferredWidth: 24
-                        Layout.preferredHeight: 24
+                        Layout.preferredWidth: 28
+                        Layout.preferredHeight: 28
+                        display: AbstractButton.IconOnly
+                        flat: true
+                        padding: 4
+                        icon.source: Qt.resolvedUrl("icons/pin.svg")
+                        icon.width: 18
+                        icon.height: 18
+                        icon.color: opPage.accountsPinned
+                            ? Theme.palette.primary
+                            : Theme.palette.textTertiary
+                        onClicked: opPage.accountsPinned = !opPage.accountsPinned
 
-                        LogosText {
-                            anchors.centerIn: parent
-                            text: "📌"
-                            font.pixelSize: 15
-                            opacity: opPage.accountsPinned ? 1.0 : 0.4
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: opPage.accountsPinned = !opPage.accountsPinned
-                            ToolTip.visible: containsMouse
-                            ToolTip.text: opPage.accountsPinned
-                                ? qsTr("Unpin accounts") : qsTr("Pin accounts")
-                        }
+                        ToolTip.visible: hovered
+                        ToolTip.text: opPage.accountsPinned
+                            ? qsTr("Unpin accounts") : qsTr("Pin accounts")
                     }
                 }
             }
