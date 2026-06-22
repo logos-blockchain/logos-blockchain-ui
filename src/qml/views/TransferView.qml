@@ -40,10 +40,18 @@ ColumnLayout {
             anchors.margins: Theme.spacing.large
             spacing: Theme.spacing.small
 
-            LogosText {
-                text: qsTr("Transfer funds")
-                font.pixelSize: Theme.typography.secondaryText
-                font.bold: true
+            RowLayout {
+                Layout.fillWidth: true
+                LogosText {
+                    text: qsTr("Transfer funds")
+                    font.pixelSize: Theme.typography.secondaryText
+                    font.bold: true
+                }
+                Item { Layout.fillWidth: true }
+                InfoButton {
+                    Layout.alignment: Qt.AlignVCenter
+                    text: qsTr("Send funds between addresses. Choose a source address (its balance is shown), enter the recipient key and amount, then press Send.")
+                }
             }
 
             StyledAddressComboBox {

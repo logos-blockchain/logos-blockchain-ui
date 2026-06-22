@@ -86,6 +86,10 @@ ColumnLayout {
                     font.pixelSize: Theme.typography.secondaryText
                     color: Theme.palette.textSecondary
                 }
+                InfoButton {
+                    Layout.alignment: Qt.AlignVCenter
+                    text: qsTr("Claim block-leader rewards. The list shows your pending claimable vouchers (refreshed each block). Claim submits a claim transaction; the protocol selects which voucher it consumes.")
+                }
             }
 
             // Horizontally-sliding list of voucher cards.
