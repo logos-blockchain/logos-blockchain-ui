@@ -207,6 +207,10 @@ Rectangle {
             //   0 Accounts · 1 Transfer · 2 Leader Rewards · 3 Channel Deposit
             property int operationIndex: 0
 
+            // When pinned, Accounts stays visible (stacked on top) even while a
+            // different operation is selected.
+            property bool accountsPinned: false
+
             readonly property bool nodeRunning: root.backend
                 ? root.backend.status === BlockchainBackend.Running
                 : false
@@ -292,17 +296,21 @@ Rectangle {
                 }
 
                 // ---- Tab 1: Wallet operations (sidebar nav + panels) ----
-                RowLayout {
-                    spacing: Theme.spacing.large
-
+                // Anchor-based (not a Layout): StackLayout force-fills this Item,
+                // and anchors give the SplitView explicit geometry. The panels
+                // have ~zero implicit height, so a plain Layout would collapse
+                // them — anchors + SplitView.fillHeight avoid that.
+                Item {
                     // Sidebar navigation
                     ColumnLayout {
-                        Layout.preferredWidth: 180
-                        Layout.fillHeight: true
-                        Layout.alignment: Qt.AlignTop
+                        id: opSidebar
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 180
                         spacing: Theme.spacing.small
 
-                        NavItem { label: qsTr("Accounts"); index: 0 }
+                        NavItem { label: qsTr("Accounts"); index: 0; pinnable: true }
                         NavItem { label: qsTr("Transfer"); index: 1 }
                         NavItem { label: qsTr("Leader Rewards"); index: 2 }
                         NavItem { label: qsTr("Channel Deposit"); index: 3 }
@@ -311,19 +319,36 @@ Rectangle {
                     }
 
                     Rectangle {
-                        Layout.preferredWidth: 1
-                        Layout.fillHeight: true
+                        id: opDivider
+                        anchors.left: opSidebar.right
+                        anchors.leftMargin: Theme.spacing.large
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 1
                         color: Theme.palette.borderSecondary
                     }
 
-                    // Operation panels
-                    StackLayout {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        currentIndex: opPage.operationIndex
+                    // Operation panels. Accounts lives outside the stack so it
+                    // can stay pinned on top while another operation is shown;
+                    // a vertical SplitView keeps both visible and resizable.
+                    SplitView {
+                        anchors.left: opDivider.right
+                        anchors.leftMargin: Theme.spacing.large
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        orientation: Qt.Vertical
 
                         AccountsView {
                             id: accountsView
+                            visible: opPage.operationIndex === 0 || opPage.accountsPinned
+                            // Fills when it's the sole panel; when pinned beside
+                            // an operation it's a resizable 260px strip on top
+                            // (the operation below is the SplitView filler).
+                            SplitView.fillHeight: opPage.operationIndex === 0
+                            SplitView.preferredHeight: 260
+                            SplitView.minimumHeight: 120
+
                             accountsModel: root.accountsModel
 
                             onGetBalanceRequested: function(addressHex) {
@@ -350,6 +375,15 @@ Rectangle {
                                 root.copyText(text)
                             }
                         }
+
+                        // Transfer / Leader Rewards / Channel Deposit.
+                        // operationIndex 1,2,3 maps to stack index 0,1,2.
+                        StackLayout {
+                            id: otherOpsStack
+                            SplitView.fillHeight: true
+                            SplitView.minimumHeight: 150
+                            visible: opPage.operationIndex !== 0
+                            currentIndex: Math.max(0, opPage.operationIndex - 1)
 
                         TransferView {
                             id: transferView
@@ -433,14 +467,18 @@ Rectangle {
                                 root.copyText(text)
                             }
                         }
+                        }
                     }
                 }
             }
 
-            // Sidebar nav entry used by the Operations tab.
+            // Sidebar nav entry used by the Operations tab. `pinnable` adds a
+            // pin toggle on the right (used by Accounts) that keeps the panel
+            // visible alongside other operations.
             component NavItem: Rectangle {
                 property string label
                 property int index
+                property bool pinnable: false
 
                 Layout.fillWidth: true
                 Layout.preferredHeight: 40
@@ -449,27 +487,59 @@ Rectangle {
                     ? Theme.palette.backgroundTertiary
                     : (navMouse.containsMouse ? Theme.palette.backgroundSecondary : "transparent")
 
-                LogosText {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.leftMargin: Theme.spacing.medium
-                    anchors.rightMargin: Theme.spacing.medium
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: label
-                    elide: Text.ElideRight
-                    font.pixelSize: Theme.typography.secondaryText
-                    font.bold: opPage.operationIndex === index
-                    color: opPage.operationIndex === index
-                        ? Theme.palette.primary
-                        : Theme.palette.text
-                }
-
+                // Background click selects the operation. Sits below the row so
+                // the pin button on top captures its own clicks.
                 MouseArea {
                     id: navMouse
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: opPage.operationIndex = index
+                }
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: Theme.spacing.medium
+                    anchors.rightMargin: Theme.spacing.small
+                    spacing: Theme.spacing.small
+
+                    LogosText {
+                        Layout.fillWidth: true
+                        text: label
+                        elide: Text.ElideRight
+                        font.pixelSize: Theme.typography.secondaryText
+                        font.bold: opPage.operationIndex === index
+                        color: opPage.operationIndex === index
+                            ? Theme.palette.primary
+                            : Theme.palette.text
+                    }
+
+                    // Pin toggle (Accounts only). A 📌 that lights up when
+                    // pinned; its MouseArea sits above the nav background so a
+                    // click toggles the pin without also selecting the item.
+                    Item {
+                        visible: pinnable
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.preferredWidth: 24
+                        Layout.preferredHeight: 24
+
+                        LogosText {
+                            anchors.centerIn: parent
+                            text: "📌"
+                            font.pixelSize: 15
+                            opacity: opPage.accountsPinned ? 1.0 : 0.4
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: opPage.accountsPinned = !opPage.accountsPinned
+                            ToolTip.visible: containsMouse
+                            ToolTip.text: opPage.accountsPinned
+                                ? qsTr("Unpin accounts") : qsTr("Pin accounts")
+                        }
+                    }
                 }
             }
         }
