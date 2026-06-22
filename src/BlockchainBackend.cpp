@@ -219,6 +219,17 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_cryptarchia_info"))));
 }
 
+QVariantMap BlockchainBackend::getPeerId()
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    // Derived from the node key in the user config; available without the node
+    // running.
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_peer_id"), userConfig())));
+}
+
 void BlockchainBackend::startBlockchain()
 {
     if (!m_blockchainClient) {

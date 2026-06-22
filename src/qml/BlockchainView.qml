@@ -25,8 +25,10 @@ Rectangle {
     Connections {
         target: logos
         function onViewModuleReadyChanged(moduleName, isReady) {
-            if (moduleName === "blockchain_ui")
+            if (moduleName === "blockchain_ui") {
                 root.ready = isReady && root.backend !== null
+                if (root.ready) root.refreshPeerId()
+            }
         }
     }
 
@@ -34,6 +36,7 @@ Rectangle {
         // Cover the case where the replica is already Valid by the time
         // we attach the Connections handler.
         root.ready = root.backend !== null && logos.isViewModuleReady("blockchain_ui")
+        if (root.ready) root.refreshPeerId()
     }
 
     // Graceful shutdown: if the window is closed while the node is running,
@@ -91,6 +94,29 @@ Rectangle {
     TextEdit {
         id: clipboardHelper
         visible: false
+    }
+
+    // Self libp2p peer id, derived from the selected user config (no running
+    // node required). Refreshed when ready and whenever the config changes.
+    property string peerId: ""
+
+    function refreshPeerId() {
+        if (!root.backend || !root.backend.userConfig) {
+            root.peerId = ""
+            return
+        }
+        logos.watch(
+            root.backend.getPeerId(),
+            function(result) { root.peerId = result.success ? result.value : "" },
+            function(error) { root.peerId = "" }
+        )
+    }
+
+    Connections {
+        target: root.backend
+        enabled: root.backend !== null
+        ignoreUnknownSignals: true
+        function onUserConfigChanged() { root.refreshPeerId() }
     }
 
     // Live Cryptarchia consensus state, polled while the node runs.
@@ -304,6 +330,12 @@ Rectangle {
                             onStartRequested: if (root.backend) root.backend.startBlockchain()
                             onStopRequested: if (root.backend) root.backend.stopBlockchain()
                             onChangeConfigRequested: _d.currentPage = 0
+                        }
+
+                        NodeInfoView {
+                            Layout.fillWidth: true
+                            peerId: root.peerId
+                            onCopyToClipboard: (text) => root.copyText(text)
                         }
 
                         CryptarchiaInfoView {

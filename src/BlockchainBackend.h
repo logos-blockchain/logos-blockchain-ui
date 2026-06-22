@@ -46,6 +46,7 @@ public slots:
     QVariantMap transferFunds(QString fromKeyHex, QString toKeyHex, QString amountStr) override;
     QVariantMap claimLeaderRewards() override;
     QVariantMap getCryptarchiaInfo() override;
+    QVariantMap getPeerId() override;
     QVariantMap generateConfig(QString outputPath, QStringList initialPeers, int netPort,
                        int blendPort, QString httpAddr, QString externalAddress,
                        bool noPublicIpCheck, int deploymentMode,

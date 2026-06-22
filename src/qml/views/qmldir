@@ -2,6 +2,7 @@ module views
 StatusConfigView 1.0 StatusConfigView.qml
 BlocksView 1.0 BlocksView.qml
 CryptarchiaInfoView 1.0 CryptarchiaInfoView.qml
+NodeInfoView 1.0 NodeInfoView.qml
 AccountsView 1.0 AccountsView.qml
 TransferView 1.0 TransferView.qml
 LeaderRewardsView 1.0 LeaderRewardsView.qml
