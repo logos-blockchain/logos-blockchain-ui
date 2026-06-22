@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 
 import Logos.Theme
 import Logos.Controls
@@ -33,6 +34,41 @@ Rectangle {
         // Cover the case where the replica is already Valid by the time
         // we attach the Connections handler.
         root.ready = root.backend !== null && logos.isViewModuleReady("blockchain_ui")
+    }
+
+    // Graceful shutdown: if the window is closed while the node is running,
+    // veto the close, stop the node, then close once it has stopped.
+    property bool quitting: false
+
+    function _nodeBusy() {
+        return root.backend
+            && (root.backend.status === BlockchainBackend.Running
+                || root.backend.status === BlockchainBackend.Starting
+                || root.backend.status === BlockchainBackend.Stopping)
+    }
+
+    Connections {
+        target: root.Window.window
+        enabled: root.Window.window !== null
+        ignoreUnknownSignals: true
+        function onClosing(close) {
+            if (!root.quitting && root._nodeBusy()) {
+                root.quitting = true
+                close.accepted = false
+                root.backend.stopBlockchain()
+            }
+        }
+    }
+
+    // Once the stop initiated above completes, finish closing the window.
+    Connections {
+        target: root.backend
+        enabled: root.quitting && root.backend !== null
+        ignoreUnknownSignals: true
+        function onStatusChanged() {
+            if (root.quitting && !root._nodeBusy() && root.Window.window)
+                root.Window.window.close()
+        }
     }
 
     // Models live on the C++ backend and are auto-remoted by ui-host as
