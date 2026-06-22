@@ -47,6 +47,7 @@ public slots:
     QVariantMap claimLeaderRewards() override;
     QVariantMap getCryptarchiaInfo() override;
     QVariantMap getPeerId() override;
+    QVariantMap getClaimableVouchers() override;
     QVariantMap generateConfig(QString outputPath, QStringList initialPeers, int netPort,
                        int blendPort, QString httpAddr, QString externalAddress,
                        bool noPublicIpCheck, int deploymentMode,

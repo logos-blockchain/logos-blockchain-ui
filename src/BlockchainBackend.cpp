@@ -230,6 +230,15 @@ QVariantMap BlockchainBackend::getPeerId()
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_peer_id"), userConfig())));
 }
 
+QVariantMap BlockchainBackend::getClaimableVouchers()
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("wallet_get_claimable_vouchers"))));
+}
+
 void BlockchainBackend::startBlockchain()
 {
     if (!m_blockchainClient) {

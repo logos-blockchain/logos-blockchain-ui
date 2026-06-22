@@ -147,6 +147,39 @@ Rectangle {
         }
     }
 
+    // Wallet's claimable ("pending") vouchers. Auto-refreshed on every incoming
+    // block, and once when the node starts running.
+    property string claimableVouchersJson: ""
+
+    function refreshClaimableVouchers() {
+        if (!root.backend || root.backend.status !== BlockchainBackend.Running)
+            return
+        logos.watch(
+            root.backend.getClaimableVouchers(),
+            function(result) { if (result.success) root.claimableVouchersJson = result.value },
+            function(error) { /* keep last known list on transient errors */ }
+        )
+    }
+
+    // Incoming blocks arrive as row insertions on the remoted block model.
+    Connections {
+        target: root.blockModel
+        enabled: root.blockModel !== null
+        ignoreUnknownSignals: true
+        function onRowsInserted() { root.refreshClaimableVouchers() }
+    }
+
+    // Initial load when the node reaches Running (before the next block).
+    Connections {
+        target: root.backend
+        enabled: root.backend !== null
+        ignoreUnknownSignals: true
+        function onStatusChanged() {
+            if (root.backend.status === BlockchainBackend.Running)
+                root.refreshClaimableVouchers()
+        }
+    }
+
     QtObject {
         id: _d
         function errorText(message) {
@@ -478,6 +511,7 @@ Rectangle {
 
                         LeaderRewardsView {
                             id: leaderRewardsView
+                            vouchersJson: root.claimableVouchersJson
 
                             onClaimLeaderRewardsRequested: function() {
                                 if (!root.backend) return
@@ -489,6 +523,8 @@ Rectangle {
                                         } else {
                                             leaderRewardsView.setLeaderClaimResult(_d.errorText(result.error))
                                         }
+                                        // Reflect the claim in the pending list.
+                                        root.refreshClaimableVouchers()
                                     },
                                     function(error) { leaderRewardsView.setLeaderClaimResult(_d.errorText(error)) }
                                 )
