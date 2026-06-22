@@ -66,10 +66,31 @@ ColumnLayout {
         readonly property int stepCount: 4
         property string notesTip: ""
 
+        // Address whose notes are currently loaded. Selecting/entering a
+        // different address clears the old notes and loads the new ones.
+        property string loadedAddress: ""
+
         // result state
         property bool resultPending: false
         property bool resultSuccess: false
         property string resultText: ""
+
+        // Clear any loaded notes and (re)load for `addr` — but only when it
+        // actually differs from what's already loaded.
+        function loadNotesFor(addr) {
+            var a = (addr || "").trim()
+            if (a === "" || a === loadedAddress)
+                return
+            loadedAddress = a
+            noteSelector.clearSelection()
+            noteSelector.notes = []
+            noteSelector.errorText = ""
+            notesTip = ""
+            if (!root.nodeRunning)
+                return
+            root.setNotesLoading()
+            root.getNotesRequested(a, "")
+        }
 
         function fundingKeyList() {
             return fundingKeysArea.text.split("\n")
@@ -143,6 +164,8 @@ ColumnLayout {
             noteSelector.clearSelection()
             noteSelector.notes = []
             noteSelector.errorText = ""
+            walletField.text = ""
+            loadedAddress = ""
             channelIdField.text = ""
             changeKeyField.text = ""
             fundingKeysArea.text = ""
@@ -224,19 +247,23 @@ ColumnLayout {
                     model: root.accountsModel
                     textRole: "address"
                     currentIndex: -1
-                    onActivated: function(index) { walletField.text = currentText }
+                    // Selecting a (different) known address loads its notes.
+                    onActivated: function(index) {
+                        walletField.text = currentText
+                        d.loadNotesFor(currentText)
+                    }
                 }
                 LogosTextField {
                     id: walletField
                     Layout.fillWidth: true
                     placeholderText: qsTr("Wallet address hex")
-                }
-                LogosButton {
-                    text: qsTr("Load notes")
-                    enabled: root.nodeRunning && walletField.text.trim().length > 0
-                    onClicked: {
-                        root.setNotesLoading()
-                        root.getNotesRequested(walletField.text.trim(), "")
+
+                    // LogosTextField has no editingFinished; reach the inner
+                    // TextInput. Manually entered address loads on commit
+                    // (Enter / focus out).
+                    Connections {
+                        target: walletField.textInput
+                        function onEditingFinished() { d.loadNotesFor(walletField.text) }
                     }
                 }
             }

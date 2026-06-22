@@ -115,6 +115,9 @@ ColumnLayout {
         Layout.fillWidth: true
         padding: Theme.spacing.large
         editable: true
+        // Balance of the selected row, shown read-only in the closed box (the
+        // editable text holds only the address — it's used as the transfer key).
+        valueRole: "balance"
         font.pixelSize: Theme.typography.secondaryText
 
         background: Rectangle {
@@ -140,7 +143,8 @@ ColumnLayout {
                 id: comboTextField
                 anchors.fill: parent
                 leftPadding: 0
-                rightPadding: comboControl.count > 0 ? comboIndicator.width + Theme.spacing.small : Theme.spacing.small
+                rightPadding: (comboControl.count > 0 ? comboIndicator.width + Theme.spacing.small : Theme.spacing.small)
+                              + (balanceLabel.visible ? balanceLabel.width + Theme.spacing.small : 0)
                 topPadding: 0
                 bottomPadding: 0
                 verticalAlignment: Text.AlignVCenter
@@ -150,6 +154,17 @@ ColumnLayout {
                 selectByMouse: true
                 color: Theme.palette.text
                 background: Item { }
+            }
+            LogosText {
+                id: balanceLabel
+                anchors.right: parent.right
+                anchors.rightMargin: (comboControl.count > 0 ? comboIndicator.width + Theme.spacing.small : 0)
+                                     + Theme.spacing.small
+                anchors.verticalCenter: parent.verticalCenter
+                visible: comboControl.currentIndex >= 0 && text.length > 0
+                text: comboControl.currentValue || ""
+                font.pixelSize: Theme.typography.secondaryText
+                color: Theme.palette.textSecondary
             }
             MouseArea {
                 anchors.fill: parent
@@ -163,15 +178,26 @@ ColumnLayout {
         delegate: ItemDelegate {
             id: comboDelegate
             width: comboControl.width
-            contentItem: LogosText {
-                width: parent.width
-                height: contentHeight + Theme.spacing.large
-                font.pixelSize: Theme.typography.secondaryText
-                font.bold: true
-                text: (typeof model.address !== "undefined" ? model.address : modelData) || ""
-                elide: Text.ElideMiddle
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
+            contentItem: RowLayout {
+                spacing: Theme.spacing.small
+                LogosText {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: implicitHeight + Theme.spacing.large
+                    font.pixelSize: Theme.typography.secondaryText
+                    font.bold: true
+                    text: (typeof model.address !== "undefined" ? model.address : modelData) || ""
+                    elide: Text.ElideMiddle
+                    horizontalAlignment: Text.AlignLeft
+                    verticalAlignment: Text.AlignVCenter
+                }
+                LogosText {
+                    visible: (typeof model.balance !== "undefined") && (model.balance || "").length > 0
+                    text: model.balance || ""
+                    font.pixelSize: Theme.typography.secondaryText
+                    color: Theme.palette.textSecondary
+                    horizontalAlignment: Text.AlignRight
+                    verticalAlignment: Text.AlignVCenter
+                }
             }
             background: Rectangle {
                 color: comboDelegate.highlighted ?
