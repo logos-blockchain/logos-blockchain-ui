@@ -117,6 +117,9 @@ Rectangle {
             }
 
             LogosButton {
+                // Config can't be changed while the node is running — hide the
+                // button entirely (not just disable it) in that state.
+                visible: !root.isRunning
                 Layout.alignment: Qt.AlignHCenter
                 Layout.preferredWidth: 100
                 Layout.preferredHeight: 40
