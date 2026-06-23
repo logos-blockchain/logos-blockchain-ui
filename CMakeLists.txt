@@ -18,8 +18,8 @@ logos_module(
         src/BlockchainBackend.cpp
         src/AccountsModel.h
         src/AccountsModel.cpp
-        src/LogModel.h
-        src/LogModel.cpp
+        src/BlockModel.h
+        src/BlockModel.cpp
     FIND_PACKAGES
         Qt6Gui
     LINK_LIBRARIES

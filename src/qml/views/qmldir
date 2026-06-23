@@ -1,7 +1,11 @@
 module views
 StatusConfigView 1.0 StatusConfigView.qml
-LogsView 1.0 LogsView.qml
-WalletView 1.0 WalletView.qml
+BlocksView 1.0 BlocksView.qml
+CryptarchiaInfoView 1.0 CryptarchiaInfoView.qml
+NodeInfoView 1.0 NodeInfoView.qml
+AccountsView 1.0 AccountsView.qml
+TransferView 1.0 TransferView.qml
+LeaderRewardsView 1.0 LeaderRewardsView.qml
 GenerateConfigView 1.0 GenerateConfigView.qml
 ConfigChoiceView 1.0 ConfigChoiceView.qml
 SetConfigPathView 1.0 SetConfigPathView.qml

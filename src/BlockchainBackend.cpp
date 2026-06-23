@@ -119,7 +119,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     : BlockchainBackendSimpleSource(parent)
     , m_logosAPI(logosAPI)
     , m_accountsModel(new AccountsModel(this))
-    , m_logModel(new LogModel(this))
+    , m_blockModel(new BlockModel(this))
 {
     setStatus(NotStarted);
     setUseGeneratedConfig(false);
@@ -185,13 +185,8 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
             [this](const QString&, const QVariantList& data) {
                 const QString timestamp =
                     QDateTime::currentDateTime().toString("HH:mm:ss");
-                QString line;
-                if (!data.isEmpty())
-                    line = QString("[%1] New block: %2")
-                               .arg(timestamp, data.first().toString());
-                else
-                    line = QString("[%1] New block (no data)").arg(timestamp);
-                m_logModel->append(line);
+                const QString raw = data.isEmpty() ? QString() : data.first().toString();
+                m_blockModel->appendRaw(timestamp, raw);
             });
     } else {
         setError(QStringLiteral("Failed to subscribe to events"));
@@ -213,6 +208,35 @@ QVariantMap BlockchainBackend::claimLeaderRewards()
 
     return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "leader_claim")));
+}
+
+QVariantMap BlockchainBackend::getCryptarchiaInfo()
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_cryptarchia_info"))));
+}
+
+QVariantMap BlockchainBackend::getPeerId()
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    // Derived from the node key in the user config; available without the node
+    // running.
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_peer_id"), userConfig())));
+}
+
+QVariantMap BlockchainBackend::getClaimableVouchers()
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("wallet_get_claimable_vouchers"))));
 }
 
 void BlockchainBackend::startBlockchain()
@@ -423,9 +447,9 @@ QVariantMap BlockchainBackend::channelDepositWithNotes(
         args)));
 }
 
-void BlockchainBackend::clearLogs()
+void BlockchainBackend::clearBlocks()
 {
-    m_logModel->clear();
+    m_blockModel->clear();
 }
 
 void BlockchainBackend::copyToClipboard(QString text)
