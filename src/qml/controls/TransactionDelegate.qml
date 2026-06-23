@@ -27,6 +27,10 @@ ColumnLayout {
         ? parsed.mantle_tx.ops : []
     readonly property var proofs: (parsed && parsed.ops_proofs) ? parsed.ops_proofs : []
 
+    // Transaction id, if the block payload includes one. Falls back to the
+    // positional "Transaction N" label when absent.
+    readonly property string txId: (parsed && parsed.id) ? String(parsed.id) : ""
+
     spacing: Theme.spacing.tiny
 
     function safeParse(s) {
@@ -48,14 +52,6 @@ ColumnLayout {
         }
     }
 
-    function opSummary() {
-        if (parseFailed) return qsTr("unparsed")
-        if (!ops.length) return qsTr("no ops")
-        var names = []
-        for (var i = 0; i < ops.length; i++) names.push(opName(ops[i].opcode))
-        return names.join(", ")
-    }
-
     function pretty(v) {
         try { return JSON.stringify(v, null, 2) } catch (e) { return String(v) }
     }
@@ -71,20 +67,25 @@ ColumnLayout {
         Layout.fillWidth: true
         spacing: Theme.spacing.small
         LogosText {
-            text: (txRoot.open ? "▾ " : "▸ ") + qsTr("Transaction %1").arg(txRoot.idx + 1)
+            text: txRoot.open ? "▾" : "▸"
             font.pixelSize: Theme.typography.secondaryText
-            font.bold: true
+            color: Theme.palette.textSecondary
             TapHandler { onTapped: txRoot.open = !txRoot.open }
         }
         LogosText {
+            // Show the tx id when present, else the positional label.
             Layout.fillWidth: true
-            text: txRoot.opSummary()
-            elide: Text.ElideRight
-            color: Theme.palette.textSecondary
+            text: txRoot.txId !== "" ? txRoot.txId : qsTr("Transaction %1").arg(txRoot.idx + 1)
+            elide: Text.ElideMiddle
             font.pixelSize: Theme.typography.secondaryText
+            font.bold: true
+            font.family: txRoot.txId !== "" ? "monospace" : Theme.typography.publicSans
             TapHandler { onTapped: txRoot.open = !txRoot.open }
         }
-        LogosCopyButton { onCopyText: txRoot.copyToClipboard(txRoot.json) }
+        LogosCopyButton {
+            // Copy the tx id when available, otherwise the full tx JSON.
+            onCopyText: txRoot.copyToClipboard(txRoot.txId !== "" ? txRoot.txId : txRoot.json)
+        }
     }
 
     // ---- Body ----
