@@ -21,17 +21,17 @@
         "logos-module-builder": "logos-module-builder"
       },
       "locked": {
-        "lastModified": 1782217354,
-        "narHash": "sha256-pUt/GLJRhqj4Ap7WzGJtOVqlil1FF5s2NoCxPuAgt18=",
+        "lastModified": 1782371074,
+        "narHash": "sha256-ugYi1CLD3RyMXIWVPoQvoMsCo5HNm7Hu9L3Wgcu2OyE=",
         "owner": "logos-blockchain",
         "repo": "logos-blockchain-module",
-        "rev": "4c8df124929c6e86d21e2f0db50a99dedee901b3",
+        "rev": "b9d71177125a760526a5df7948c4e0a67a1716ac",
         "type": "github"
       },
       "original": {
         "owner": "logos-blockchain",
         "repo": "logos-blockchain-module",
-        "rev": "4c8df124929c6e86d21e2f0db50a99dedee901b3",
+        "rev": "b9d71177125a760526a5df7948c4e0a67a1716ac",
         "type": "github"
       }
     },
@@ -44,16 +44,16 @@
         "rust-rapidsnark": "rust-rapidsnark"
       },
       "locked": {
-        "lastModified": 1782212034,
-        "narHash": "sha256-IcU+c3YokqSmv4huTHZsBUhsen8lLs3wGvtaMWfQths=",
+        "lastModified": 1782334675,
+        "narHash": "sha256-EYDWycdTnS6krTf91Ot1lyceEoa5jiniNZRF1+Ddpnw=",
         "owner": "logos-blockchain",
         "repo": "logos-blockchain",
-        "rev": "113faae6fd5f68aa70e3cece4fa54f8522c95eec",
+        "rev": "58d71393cb7c5e8d425f54b09f2f28e0d9905fdc",
         "type": "github"
       },
       "original": {
         "owner": "logos-blockchain",
-        "ref": "113faae6fd5f68aa70e3cece4fa54f8522c95eec",
+        "ref": "58d71393cb7c5e8d425f54b09f2f28e0d9905fdc",
         "repo": "logos-blockchain",
         "type": "github"
       }
