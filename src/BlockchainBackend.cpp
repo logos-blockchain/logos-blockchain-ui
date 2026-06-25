@@ -359,12 +359,20 @@ QVariantMap BlockchainBackend::generateConfig(
 
     QVariantMap normalized;
 
-    QString out = outputPath.trimmed();
-    if (out.isEmpty())
-        out = generatedUserConfigPath();
-    else
-        out = toLocalPath(out);
-    normalized.insert("output", out);
+    // The output path drives persistence routing through the module's single
+    // switch (use_persistence_paths), which routes output + state + storage +
+    // logs under the host-provisioned per-instance dir:
+    //   - empty    → omit "output"; module writes "<persistence>/user_config.yaml".
+    //   - relative → pass it through; module resolves it under <persistence>.
+    //   - absolute → write exactly there; no persistence routing.
+    const QString rawOut = outputPath.trimmed();
+    const QString localOut = rawOut.isEmpty() ? QString() : toLocalPath(rawOut);
+    const QString chosenOut = !localOut.isEmpty() ? localOut : rawOut;
+    const bool absoluteOut = !chosenOut.isEmpty() && QDir::isAbsolutePath(chosenOut);
+    if (!rawOut.isEmpty())
+        normalized.insert("output", absoluteOut ? chosenOut : rawOut);
+    if (!absoluteOut)
+        normalized.insert("use_persistence_paths", true);
 
     if (!initialPeers.isEmpty()) {
         QVariantList peersList;
@@ -396,6 +404,8 @@ QVariantMap BlockchainBackend::generateConfig(
                           toLocalPath(deploymentConfigPath.trimmed()));
         normalized.insert("deployment", deployment);
     }
+    // An explicit node state dir still wins: the module leaves a pinned path
+    // untouched even when use_persistence_paths routing is on.
     if (!statePath.trimmed().isEmpty())
         normalized.insert("state_path", toLocalPath(statePath.trimmed()));
 

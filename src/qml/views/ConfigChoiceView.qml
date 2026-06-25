@@ -25,6 +25,11 @@ ColumnLayout {
         property int selectedOption: 0
     }
 
+    // Switch to the "set path to config" sub-view. Used after a successful
+    // generate to land on the resolved-config-path screen, from which the user
+    // continues to start the node.
+    function showSetConfigPath() { d.selectedOption = 2 }
+
     spacing: Theme.spacing.large
 
     LogosText {

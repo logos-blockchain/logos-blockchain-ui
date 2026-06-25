@@ -7,6 +7,8 @@ import QtCore
 import Logos.Theme
 import Logos.Controls
 
+import "../controls"
+
 ColumnLayout {
     id: root
 
@@ -17,10 +19,9 @@ ColumnLayout {
     signal generateRequested(string outputPath, var initialPeers, int netPort, int blendPort, string httpAddr, string externalAddress, bool noPublicIpCheck, int deploymentMode, string deploymentConfigPath, string statePath)
 
 
-    Component.onCompleted: {
-        if (outputField.text === "" && root.generatedUserConfigPath !== "")
-            outputField.text = root.generatedUserConfigPath
-    }
+    // Leave the output field empty by default: the module writes the config to
+    // its own host-provisioned writable location and returns that path. A user
+    // can still type/browse an explicit path to override.
 
     QtObject {
         id: d
@@ -64,11 +65,20 @@ ColumnLayout {
         LogosTextField {
             id: outputField
             Layout.fillWidth: true
-            placeholderText: root.generatedUserConfigPath || qsTr("Output config path (e.g. node_config.yaml)")
+            placeholderText: qsTr("Output config path (optional — defaults to module data dir)")
         }
         LogosButton {
             text: qsTr("Browse…")
             onClicked: outputFolderDialog.open()
+        }
+        InfoButton {
+            text: qsTr("Leave empty (or use a relative path) to let the module store the "
+                       + "config and node state in its own per-instance data directory — "
+                       + "the safe default.\n\n"
+                       + "Enter a full absolute path only to write the config there yourself. "
+                       + "Note: depending on where the app runs (e.g. embedded in Basecamp, "
+                       + "sandboxed, or read-only locations) an arbitrary absolute path may not "
+                       + "be writable and starting the node can fail.")
         }
     }
 

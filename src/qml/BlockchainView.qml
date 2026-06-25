@@ -273,13 +273,20 @@ Rectangle {
                                     ? qsTr("Config generated successfully.")
                                     : qsTr("Generate failed: %1").arg(result.error)
                             if (result.success) {
-                                root.backend.userConfig = (outputPath !== "")
-                                    ? outputPath : root.backend.generatedUserConfigPath
+                                // The module writes the config and returns the
+                                // absolute path it used; use that for start().
+                                root.backend.userConfig =
+                                    (result.value !== undefined && result.value !== "")
+                                        ? result.value
+                                        : (outputPath !== "" ? outputPath : root.backend.generatedUserConfigPath)
                                 root.backend.deploymentConfig =
                                     (deploymentMode === 1 && deploymentConfigPath !== "")
                                         ? deploymentConfigPath : ""
                                 root.backend.useGeneratedConfig = true
-                                _d.currentPage = 1
+                                // Finalize: move to the "set path" window, now
+                                // showing the resolved config path, ready for
+                                // the user to continue and start the node.
+                                configChoiceView.showSetConfigPath()
                             }
                         },
                         function(error) {
