@@ -1,5 +1,25 @@
 {
   "nodes": {
+    "blockchain_module": {
+      "inputs": {
+        "logos-blockchain": "logos-blockchain",
+        "logos-module-builder": "logos-module-builder"
+      },
+      "locked": {
+        "lastModified": 1782490665,
+        "narHash": "sha256-b8iYaqJHEm2+GxBaJrBFP9kVMSydmRlim0zVEpkWNBA=",
+        "owner": "logos-blockchain",
+        "repo": "logos-blockchain-module",
+        "rev": "9af5e9b77b023b8b64abb343f0905cfa7a02fc71",
+        "type": "github"
+      },
+      "original": {
+        "owner": "logos-blockchain",
+        "ref": "0.1.3-rc.13",
+        "repo": "logos-blockchain-module",
+        "type": "github"
+      }
+    },
     "crane": {
       "locked": {
         "lastModified": 1780532242,
@@ -15,26 +35,6 @@
         "type": "github"
       }
     },
-    "liblogos_blockchain_module": {
-      "inputs": {
-        "logos-blockchain": "logos-blockchain",
-        "logos-module-builder": "logos-module-builder"
-      },
-      "locked": {
-        "lastModified": 1782371074,
-        "narHash": "sha256-ugYi1CLD3RyMXIWVPoQvoMsCo5HNm7Hu9L3Wgcu2OyE=",
-        "owner": "logos-blockchain",
-        "repo": "logos-blockchain-module",
-        "rev": "b9d71177125a760526a5df7948c4e0a67a1716ac",
-        "type": "github"
-      },
-      "original": {
-        "owner": "logos-blockchain",
-        "repo": "logos-blockchain-module",
-        "rev": "b9d71177125a760526a5df7948c4e0a67a1716ac",
-        "type": "github"
-      }
-    },
     "logos-blockchain": {
       "inputs": {
         "crane": "crane",
@@ -44,16 +44,16 @@
         "rust-rapidsnark": "rust-rapidsnark"
       },
       "locked": {
-        "lastModified": 1782334675,
-        "narHash": "sha256-EYDWycdTnS6krTf91Ot1lyceEoa5jiniNZRF1+Ddpnw=",
+        "lastModified": 1782472464,
+        "narHash": "sha256-cAutgFKnxPX6S/EuXgzM8/e/NOkVFOq60P8Pv0EUAH4=",
         "owner": "logos-blockchain",
         "repo": "logos-blockchain",
-        "rev": "58d71393cb7c5e8d425f54b09f2f28e0d9905fdc",
+        "rev": "fb326a3acef3cbee621cbe488099bc2359373edb",
         "type": "github"
       },
       "original": {
         "owner": "logos-blockchain",
-        "ref": "58d71393cb7c5e8d425f54b09f2f28e0d9905fdc",
+        "ref": "0.1.3-rc.13",
         "repo": "logos-blockchain",
         "type": "github"
       }
@@ -186,7 +186,7 @@
     "logos-capability-module_2": {
       "inputs": {
         "logos-cpp-sdk": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -197,7 +197,7 @@
         "logos-module": "logos-module_7",
         "logos-nix": "logos-nix_18",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -227,7 +227,7 @@
         "logos-module": "logos-module_8",
         "logos-nix": "logos-nix_23",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -274,7 +274,7 @@
     "logos-capability-module_5": {
       "inputs": {
         "logos-cpp-sdk": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -286,7 +286,7 @@
         "logos-module": "logos-module_13",
         "logos-nix": "logos-nix_62",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -317,7 +317,7 @@
         "logos-module": "logos-module_14",
         "logos-nix": "logos-nix_67",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -434,12 +434,12 @@
         "logos-lidl": "logos-lidl",
         "logos-nix": "logos-nix",
         "logos-protocol": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-protocol"
         ],
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-cpp-sdk",
           "logos-nix",
@@ -464,7 +464,7 @@
       "inputs": {
         "logos-nix": "logos-nix_68",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -495,7 +495,7 @@
       "inputs": {
         "logos-nix": "logos-nix_96",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -521,14 +521,14 @@
     "logos-cpp-sdk_12": {
       "inputs": {
         "logos-nix": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-view-module-runtime",
           "logos-nix"
         ],
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-view-module-runtime",
@@ -751,7 +751,7 @@
       "inputs": {
         "logos-nix": "logos-nix_10",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -926,7 +926,7 @@
       "inputs": {
         "logos-nix": "logos-nix_19",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -955,7 +955,7 @@
       "inputs": {
         "logos-nix": "logos-nix_21",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -986,7 +986,7 @@
       "inputs": {
         "logos-nix": "logos-nix_24",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -1016,7 +1016,7 @@
       "inputs": {
         "logos-nix": "logos-nix_52",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-cpp-sdk",
@@ -1042,7 +1042,7 @@
       "inputs": {
         "logos-nix": "logos-nix_54",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -1071,7 +1071,7 @@
       "inputs": {
         "logos-nix": "logos-nix_63",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -1101,7 +1101,7 @@
       "inputs": {
         "logos-nix": "logos-nix_65",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -1133,7 +1133,7 @@
       "inputs": {
         "logos-nix": "logos-nix_20",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -1162,7 +1162,7 @@
       "inputs": {
         "logos-nix": "logos-nix_53",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-design-system",
@@ -1188,7 +1188,7 @@
       "inputs": {
         "logos-nix": "logos-nix_64",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -1304,7 +1304,7 @@
         "logos-nix": "logos-nix_26",
         "logos-package-manager": "logos-package-manager",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -1337,7 +1337,7 @@
         "logos-nix": "logos-nix_98",
         "logos-package-manager": "logos-package-manager_5",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -1368,7 +1368,7 @@
         "logos-nix": "logos-nix_70",
         "logos-package-manager": "logos-package-manager_3",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -1492,13 +1492,13 @@
     "logos-lidl": {
       "inputs": {
         "logos-nix": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-cpp-sdk",
           "logos-nix"
         ],
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-cpp-sdk",
           "logos-lidl",
@@ -1523,13 +1523,13 @@
     "logos-lidl_2": {
       "inputs": {
         "logos-nix": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-qt-sdk",
           "logos-nix"
         ],
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-qt-sdk",
           "logos-lidl",
@@ -1613,7 +1613,7 @@
       "inputs": {
         "logos-nix": "logos-nix_2",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-module",
           "logos-nix",
@@ -1649,7 +1649,7 @@
         "nix-bundle-lgx": "nix-bundle-lgx_8",
         "nix-bundle-logos-module-install": "nix-bundle-logos-module-install_3",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-nix",
           "nixpkgs"
@@ -1682,7 +1682,7 @@
         "nix-bundle-lgx": "nix-bundle-lgx_2",
         "nix-bundle-logos-module-install": "nix-bundle-logos-module-install",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -1717,7 +1717,7 @@
         "nix-bundle-lgx": "nix-bundle-lgx_5",
         "nix-bundle-logos-module-install": "nix-bundle-logos-module-install_2",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -1849,7 +1849,7 @@
       "inputs": {
         "logos-nix": "logos-nix_55",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -1878,7 +1878,7 @@
       "inputs": {
         "logos-nix": "logos-nix_57",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -1908,7 +1908,7 @@
       "inputs": {
         "logos-nix": "logos-nix_59",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -1938,7 +1938,7 @@
       "inputs": {
         "logos-nix": "logos-nix_61",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -1969,7 +1969,7 @@
       "inputs": {
         "logos-nix": "logos-nix_66",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -2001,7 +2001,7 @@
       "inputs": {
         "logos-nix": "logos-nix_69",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -2032,7 +2032,7 @@
       "inputs": {
         "logos-nix": "logos-nix_97",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -2133,7 +2133,7 @@
       "inputs": {
         "logos-nix": "logos-nix_4",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-plugin-core",
           "logos-module",
@@ -2446,7 +2446,7 @@
       "inputs": {
         "logos-nix": "logos-nix_6",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-plugin-qt",
           "logos-module",
@@ -2559,7 +2559,7 @@
       "inputs": {
         "logos-nix": "logos-nix_11",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -2587,7 +2587,7 @@
       "inputs": {
         "logos-nix": "logos-nix_13",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -2616,7 +2616,7 @@
       "inputs": {
         "logos-nix": "logos-nix_15",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -2645,7 +2645,7 @@
       "inputs": {
         "logos-nix": "logos-nix_17",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -2675,7 +2675,7 @@
       "inputs": {
         "logos-nix": "logos-nix_22",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -2706,7 +2706,7 @@
       "inputs": {
         "logos-nix": "logos-nix_25",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -7218,7 +7218,7 @@
       "inputs": {
         "logos-nix": "logos-nix_28",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -7252,7 +7252,7 @@
         "nix-bundle-appimage": "nix-bundle-appimage",
         "nix-bundle-dir": "nix-bundle-dir_2",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -7374,7 +7374,7 @@
         "nix-bundle-appimage": "nix-bundle-appimage_2",
         "nix-bundle-dir": "nix-bundle-dir_6",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -7406,7 +7406,7 @@
         "nix-bundle-appimage": "nix-bundle-appimage_3",
         "nix-bundle-dir": "nix-bundle-dir_9",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -7440,7 +7440,7 @@
         "nix-bundle-appimage": "nix-bundle-appimage_4",
         "nix-bundle-dir": "nix-bundle-dir_13",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -7473,7 +7473,7 @@
         "nix-bundle-appimage": "nix-bundle-appimage_5",
         "nix-bundle-dir": "nix-bundle-dir_16",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -7503,7 +7503,7 @@
         "nix-bundle-appimage": "nix-bundle-appimage_6",
         "nix-bundle-dir": "nix-bundle-dir_20",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "nix-bundle-logos-module-install",
           "logos-package-manager",
@@ -7625,7 +7625,7 @@
       "inputs": {
         "logos-nix": "logos-nix_94",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -7656,7 +7656,7 @@
       "inputs": {
         "logos-nix": "logos-nix_100",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -7684,7 +7684,7 @@
       "inputs": {
         "logos-nix": "logos-nix_109",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "nix-bundle-lgx",
@@ -7711,7 +7711,7 @@
       "inputs": {
         "logos-nix": "logos-nix_113",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "nix-bundle-lgx",
           "logos-package",
@@ -7737,7 +7737,7 @@
       "inputs": {
         "logos-nix": "logos-nix_117",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "nix-bundle-logos-module-install",
           "logos-package-manager",
@@ -7764,7 +7764,7 @@
       "inputs": {
         "logos-nix": "logos-nix_122",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "nix-bundle-logos-module-install",
           "nix-bundle-lgx",
@@ -7907,7 +7907,7 @@
       "inputs": {
         "logos-nix": "logos-nix_37",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -8220,7 +8220,7 @@
       "inputs": {
         "logos-nix": "logos-nix_41",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -8299,7 +8299,7 @@
       "inputs": {
         "logos-nix": "logos-nix_45",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -8329,7 +8329,7 @@
       "inputs": {
         "logos-nix": "logos-nix_50",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -8359,7 +8359,7 @@
       "inputs": {
         "logos-nix": "logos-nix_72",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -8391,7 +8391,7 @@
       "inputs": {
         "logos-nix": "logos-nix_81",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -8422,7 +8422,7 @@
       "inputs": {
         "logos-nix": "logos-nix_85",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -8452,7 +8452,7 @@
       "inputs": {
         "logos-nix": "logos-nix_89",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -8484,7 +8484,7 @@
         "logos-module": "logos-module_2",
         "logos-nix": "logos-nix_5",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-plugin-core",
           "logos-nix",
@@ -8510,7 +8510,7 @@
         "logos-module": "logos-module_5",
         "logos-nix": "logos-nix_14",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -8539,7 +8539,7 @@
         "logos-module": "logos-module_11",
         "logos-nix": "logos-nix_58",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -8651,7 +8651,7 @@
         "logos-module": "logos-module_3",
         "logos-nix": "logos-nix_7",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-plugin-qt",
           "logos-nix",
@@ -8677,7 +8677,7 @@
         "logos-module": "logos-module_6",
         "logos-nix": "logos-nix_16",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -8706,7 +8706,7 @@
         "logos-module": "logos-module_12",
         "logos-nix": "logos-nix_60",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -8817,7 +8817,7 @@
       "inputs": {
         "logos-nix": "logos-nix_8",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-protocol",
           "logos-nix",
@@ -8841,13 +8841,13 @@
     "logos-protocol_2": {
       "inputs": {
         "logos-nix": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-test-framework",
           "logos-nix"
         ],
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-test-framework",
           "nixpkgs"
@@ -8922,7 +8922,7 @@
       "inputs": {
         "logos-nix": "logos-nix_34",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -8950,7 +8950,7 @@
       "inputs": {
         "logos-nix": "logos-nix_78",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -8979,7 +8979,7 @@
       "inputs": {
         "logos-nix": "logos-nix_106",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-qt-mcp",
@@ -9084,19 +9084,19 @@
     "logos-qt-sdk": {
       "inputs": {
         "logos-cpp-sdk": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-cpp-sdk"
         ],
         "logos-lidl": "logos-lidl_2",
         "logos-nix": "logos-nix_9",
         "logos-protocol": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-protocol"
         ],
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-qt-sdk",
           "logos-nix",
@@ -9120,25 +9120,25 @@
     "logos-qt-sdk_2": {
       "inputs": {
         "logos-cpp-sdk": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-test-framework",
           "logos-cpp-sdk"
         ],
         "logos-nix": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-test-framework",
           "logos-nix"
         ],
         "logos-protocol": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-test-framework",
           "logos-protocol"
         ],
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-test-framework",
           "nixpkgs"
@@ -9231,27 +9231,27 @@
     "logos-rust-sdk": {
       "inputs": {
         "logos-logoscore-cli": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-cpp-sdk"
         ],
         "logos-module-builder": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-cpp-sdk"
         ],
         "logos-module-client": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-cpp-sdk"
         ],
         "logos-nix": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-nix"
         ],
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-rust-sdk",
           "logos-nix",
@@ -9324,7 +9324,7 @@
         "logos-view-module-runtime": "logos-view-module-runtime_3",
         "nix-bundle-lgx": "nix-bundle-lgx_7",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-nix",
@@ -9356,7 +9356,7 @@
         "logos-view-module-runtime": "logos-view-module-runtime",
         "nix-bundle-lgx": "nix-bundle-lgx",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -9391,7 +9391,7 @@
         "logos-view-module-runtime": "logos-view-module-runtime_2",
         "nix-bundle-lgx": "nix-bundle-lgx_4",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -9519,7 +9519,7 @@
     "logos-test-framework": {
       "inputs": {
         "logos-cpp-sdk": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -9528,7 +9528,7 @@
         ],
         "logos-nix": "logos-nix_39",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -9555,7 +9555,7 @@
     "logos-test-framework_2": {
       "inputs": {
         "logos-cpp-sdk": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -9565,7 +9565,7 @@
         ],
         "logos-nix": "logos-nix_83",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -9593,7 +9593,7 @@
     "logos-test-framework_3": {
       "inputs": {
         "logos-cpp-sdk": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-cpp-sdk"
         ],
@@ -9601,7 +9601,7 @@
         "logos-protocol": "logos-protocol_2",
         "logos-qt-sdk": "logos-qt-sdk_2",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-test-framework",
           "logos-nix",
@@ -9725,7 +9725,7 @@
     "logos-view-module-runtime": {
       "inputs": {
         "logos-cpp-sdk": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -9735,7 +9735,7 @@
         ],
         "logos-nix": "logos-nix_35",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -9762,7 +9762,7 @@
     "logos-view-module-runtime_2": {
       "inputs": {
         "logos-cpp-sdk": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -9773,7 +9773,7 @@
         ],
         "logos-nix": "logos-nix_79",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -9803,7 +9803,7 @@
         "logos-cpp-sdk": "logos-cpp-sdk_12",
         "logos-nix": "logos-nix_107",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-view-module-runtime",
@@ -9928,7 +9928,7 @@
         "logos-nix": "logos-nix_29",
         "nix-bundle-dir": "nix-bundle-dir",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -10046,7 +10046,7 @@
         "logos-nix": "logos-nix_46",
         "nix-bundle-dir": "nix-bundle-dir_5",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -10077,7 +10077,7 @@
         "logos-nix": "logos-nix_73",
         "nix-bundle-dir": "nix-bundle-dir_8",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -10110,7 +10110,7 @@
         "logos-nix": "logos-nix_90",
         "nix-bundle-dir": "nix-bundle-dir_12",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -10142,7 +10142,7 @@
         "logos-nix": "logos-nix_101",
         "nix-bundle-dir": "nix-bundle-dir_15",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -10171,7 +10171,7 @@
         "logos-nix": "logos-nix_118",
         "nix-bundle-dir": "nix-bundle-dir_19",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "nix-bundle-logos-module-install",
           "logos-package-manager",
@@ -10291,7 +10291,7 @@
       "inputs": {
         "logos-nix": "logos-nix_30",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -10321,7 +10321,7 @@
       "inputs": {
         "logos-nix": "logos-nix_82",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -10352,7 +10352,7 @@
       "inputs": {
         "logos-nix": "logos-nix_86",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -10382,7 +10382,7 @@
       "inputs": {
         "logos-nix": "logos-nix_91",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -10412,7 +10412,7 @@
       "inputs": {
         "logos-nix": "logos-nix_92",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -10443,7 +10443,7 @@
       "inputs": {
         "logos-nix": "logos-nix_95",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -10474,7 +10474,7 @@
       "inputs": {
         "logos-nix": "logos-nix_102",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -10501,7 +10501,7 @@
       "inputs": {
         "logos-nix": "logos-nix_103",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -10529,7 +10529,7 @@
       "inputs": {
         "logos-nix": "logos-nix_110",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "nix-bundle-lgx",
@@ -10556,7 +10556,7 @@
       "inputs": {
         "logos-nix": "logos-nix_114",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "nix-bundle-lgx",
           "nix-bundle-dir",
@@ -10582,7 +10582,7 @@
       "inputs": {
         "logos-nix": "logos-nix_119",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "nix-bundle-logos-module-install",
           "logos-package-manager",
@@ -10608,7 +10608,7 @@
       "inputs": {
         "logos-nix": "logos-nix_31",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -10639,7 +10639,7 @@
       "inputs": {
         "logos-nix": "logos-nix_120",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "nix-bundle-logos-module-install",
           "logos-package-manager",
@@ -10666,7 +10666,7 @@
       "inputs": {
         "logos-nix": "logos-nix_123",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "nix-bundle-logos-module-install",
           "nix-bundle-lgx",
@@ -10925,7 +10925,7 @@
       "inputs": {
         "logos-nix": "logos-nix_38",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -11238,7 +11238,7 @@
       "inputs": {
         "logos-nix": "logos-nix_42",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -11368,7 +11368,7 @@
       "inputs": {
         "logos-nix": "logos-nix_47",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -11397,7 +11397,7 @@
       "inputs": {
         "logos-nix": "logos-nix_48",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -11427,7 +11427,7 @@
       "inputs": {
         "logos-nix": "logos-nix_51",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -11457,7 +11457,7 @@
       "inputs": {
         "logos-nix": "logos-nix_74",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -11488,7 +11488,7 @@
       "inputs": {
         "logos-nix": "logos-nix_75",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -11522,7 +11522,7 @@
         "logos-package": "logos-package_2",
         "nix-bundle-dir": "nix-bundle-dir_3",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -11836,7 +11836,7 @@
         "logos-package": "logos-package_3",
         "nix-bundle-dir": "nix-bundle-dir_4",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -11866,7 +11866,7 @@
         "logos-package": "logos-package_5",
         "nix-bundle-dir": "nix-bundle-dir_7",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -11897,7 +11897,7 @@
         "logos-package": "logos-package_7",
         "nix-bundle-dir": "nix-bundle-dir_10",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -11928,7 +11928,7 @@
         "logos-package": "logos-package_8",
         "nix-bundle-dir": "nix-bundle-dir_11",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -11959,7 +11959,7 @@
         "logos-package": "logos-package_10",
         "nix-bundle-dir": "nix-bundle-dir_14",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -11991,7 +11991,7 @@
         "logos-package": "logos-package_12",
         "nix-bundle-dir": "nix-bundle-dir_17",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "nix-bundle-lgx",
@@ -12019,7 +12019,7 @@
         "logos-package": "logos-package_13",
         "nix-bundle-dir": "nix-bundle-dir_18",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "nix-bundle-lgx",
           "logos-nix",
@@ -12046,7 +12046,7 @@
         "logos-package": "logos-package_15",
         "nix-bundle-dir": "nix-bundle-dir_21",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "nix-bundle-logos-module-install",
           "nix-bundle-lgx",
@@ -12074,7 +12074,7 @@
         "logos-package-manager": "logos-package-manager_2",
         "nix-bundle-lgx": "nix-bundle-lgx_3",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -12104,7 +12104,7 @@
         "logos-package-manager": "logos-package-manager_4",
         "nix-bundle-lgx": "nix-bundle-lgx_6",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -12135,7 +12135,7 @@
         "logos-package-manager": "logos-package-manager_6",
         "nix-bundle-lgx": "nix-bundle-lgx_9",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "nix-bundle-logos-module-install",
           "logos-nix",
@@ -16277,7 +16277,7 @@
       "inputs": {
         "logos-nix": "logos-nix_32",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-capability-module",
@@ -16307,7 +16307,7 @@
       "inputs": {
         "logos-nix": "logos-nix_76",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -16338,7 +16338,7 @@
       "inputs": {
         "logos-nix": "logos-nix_104",
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-module-builder",
           "logos-standalone-app",
           "logos-liblogos",
@@ -16448,7 +16448,7 @@
     },
     "root": {
       "inputs": {
-        "liblogos_blockchain_module": "liblogos_blockchain_module",
+        "blockchain_module": "blockchain_module",
         "logos-module-builder": "logos-module-builder_4",
         "nix-bundle-lgx": "nix-bundle-lgx_19"
       }
@@ -16456,7 +16456,7 @@
     "rust-overlay": {
       "inputs": {
         "nixpkgs": [
-          "liblogos_blockchain_module",
+          "blockchain_module",
           "logos-blockchain",
           "nixpkgs"
         ]

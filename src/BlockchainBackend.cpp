@@ -20,7 +20,7 @@
 #include <algorithm>
 
 const QString BlockchainBackend::BLOCKCHAIN_MODULE_NAME =
-    QStringLiteral("liblogos_blockchain_module");
+    QStringLiteral("blockchain_module");
 
 void BlockchainBackend::setError(const QString& message)
 {

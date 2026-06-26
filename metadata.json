@@ -1,14 +1,14 @@
 {
   "name": "blockchain_ui",
   "display_name": "Blockchain",
-  "version": "1.0.0",
+  "version": "0.1.3-rc.13",
   "type": "ui_qml",
   "category": "blockchain",
   "description": "Blockchain UI module for the Logos application",
   "main": "blockchain_ui_plugin",
   "icon": "src/icons/blockchain.png",
   "view": "qml/BlockchainView.qml",
-  "dependencies": ["liblogos_blockchain_module"],
+  "dependencies": ["blockchain_module"],
   "nix": {
     "packages": {
       "build": [],
