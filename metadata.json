@@ -1,7 +1,7 @@
 {
   "name": "blockchain_ui",
   "display_name": "Blockchain",
-  "version": "0.2.0",
+  "version": "0.0.999",
   "type": "ui_qml",
   "category": "blockchain",
   "description": "Blockchain UI module for the Logos application",
