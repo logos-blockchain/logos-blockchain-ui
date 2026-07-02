@@ -107,7 +107,7 @@ Rectangle {
                         text: (root.useGeneratedConfig && root.deploymentConfig ?
                                    root.deploymentConfig :
                                    root.useGeneratedConfig ?
-                                       qsTr("Devnet (default)") :
+                                       qsTr("Default") :
                                        (root.deploymentConfig || qsTr("No file selected")))
                         font.pixelSize: Theme.typography.secondaryText
                         color: Theme.palette.textSecondary

@@ -395,7 +395,7 @@ QVariantMap BlockchainBackend::generateConfig(
         normalized.insert("no_public_ip_check", true);
     if (deploymentMode == 0) {
         QVariantMap deployment;
-        deployment.insert("well_known_deployment", "devnet");
+        deployment.insert("well_known_deployment", "testnet");
         normalized.insert("deployment", deployment);
     } else if (deploymentMode == 1
                && !deploymentConfigPath.trimmed().isEmpty()) {
