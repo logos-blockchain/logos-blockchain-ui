@@ -35,7 +35,7 @@ ColumnLayout {
                 httpAddrField.text.trim(),
                 externalAddrField.text.trim(),
                 noPublicIpCheckBox.checked,
-                devnetRadio.checked ? 0 : 1,
+                networkRadio.checked ? 0 : 1,
                 customDeploymentField.text.trim(),
                 statePathField.text.trim())
         }
@@ -168,11 +168,11 @@ ColumnLayout {
         Layout.fillWidth: true
         spacing: Theme.spacing.medium
         RadioButton {
-            id: devnetRadio
+            id: networkRadio
             font.pixelSize: Theme.typography.secondaryText
             palette.windowText: Theme.palette.text
             checked: true
-            text: qsTr("Devnet")
+            text: qsTr("Default")
         }
         RadioButton {
             id: customRadio
