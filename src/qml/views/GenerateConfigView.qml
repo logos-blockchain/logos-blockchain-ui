@@ -35,7 +35,7 @@ ColumnLayout {
                 httpAddrField.text.trim(),
                 externalAddrField.text.trim(),
                 noPublicIpCheckBox.checked,
-                networkRadio.checked ? 0 : 1,
+                defaultNetworkRadioButton.checked ? 0 : 1,
                 customDeploymentField.text.trim(),
                 statePathField.text.trim())
         }
@@ -166,28 +166,33 @@ ColumnLayout {
     }
     RowLayout {
         Layout.fillWidth: true
+        Layout.preferredHeight: Math.max(defaultNetworkRadioButton.implicitHeight,
+                                          customNetworkRadioButton.implicitHeight,
+                                          customDeploymentField.implicitHeight,
+                                          browseDeploymentButton.implicitHeight)
         spacing: Theme.spacing.medium
         RadioButton {
-            id: networkRadio
+            id: defaultNetworkRadioButton
             font.pixelSize: Theme.typography.secondaryText
             palette.windowText: Theme.palette.text
             checked: true
             text: qsTr("Default")
         }
         RadioButton {
-            id: customRadio
+            id: customNetworkRadioButton
             font.pixelSize: Theme.typography.secondaryText
             palette.windowText: Theme.palette.text
             text: qsTr("Custom config")
         }
         LogosTextField {
             id: customDeploymentField
-            visible: customRadio.checked
+            visible: customNetworkRadioButton.checked
             Layout.fillWidth: true
             placeholderText: qsTr("Path to deployment config")
         }
         LogosButton {
-            visible: customRadio.checked
+            id: browseDeploymentButton
+            visible: customNetworkRadioButton.checked
             text: qsTr("Browse")
             onClicked: deploymentConfigFileDialog.open()
         }
