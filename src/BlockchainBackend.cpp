@@ -393,17 +393,6 @@ QVariantMap BlockchainBackend::generateConfig(
         normalized.insert("external_address", externalAddress.trimmed());
     if (noPublicIpCheck)
         normalized.insert("no_public_ip_check", true);
-    if (deploymentMode == 0) {
-        QVariantMap deployment;
-        deployment.insert("well_known_deployment", "devnet");
-        normalized.insert("deployment", deployment);
-    } else if (deploymentMode == 1
-               && !deploymentConfigPath.trimmed().isEmpty()) {
-        QVariantMap deployment;
-        deployment.insert("config_path",
-                          toLocalPath(deploymentConfigPath.trimmed()));
-        normalized.insert("deployment", deployment);
-    }
     // An explicit node state dir still wins: the module leaves a pinned path
     // untouched even when use_persistence_paths routing is on.
     if (!statePath.trimmed().isEmpty())

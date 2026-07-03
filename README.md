@@ -20,7 +20,17 @@ Built with [`logos-module-builder`](https://github.com/logos-co/logos-module-bui
 nix run
 ```
 
-2. Generate a new config using initial peers from the live testnet. Find peers [here](https://www.notion.so/nomos-tech/Logos-Blockchain-Devnet-Lisbon-March-2026-2fe261aa09df8025ad94e380933b4cf9?source=copy_link#319261aa09df80a6ac9bcb7487d14d6a).
+2. Generate a new config using initial peers from the live testnet. See the [⚙️ Initialize Your Node](https://github.com/logos-blockchain/logos-blockchain/releases/latest#-initialize-your-node) section of the latest release notes
+> Note that what's shown in the release document is a CLI command.
+> For the UI's "Initial peers" field, strip everything but the peer addresses themselves (no quotes, brackets, or commas) and paste one per line.
+> 
+> Like so:
+> ```text
+> /ip4/203.0.113.10/udp/3000/quic-v1/p2p/12D3KooWh82pJGF9p7kpzb6eU326EFZf2cDnimbTFVeJtx1qtBmU
+> /ip4/203.0.113.10/udp/3001/quic-v1/p2p/12D3KooWNJAEqN76R7PwPfHt3oWb8R6cKvhgyxQdDn53jFrK6wFx
+> /ip4/203.0.113.10/udp/3002/quic-v1/p2p/12D3KooW7RJWhvQBQPEjJmki5fhBboGBWRJhmcFkMvrr4Fu3tMSJ
+> /ip4/203.0.113.10/udp/3003/quic-v1/p2p/12D3KooW5EdynMEiYSyiWAH9GpcbHpeUzeSQF9ZY6q4x8AhBskUf
+> ```
 
 3. Start the node and let it sync. Track progress:
 
@@ -28,9 +38,9 @@ nix run
 watch -n1 'curl -s localhost:8080/cryptarchia/info'
 ```
 
-Compare the `height` with the [block explorer](https://devnet.blockchain.logos.co/web/explorer/).
+Compare the `height` with the [block explorer](https://testnet.blockchain.logos.co/web/explorer/).
 
-4. Request funds from the [faucet](https://devnet.blockchain.logos.co/web/faucet/) — copy one of the keys from the UI and paste it there.
+4. Request funds from the [faucet](https://testnet.blockchain.logos.co/web/faucet/) — copy one of the keys from the UI and paste it there.
 
 5. Once synced, refresh your balance to see your funds.
 
