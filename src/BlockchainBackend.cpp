@@ -219,6 +219,43 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_cryptarchia_info"))));
 }
 
+QVariantMap BlockchainBackend::getBlock(QString headerIdHex)
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_block"), headerIdHex.trimmed())));
+}
+
+QVariantMap BlockchainBackend::getTransaction(QString txHashHex)
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_transaction"), txHashHex.trimmed())));
+}
+
+QVariantMap BlockchainBackend::findTransactionInBlocks(QString txHashHex)
+{
+    // Local, in-memory resolution against the blocks currently held by the
+    // model. The node's get_transaction only serves mempool (pending / very
+    // recently mined) transactions, so a tx copied from the blocks view — which
+    // is already mined — is looked up here instead. Returns the same shape as
+    // the remote calls: { success, value, ... } with block context on success.
+    const QVariantMap hit = m_blockModel->findTransaction(txHashHex);
+    QVariantMap out;
+    out.insert("success", hit.value("found").toBool());
+    out.insert("value", hit.value("value"));
+    out.insert("blockId", hit.value("blockId"));
+    out.insert("slot", hit.value("slot"));
+    out.insert("timestamp", hit.value("timestamp"));
+    if (!out.value("success").toBool())
+        out.insert("error", QStringLiteral("Not in loaded blocks."));
+    return out;
+}
+
 QVariantMap BlockchainBackend::getPeerId()
 {
     if (!m_blockchainClient)

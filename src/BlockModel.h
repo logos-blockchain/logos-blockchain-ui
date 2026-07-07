@@ -3,6 +3,7 @@
 #include <QAbstractListModel>
 #include <QString>
 #include <QStringList>
+#include <QVariantMap>
 #include <QVector>
 
 // Structured model of recent blockchain blocks, fed by the backend's `newBlock`
@@ -43,6 +44,15 @@ public:
     Q_INVOKABLE void appendRaw(const QString& timestamp, const QString& rawJson);
     Q_INVOKABLE void clear();
 
+    // Search the retained blocks for a transaction whose `id` matches `txId`
+    // (case-insensitive, `0x`-tolerant). The blocks fed by the node's newBlock
+    // subscription carry a per-transaction `id`; the node cannot look a mined
+    // transaction up by hash (its tx-by-hash store is mempool-only and pruned
+    // shortly after inclusion), so this in-memory scan is how a tx copied from
+    // the blocks view is resolved. Returns { found, value, blockId, slot,
+    // timestamp }; `value` is the prettified transaction JSON when found.
+    QVariantMap findTransaction(const QString& txId) const;
+
 signals:
     void countChanged();
 
@@ -58,6 +68,7 @@ private:
         QString proof;
         QString voucherCm;
         QString signature;
+        QString blockId;
         int txCount = 0;
         QStringList transactions;
         QString rawJson;

@@ -333,6 +333,10 @@ Rectangle {
                     text: qsTr("Operations")
                     enabled: opPage.nodeRunning
                 }
+                LogosTabButton {
+                    text: qsTr("Explorer")
+                    enabled: opPage.nodeRunning
+                }
             }
 
             StackLayout {
@@ -580,6 +584,62 @@ Rectangle {
                         }
                         }
                     }
+                }
+
+                // ---- Tab 2: Explorer (block / transaction lookup) ----
+                ExplorerView {
+                    id: explorerView
+                    nodeRunning: opPage.nodeRunning
+
+                    // Auto-detect the id kind. The node can't fetch a mined
+                    // transaction by hash (its tx store is mempool-only, pruned
+                    // ~10 min after inclusion), so resolve a tx in this order:
+                    //   1. loaded blocks — the blocks view already holds each
+                    //      tx and its id, so a copied tx id resolves locally;
+                    //   2. get_block — the id is a block header id;
+                    //   3. get_transaction — a still-pending mempool tx.
+                    onSearchRequested: function(id) {
+                        if (!root.backend) return
+
+                        // Every backend call is remoted through QtRO, so each
+                        // must be resolved via logos.watch (even the local scan,
+                        // whose search runs synchronously on the source side).
+
+                        // Step 1: scan the loaded blocks for the tx by its id.
+                        logos.watch(
+                            root.backend.findTransactionInBlocks(id),
+                            function(local) {
+                                if (local.success) {
+                                    explorerView.setTransactionResult(id, local.value, local.slot, local.blockId)
+                                    return
+                                }
+                                // Step 2: block by header id.
+                                logos.watch(
+                                    root.backend.getBlock(id),
+                                    function(blockResult) {
+                                        if (blockResult.success) {
+                                            explorerView.setBlockResult(id, blockResult.value)
+                                            return
+                                        }
+                                        // Step 3: pending transaction via the node.
+                                        logos.watch(
+                                            root.backend.getTransaction(id),
+                                            function(txResult) {
+                                                if (txResult.success)
+                                                    explorerView.setTransactionResult(id, txResult.value)
+                                                else
+                                                    explorerView.setNotFound(id)
+                                            },
+                                            function(error) { explorerView.setError(id, _d.errorText(error)) }
+                                        )
+                                    },
+                                    function(error) { explorerView.setError(id, _d.errorText(error)) }
+                                )
+                            },
+                            function(error) { explorerView.setError(id, _d.errorText(error)) }
+                        )
+                    }
+                    onCopyToClipboard: (text) => root.copyText(text)
                 }
             }
 

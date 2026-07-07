@@ -112,6 +112,7 @@ void BlockModel::appendRaw(const QString& timestamp, const QString& rawJson)
 
         const QJsonObject header = block.value(QStringLiteral("header")).toObject();
         e.version = header.value(QStringLiteral("version")).toString();
+        e.blockId = header.value(QStringLiteral("id")).toString();
         e.parentBlock = header.value(QStringLiteral("parent_block")).toString();
 
         const QJsonValue slotV = header.value(QStringLiteral("slot"));
@@ -154,6 +155,41 @@ void BlockModel::appendRaw(const QString& timestamp, const QString& rawJson)
     }
 
     emit countChanged();
+}
+
+QVariantMap BlockModel::findTransaction(const QString& txId) const
+{
+    // Normalise for comparison: trim, drop an optional 0x prefix, lowercase.
+    auto normalize = [](const QString& s) {
+        QString t = s.trimmed();
+        if (t.startsWith(QStringLiteral("0x"), Qt::CaseInsensitive))
+            t = t.mid(2);
+        return t.toLower();
+    };
+
+    const QString needle = normalize(txId);
+    if (needle.isEmpty())
+        return QVariantMap{{"found", false}};
+
+    for (const Entry& e : m_entries) {
+        for (const QString& txJson : e.transactions) {
+            QJsonParseError err{};
+            const QJsonDocument doc = QJsonDocument::fromJson(txJson.toUtf8(), &err);
+            if (err.error != QJsonParseError::NoError || !doc.isObject())
+                continue;
+            const QString id = doc.object().value(QStringLiteral("id")).toString();
+            if (!id.isEmpty() && normalize(id) == needle) {
+                return QVariantMap{
+                    {"found", true},
+                    {"value", txJson},
+                    {"blockId", e.blockId},
+                    {"slot", e.slot},
+                    {"timestamp", e.timestamp},
+                };
+            }
+        }
+    }
+    return QVariantMap{{"found", false}};
 }
 
 void BlockModel::clear()
