@@ -6,6 +6,7 @@ NodeInfoView 1.0 NodeInfoView.qml
 AccountsView 1.0 AccountsView.qml
 TransferView 1.0 TransferView.qml
 LeaderRewardsView 1.0 LeaderRewardsView.qml
+ExplorerView 1.0 ExplorerView.qml
 GenerateConfigView 1.0 GenerateConfigView.qml
 ConfigChoiceView 1.0 ConfigChoiceView.qml
 SetConfigPathView 1.0 SetConfigPathView.qml
