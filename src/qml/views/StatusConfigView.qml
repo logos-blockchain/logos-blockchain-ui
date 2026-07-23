@@ -20,6 +20,7 @@ Rectangle {
     signal startRequested()
     signal stopRequested()
     signal changeConfigRequested()
+    signal resetChainStateRequested()
 
     implicitHeight: contentLayout.height + Theme.spacing.large
     color: Theme.palette.backgroundTertiary
@@ -125,6 +126,30 @@ Rectangle {
                 Layout.preferredHeight: 40
                 text: qsTr("Change")
                 onClicked: root.changeConfigRequested()
+            }
+
+            // Recovery for a node wedged after an unclean shutdown
+            // (logos-blockchain#3171): wipe the chain DB + consensus state to
+            // force a clean start. Keeps the wallet keystore + config, so no
+            // keys are lost. Only offered while the node is stopped.
+            LogosButton {
+                visible: !root.isRunning
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: 160
+                Layout.preferredHeight: 40
+                text: qsTr("Reset chain state")
+                onClicked: root.resetChainStateRequested()
+            }
+
+            LogosText {
+                visible: !root.isRunning
+                Layout.alignment: Qt.AlignHCenter
+                Layout.maximumWidth: 320
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                text: qsTr("Reset re-downloads the chain from scratch; your wallet keys are kept.")
+                color: Theme.palette.textTertiary
+                font.pixelSize: Theme.typography.secondaryText
             }
         }
     }

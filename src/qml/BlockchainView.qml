@@ -96,6 +96,36 @@ Rectangle {
         visible: false
     }
 
+    // Confirm before wiping chain state (recovery for logos-blockchain#3171).
+    // Destructive-but-recoverable: the chain re-downloads from genesis; wallet
+    // keys and config are preserved by the backend.
+    Dialog {
+        id: resetConfirmDialog
+        anchors.centerIn: parent
+        modal: true
+        title: qsTr("Reset chain state?")
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        LogosText {
+            width: 360
+            wrapMode: Text.WordWrap
+            text: qsTr("This deletes the local chain database and consensus state, "
+                       + "then the node re-downloads the chain from scratch on the "
+                       + "next Start. Your wallet keys and config are kept. Use this "
+                       + "if the node is stuck on \"Starting…\" or \"call failed\".")
+        }
+        onAccepted: {
+            if (!root.backend) return
+            logos.watch(
+                root.backend.resetChainState(),
+                function(result) {
+                    if (result.success) root.backend.clearBlocks()
+                    else console.log("[BlockchainView] resetChainState failed:", result.error)
+                },
+                function(error) { console.log("[BlockchainView] resetChainState error:", error) }
+            )
+        }
+    }
+
     // Self libp2p peer id, derived from the selected user config (no running
     // node required). Refreshed when ready and whenever the config changes.
     property string peerId: ""
@@ -374,6 +404,7 @@ Rectangle {
                             onStartRequested: if (root.backend) root.backend.startBlockchain()
                             onStopRequested: if (root.backend) root.backend.stopBlockchain()
                             onChangeConfigRequested: _d.currentPage = 0
+                            onResetChainStateRequested: resetConfirmDialog.open()
                         }
 
                         NodeInfoView {
