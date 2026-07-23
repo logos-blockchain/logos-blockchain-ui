@@ -76,6 +76,7 @@ Rectangle {
 
             ColumnLayout {
                 Layout.fillWidth: true
+                spacing: Theme.spacing.small
 
                 RowLayout {
                     Layout.fillWidth: true
@@ -99,7 +100,6 @@ Rectangle {
 
                 RowLayout {
                     Layout.fillWidth: true
-                    Layout.topMargin: -Theme.spacing.small
                     spacing: Theme.spacing.small
                     LogosText {
                         text: qsTr("Deployment Config: ")
