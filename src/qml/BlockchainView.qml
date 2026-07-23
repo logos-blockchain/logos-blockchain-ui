@@ -98,22 +98,27 @@ Rectangle {
 
     // Confirm before wiping chain state (recovery for logos-blockchain#3171).
     // Destructive-but-recoverable: the chain re-downloads from genesis; wallet
-    // keys and config are preserved by the backend.
-    Dialog {
+    // keys and config are preserved by the backend. Uses the themed LogosDialog
+    // so it matches the rest of the app.
+    LogosDialog {
         id: resetConfirmDialog
         anchors.centerIn: parent
-        modal: true
+        width: 420
         title: qsTr("Reset chain state?")
-        standardButtons: Dialog.Ok | Dialog.Cancel
+
         LogosText {
-            width: 360
+            width: resetConfirmDialog.availableWidth
             wrapMode: Text.WordWrap
+            color: Theme.palette.textSecondary
+            font.pixelSize: Theme.typography.secondaryText
             text: qsTr("This deletes the local chain database and consensus state, "
                        + "then the node re-downloads the chain from scratch on the "
                        + "next Start. Your wallet keys and config are kept. Use this "
                        + "if the node is stuck on \"Starting…\" or \"call failed\".")
         }
-        onAccepted: {
+
+        function _doReset() {
+            resetConfirmDialog.close()
             if (!root.backend) return
             logos.watch(
                 root.backend.resetChainState(),
@@ -124,6 +129,21 @@ Rectangle {
                 function(error) { console.log("[BlockchainView] resetChainState error:", error) }
             )
         }
+
+        rightActions: [
+            LogosButton {
+                text: qsTr("Cancel")
+                implicitWidth: 110
+                implicitHeight: 40
+                onClicked: resetConfirmDialog.close()
+            },
+            LogosButton {
+                text: qsTr("Reset")
+                implicitWidth: 110
+                implicitHeight: 40
+                onClicked: resetConfirmDialog._doReset()
+            }
+        ]
     }
 
     // Self libp2p peer id, derived from the selected user config (no running
