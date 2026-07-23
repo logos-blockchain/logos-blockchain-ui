@@ -140,17 +140,6 @@ Rectangle {
                 text: qsTr("Reset chain state")
                 onClicked: root.resetChainStateRequested()
             }
-
-            LogosText {
-                visible: !root.isRunning
-                Layout.alignment: Qt.AlignHCenter
-                Layout.maximumWidth: 320
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.WordWrap
-                text: qsTr("Reset re-downloads the chain from scratch; your wallet keys are kept.")
-                color: Theme.palette.textTertiary
-                font.pixelSize: Theme.typography.secondaryText
-            }
         }
     }
 }
