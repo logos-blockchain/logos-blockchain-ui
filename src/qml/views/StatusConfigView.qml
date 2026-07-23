@@ -90,7 +90,10 @@ Rectangle {
                               (root.useGeneratedConfig ? " " + qsTr("(Generated)") : "")
                         font.pixelSize: Theme.typography.secondaryText
                         color: Theme.palette.textSecondary
-                        wrapMode: Text.WordWrap
+                        // A long absolute config path has no spaces to wrap on and
+                        // overflows the row — elide the middle so the leading dirs
+                        // and the file name both stay visible.
+                        elide: Text.ElideMiddle
                     }
                 }
 
@@ -111,7 +114,7 @@ Rectangle {
                                        (root.deploymentConfig || qsTr("No file selected")))
                         font.pixelSize: Theme.typography.secondaryText
                         color: Theme.palette.textSecondary
-                        wrapMode: Text.WordWrap
+                        elide: Text.ElideMiddle
                     }
                 }
             }
