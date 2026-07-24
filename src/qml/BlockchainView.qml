@@ -119,31 +119,149 @@ Rectangle {
         function onUserConfigChanged() { root.refreshPeerId() }
     }
 
-    // Live Cryptarchia consensus state, polled while the node runs.
+    // Live Cryptarchia consensus state, polled while the node runs. This poll
+    // doubles as the node's health check: while it keeps succeeding the node is
+    // reachable. A single failed call is not treated as fatal — instead of
+    // dropping out of the loop we keep retrying with exponential backoff, and
+    // only when the node stays unreachable through the whole backoff schedule
+    // do we stop it and tell the user.
     property string cryptarchiaInfoJson: ""
     property string cryptarchiaInfoError: ""
+    // Detail of the failure that finally caused us to give up (shown in the
+    // dialog).
+    property string statusFailureDetail: ""
 
+    // UI status overrides driven by the poll loop, taking precedence over the
+    // backend's own status in the status tag:
+    //  - `statusUnresponsive`: set while we're backing off after failed status
+    //    calls (the node is still nominally Running but not answering);
+    //  - `statusFailed`: set once the backoff is exhausted and the node has
+    //    been stopped as a result. Persists until the node is started again.
+    property bool statusUnresponsive: false
+    property bool statusFailed: false
+
+    // Poll cadence / backoff. Healthy cadence is `statusPollBaseMs`; after a
+    // failed call we retry at `statusRetryMs`, doubling it on each further
+    // failure up to `statusPollMaxMs` (2^6 seconds). Once at the cap we retry
+    // there up to `statusMaxRetries` times before giving up. `statusRetryMs === 0`
+    // means "healthy — use the base cadence".
+    readonly property int statusPollBaseMs: 2000
+    readonly property int statusPollMaxMs: 64 * 1000     // 2^6 seconds
+    readonly property int statusMaxRetries: 3            // retries at the cap before giving up
+    property int statusRetryMs: 0
+    property int statusCapRetryCount: 0
+
+    // Drives the poll loop on/off with the node lifecycle. Kept as a property
+    // so its change handler can (re)start polling from a clean state.
+    readonly property bool statusPollActive:
+        root.ready && root.backend
+        && root.backend.status === BlockchainBackend.Running
+
+    onStatusPollActiveChanged: {
+        if (statusPollActive) {
+            root.statusRetryMs = 0
+            root.statusCapRetryCount = 0
+            root.statusUnresponsive = false
+            root.statusFailed = false
+            root.pollNodeStatus()          // immediate first poll
+        } else {
+            root.statusUnresponsive = false
+            cryptarchiaTimer.stop()
+        }
+    }
+
+    // Single-shot: each poll schedules the next one itself once its reply
+    // arrives, so a slow/stuck call can't overlap the following request and the
+    // backoff interval is honoured exactly. `interval` follows the backoff.
     Timer {
         id: cryptarchiaTimer
-        interval: 2000
+        repeat: false
+        interval: root.statusRetryMs > 0 ? root.statusRetryMs : root.statusPollBaseMs
+        onTriggered: root.pollNodeStatus()
+    }
+
+    function pollNodeStatus() {
+        if (!root.statusPollActive || !root.backend)
+            return
+        logos.watch(
+            root.backend.getCryptarchiaInfo(),
+            function(result) {
+                if (result.success)
+                    root._onStatusPollSuccess(result.value)
+                else
+                    root._onStatusPollFailure(_d.errorText(result.error))
+            },
+            function(error) { root._onStatusPollFailure(_d.errorText(error)) }
+        )
+    }
+
+    function _scheduleNextPoll() {
+        // Guard against rescheduling after the node has left Running (e.g. the
+        // user stopped it, or we gave up below).
+        if (root.statusPollActive)
+            cryptarchiaTimer.restart()
+    }
+
+    function _onStatusPollSuccess(value) {
+        root.cryptarchiaInfoJson = value
+        root.cryptarchiaInfoError = ""
+        root.statusRetryMs = 0             // recovered: back to the base cadence
+        root.statusCapRetryCount = 0
+        root.statusUnresponsive = false
+        root.statusNextPollSeconds = 0
+        root._scheduleNextPoll()
+    }
+
+    function _onStatusPollFailure(message) {
+        root.cryptarchiaInfoError = message
+
+        if (root.statusRetryMs >= root.statusPollMaxMs) {
+            // Already at the cap: retry there a bounded number of times before
+            // giving up.
+            root.statusCapRetryCount += 1
+            if (root.statusCapRetryCount >= root.statusMaxRetries) {
+                // Out of retries and the node is still unreachable: stop it and
+                // surface a message.
+                root.statusRetryMs = 0
+                root.statusCapRetryCount = 0
+                root.statusUnresponsive = false
+                root.statusNextPollSeconds = 0
+                cryptarchiaTimer.stop()
+                root.statusFailureDetail = message
+                root.statusFailed = true
+                if (root.backend)
+                    root.backend.stopBlockchain()
+                statusFailureDialog.open()
+                return
+            }
+            root.statusUnresponsive = true
+            root.statusNextPollSeconds = Math.ceil(root.statusRetryMs / 1000)
+            root._scheduleNextPoll()
+            return
+        }
+
+        // Exponential backoff: 2s, 4s, 8s, … capped at 2^6 s.
+        root.statusRetryMs = root.statusRetryMs === 0
+            ? root.statusPollBaseMs
+            : Math.min(root.statusRetryMs * 2, root.statusPollMaxMs)
+        root.statusUnresponsive = true
+        root.statusNextPollSeconds = Math.ceil(root.statusRetryMs / 1000)
+        root._scheduleNextPoll()
+    }
+
+    // Live countdown to the next retry while backing off, purely for display.
+    // Reset to the full backoff on each scheduled retry and ticked down once a
+    // second; the actual poll is driven by `cryptarchiaTimer`, not this.
+    property int statusNextPollSeconds: 0
+
+    Timer {
+        id: statusCountdownTimer
+        interval: 1000
         repeat: true
-        triggeredOnStart: true
-        running: root.ready && root.backend
-                 && root.backend.status === BlockchainBackend.Running
+        running: root.statusUnresponsive
         onTriggered: {
-            if (!root.backend) return
-            logos.watch(
-                root.backend.getCryptarchiaInfo(),
-                function(result) {
-                    if (result.success) {
-                        root.cryptarchiaInfoJson = result.value
-                        root.cryptarchiaInfoError = ""
-                    } else {
-                        root.cryptarchiaInfoError = _d.errorText(result.error)
-                    }
-                },
-                function(error) { root.cryptarchiaInfoError = _d.errorText(error) }
-            )
+            if (root.statusNextPollSeconds > 0)
+                root.statusNextPollSeconds -= 1
         }
     }
 
@@ -356,12 +474,20 @@ Rectangle {
 
                         StatusConfigView {
                             Layout.fillWidth: true
-                            statusText: root.backend
-                                ? _d.getStatusString(root.backend.status)
-                                : qsTr("Not Connected")
-                            statusColor: root.backend
-                                ? _d.getStatusColor(root.backend.status)
-                                : Theme.palette.error
+                            statusText: !root.backend
+                                ? qsTr("Not Connected")
+                                : root.statusFailed
+                                    ? qsTr("Failed")
+                                    : root.statusUnresponsive
+                                        ? qsTr("Unresponsive (retrying in %1s)").arg(root.statusNextPollSeconds)
+                                        : _d.getStatusString(root.backend.status)
+                            statusColor: !root.backend
+                                ? Theme.palette.error
+                                : root.statusFailed
+                                    ? Theme.palette.error
+                                    : root.statusUnresponsive
+                                        ? Theme.palette.warning
+                                        : _d.getStatusColor(root.backend.status)
                             userConfig: root.backend ? root.backend.userConfig : ""
                             deploymentConfig: root.backend ? root.backend.deploymentConfig : ""
                             useGeneratedConfig: root.backend ? root.backend.useGeneratedConfig : false
@@ -371,7 +497,15 @@ Rectangle {
                                       && root.backend.status !== BlockchainBackend.Stopping
                             isRunning: opPage.nodeRunning
 
-                            onStartRequested: if (root.backend) root.backend.startBlockchain()
+                            onStartRequested: {
+                                // Clear any lingering Failed/Unresponsive tag
+                                // from a previous run before starting again.
+                                root.statusFailed = false
+                                root.statusUnresponsive = false
+                                root.statusNextPollSeconds = 0
+                                root.statusCapRetryCount = 0
+                                if (root.backend) root.backend.startBlockchain()
+                            }
                             onStopRequested: if (root.backend) root.backend.stopBlockchain()
                             onChangeConfigRequested: _d.currentPage = 0
                         }
@@ -710,6 +844,36 @@ Rectangle {
                             ? qsTr("Unpin accounts") : qsTr("Pin accounts")
                     }
                 }
+            }
+        }
+    }
+
+    // Shown when the status poll gives up after exhausting its backoff and the
+    // node has been stopped as a result.
+    Dialog {
+        id: statusFailureDialog
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(420, parent ? parent.width - 2 * Theme.spacing.large : 420)
+        title: qsTr("Node stopped")
+        standardButtons: Dialog.Ok
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: Theme.spacing.small
+
+            LogosText {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: qsTr("Lost connection to the node while checking its status, so it has been stopped.")
+            }
+            LogosText {
+                Layout.fillWidth: true
+                visible: root.statusFailureDetail.length > 0
+                wrapMode: Text.WordWrap
+                color: Theme.palette.textSecondary
+                font.pixelSize: Theme.typography.secondaryText
+                text: root.statusFailureDetail
             }
         }
     }
