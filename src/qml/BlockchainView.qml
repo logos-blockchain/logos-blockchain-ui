@@ -850,16 +850,23 @@ Rectangle {
 
     // Shown when the status poll gives up after exhausting its backoff and the
     // node has been stopped as a result.
-    Dialog {
+    LogosDialog {
         id: statusFailureDialog
-        modal: true
         anchors.centerIn: parent
         width: Math.min(420, parent ? parent.width - 2 * Theme.spacing.large : 420)
         title: qsTr("Node stopped")
-        standardButtons: Dialog.Ok
+
+        rightActions: [
+            LogosButton {
+                implicitWidth: 100
+                implicitHeight: 40
+                text: qsTr("OK")
+                onClicked: statusFailureDialog.close()
+            }
+        ]
 
         ColumnLayout {
-            anchors.fill: parent
+            width: parent.width
             spacing: Theme.spacing.small
 
             LogosText {
