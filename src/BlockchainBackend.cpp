@@ -298,7 +298,11 @@ void BlockchainBackend::startBlockchain()
 
 void BlockchainBackend::stopBlockchain()
 {
-    if (status() != Running && status() != Starting)
+    // Error is included deliberately: it's an ambiguous state where the node
+    // may still be running (e.g. a request/reply call errored while the node
+    // kept producing blocks). Allowing Stop from Error lets it double as a
+    // reconcile so the UI can return to a known-stopped state.
+    if (status() != Running && status() != Starting && status() != Error)
         return;
 
     if (!m_blockchainClient) {
@@ -312,6 +316,12 @@ void BlockchainBackend::stopBlockchain()
         BLOCKCHAIN_MODULE_NAME, "stop"));
 
     if (r.success) {
+        setStatus(Stopped);
+    } else if (r.error.toString().contains(QStringLiteral("not running"), Qt::CaseInsensitive)) {
+        // The node was already down: "stop" reports it isn't running. Treat as
+        // reconciled rather than an error, so we land in a known-stopped state
+        // from which Start is safe again (avoids a stuck Error ⇄ "already
+        // running" loop).
         setStatus(Stopped);
     } else {
         setError(r.error.toString());

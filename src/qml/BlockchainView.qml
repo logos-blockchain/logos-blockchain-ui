@@ -120,25 +120,36 @@ Rectangle {
     }
 
     // Live Cryptarchia consensus state, polled while the node runs. This poll
-    // doubles as the node's health check: while it keeps succeeding the node is
-    // reachable. A single failed call is not treated as fatal — instead of
-    // dropping out of the loop we keep retrying with exponential backoff, and
-    // only when the node stays unreachable through the whole backoff schedule
-    // do we stop it and tell the user.
+    // is our *status monitor*, not a liveness verdict: a failed call means "the
+    // status RPC didn't answer", not "the node is dead" (the node also pushes
+    // blocks over a separate event channel, so it can be perfectly alive while a
+    // request/reply call times out). So a failure never stops the node — we
+    // retry with backoff, and if that is exhausted we simply *pause monitoring*
+    // and let the user (or the next incoming block) resume it.
     property string cryptarchiaInfoJson: ""
     property string cryptarchiaInfoError: ""
-    // Detail of the failure that finally caused us to give up (shown in the
-    // dialog).
-    property string statusFailureDetail: ""
 
     // UI status overrides driven by the poll loop, taking precedence over the
     // backend's own status in the status tag:
     //  - `statusUnresponsive`: set while we're backing off after failed status
-    //    calls (the node is still nominally Running but not answering);
-    //  - `statusFailed`: set once the backoff is exhausted and the node has
-    //    been stopped as a result. Persists until the node is started again.
+    //    calls (the node is still Running but the status RPC isn't answering);
+    //  - `monitoringPaused`: set once the backoff is exhausted — monitoring is
+    //    paused (the node is left untouched). Cleared by an incoming block or
+    //    the user's Resume action.
     property bool statusUnresponsive: false
-    property bool statusFailed: false
+    property bool monitoringPaused: false
+
+    // Whether the node is Running per the backend state machine. Kept separate
+    // from `statusPollActive` so leaving Running can clear a paused-monitoring
+    // state (a fresh start re-monitors from scratch).
+    readonly property bool nodeRunning:
+        root.ready && root.backend
+        && root.backend.status === BlockchainBackend.Running
+
+    onNodeRunningChanged: {
+        if (!nodeRunning)
+            root.monitoringPaused = false
+    }
 
     // Poll cadence / backoff. Healthy cadence is `statusPollBaseMs`; after a
     // failed call we retry at `statusRetryMs`, doubling it on each further
@@ -151,18 +162,16 @@ Rectangle {
     property int statusRetryMs: 0
     property int statusCapRetryCount: 0
 
-    // Drives the poll loop on/off with the node lifecycle. Kept as a property
-    // so its change handler can (re)start polling from a clean state.
-    readonly property bool statusPollActive:
-        root.ready && root.backend
-        && root.backend.status === BlockchainBackend.Running
+    // Drives the poll loop on/off: the node is Running and monitoring hasn't
+    // been paused. Kept as a property so its change handler can (re)start
+    // polling from a clean state — including when Resume clears the pause.
+    readonly property bool statusPollActive: root.nodeRunning && !root.monitoringPaused
 
     onStatusPollActiveChanged: {
         if (statusPollActive) {
             root.statusRetryMs = 0
             root.statusCapRetryCount = 0
             root.statusUnresponsive = false
-            root.statusFailed = false
             root.pollNodeStatus()          // immediate first poll
         } else {
             root.statusUnresponsive = false
@@ -220,18 +229,15 @@ Rectangle {
             // giving up.
             root.statusCapRetryCount += 1
             if (root.statusCapRetryCount >= root.statusMaxRetries) {
-                // Out of retries and the node is still unreachable: stop it and
-                // surface a message.
+                // Out of retries: the status RPC won't answer. Do NOT touch the
+                // node (it may well be alive — see the comment above). Just
+                // pause monitoring; an incoming block or the Resume button will
+                // bring it back.
                 root.statusRetryMs = 0
                 root.statusCapRetryCount = 0
                 root.statusUnresponsive = false
                 root.statusNextPollSeconds = 0
-                cryptarchiaTimer.stop()
-                root.statusFailureDetail = message
-                root.statusFailed = true
-                if (root.backend)
-                    root.backend.stopBlockchain()
-                statusFailureDialog.open()
+                root.monitoringPaused = true   // flips statusPollActive → stops the loop
                 return
             }
             root.statusUnresponsive = true
@@ -265,6 +271,15 @@ Rectangle {
         }
     }
 
+    // Resume the status monitor after it was paused (backoff exhausted). Clears
+    // the pause, which flips `statusPollActive` back on and — via its change
+    // handler — resets the backoff and fires an immediate poll. No-op if the
+    // node isn't Running.
+    function resumeMonitoring() {
+        if (root.monitoringPaused && root.nodeRunning)
+            root.monitoringPaused = false
+    }
+
     // Wallet's claimable ("pending") vouchers. Auto-refreshed on every incoming
     // block, and once when the node starts running.
     property string claimableVouchersJson: ""
@@ -279,12 +294,17 @@ Rectangle {
         )
     }
 
-    // Incoming blocks arrive as row insertions on the remoted block model.
+    // Incoming blocks arrive as row insertions on the remoted block model. A
+    // new block is proof the node is alive, so it also auto-resumes a paused
+    // status monitor.
     Connections {
         target: root.blockModel
         enabled: root.blockModel !== null
         ignoreUnknownSignals: true
-        function onRowsInserted() { root.refreshClaimableVouchers() }
+        function onRowsInserted() {
+            root.resumeMonitoring()
+            root.refreshClaimableVouchers()
+        }
     }
 
     // Initial load when the node reaches Running (before the next block).
@@ -476,37 +496,36 @@ Rectangle {
                             Layout.fillWidth: true
                             statusText: !root.backend
                                 ? qsTr("Not Connected")
-                                : root.statusFailed
-                                    ? qsTr("Failed")
+                                : root.monitoringPaused
+                                    ? qsTr("Status unavailable")
                                     : root.statusUnresponsive
                                         ? qsTr("Unresponsive (retrying in %1s)").arg(root.statusNextPollSeconds)
                                         : _d.getStatusString(root.backend.status)
                             statusColor: !root.backend
                                 ? Theme.palette.error
-                                : root.statusFailed
-                                    ? Theme.palette.error
-                                    : root.statusUnresponsive
-                                        ? Theme.palette.warning
-                                        : _d.getStatusColor(root.backend.status)
+                                : (root.monitoringPaused || root.statusUnresponsive)
+                                    ? Theme.palette.warning
+                                    : _d.getStatusColor(root.backend.status)
                             userConfig: root.backend ? root.backend.userConfig : ""
                             deploymentConfig: root.backend ? root.backend.deploymentConfig : ""
                             useGeneratedConfig: root.backend ? root.backend.useGeneratedConfig : false
+                            // Offer Start only from a state where the backend
+                            // confirms the node is down (NotStarted / Stopped).
+                            // In the ambiguous Error state we can't rule out a
+                            // live node, so Start is withheld and Stop is offered
+                            // instead (it reconciles — see stopBlockchain()).
                             canStart: root.backend
                                       && !!root.backend.userConfig
-                                      && root.backend.status !== BlockchainBackend.Starting
-                                      && root.backend.status !== BlockchainBackend.Stopping
-                            isRunning: opPage.nodeRunning
+                                      && (root.backend.status === BlockchainBackend.NotStarted
+                                          || root.backend.status === BlockchainBackend.Stopped)
+                            canStop: root.backend
+                                     && (root.backend.status === BlockchainBackend.Running
+                                         || root.backend.status === BlockchainBackend.Error)
+                            monitoringPaused: root.monitoringPaused
 
-                            onStartRequested: {
-                                // Clear any lingering Failed/Unresponsive tag
-                                // from a previous run before starting again.
-                                root.statusFailed = false
-                                root.statusUnresponsive = false
-                                root.statusNextPollSeconds = 0
-                                root.statusCapRetryCount = 0
-                                if (root.backend) root.backend.startBlockchain()
-                            }
+                            onStartRequested: if (root.backend) root.backend.startBlockchain()
                             onStopRequested: if (root.backend) root.backend.stopBlockchain()
+                            onResumeMonitoringRequested: root.resumeMonitoring()
                             onChangeConfigRequested: _d.currentPage = 0
                         }
 
@@ -848,40 +867,4 @@ Rectangle {
         }
     }
 
-    // Shown when the status poll gives up after exhausting its backoff and the
-    // node has been stopped as a result.
-    LogosDialog {
-        id: statusFailureDialog
-        anchors.centerIn: parent
-        width: Math.min(420, parent ? parent.width - 2 * Theme.spacing.large : 420)
-        title: qsTr("Node stopped")
-
-        rightActions: [
-            LogosButton {
-                implicitWidth: 100
-                implicitHeight: 40
-                text: qsTr("OK")
-                onClicked: statusFailureDialog.close()
-            }
-        ]
-
-        ColumnLayout {
-            width: parent.width
-            spacing: Theme.spacing.small
-
-            LogosText {
-                Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-                text: qsTr("Lost connection to the node while checking its status, so it has been stopped.")
-            }
-            LogosText {
-                Layout.fillWidth: true
-                visible: root.statusFailureDetail.length > 0
-                wrapMode: Text.WordWrap
-                color: Theme.palette.textSecondary
-                font.pixelSize: Theme.typography.secondaryText
-                text: root.statusFailureDetail
-            }
-        }
-    }
 }
