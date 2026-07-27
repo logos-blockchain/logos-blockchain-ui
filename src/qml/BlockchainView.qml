@@ -140,32 +140,165 @@ Rectangle {
         function onUserConfigChanged() { root.refreshPeerId() }
     }
 
-    // Live Cryptarchia consensus state, polled while the node runs.
+    // Live Cryptarchia consensus state, polled while the node runs. This poll
+    // is our *status monitor*, not a liveness verdict: a failed call means "the
+    // status RPC didn't answer", not "the node is dead" (the node also pushes
+    // blocks over a separate event channel, so it can be perfectly alive while a
+    // request/reply call times out). So a failure never stops the node — we
+    // retry with backoff, and if that is exhausted we simply *pause monitoring*
+    // and let the user (or the next incoming block) resume it.
     property string cryptarchiaInfoJson: ""
     property string cryptarchiaInfoError: ""
 
+    // UI status overrides driven by the poll loop, taking precedence over the
+    // backend's own status in the status tag:
+    //  - `statusUnresponsive`: set while we're backing off after failed status
+    //    calls (the node is still Running but the status RPC isn't answering);
+    //  - `monitoringPaused`: set once the backoff is exhausted — monitoring is
+    //    paused (the node is left untouched). Cleared by an incoming block or
+    //    the user's Resume action.
+    property bool statusUnresponsive: false
+    property bool monitoringPaused: false
+
+    // Whether the node is Running per the backend state machine. Kept separate
+    // from `statusPollActive` so leaving Running can clear a paused-monitoring
+    // state (a fresh start re-monitors from scratch).
+    readonly property bool nodeRunning:
+        root.ready && root.backend
+        && root.backend.status === BlockchainBackend.Running
+
+    onNodeRunningChanged: {
+        if (!nodeRunning)
+            root.monitoringPaused = false
+    }
+
+    // Poll cadence / backoff. Healthy cadence is `statusPollBaseMs`; after a
+    // failed call we retry at `statusRetryMs`, doubling it on each further
+    // failure up to `statusPollMaxMs` (2^6 seconds). Once at the cap we retry
+    // there up to `statusMaxRetries` times before giving up. `statusRetryMs === 0`
+    // means "healthy — use the base cadence".
+    readonly property int statusPollBaseMs: 2000
+    readonly property int statusPollMaxMs: 64 * 1000     // 2^6 seconds
+    readonly property int statusMaxRetries: 3            // retries at the cap before giving up
+    property int statusRetryMs: 0
+    property int statusCapRetryCount: 0
+
+    // Drives the poll loop on/off: the node is Running and monitoring hasn't
+    // been paused. Kept as a property so its change handler can (re)start
+    // polling from a clean state — including when Resume clears the pause.
+    readonly property bool statusPollActive: root.nodeRunning && !root.monitoringPaused
+
+    onStatusPollActiveChanged: {
+        if (statusPollActive) {
+            root.statusRetryMs = 0
+            root.statusCapRetryCount = 0
+            root.statusUnresponsive = false
+            root.pollNodeStatus()          // immediate first poll
+        } else {
+            root.statusUnresponsive = false
+            cryptarchiaTimer.stop()
+        }
+    }
+
+    // Single-shot: each poll schedules the next one itself once its reply
+    // arrives, so a slow/stuck call can't overlap the following request and the
+    // backoff interval is honoured exactly. `interval` follows the backoff.
     Timer {
         id: cryptarchiaTimer
-        interval: 2000
-        repeat: true
-        triggeredOnStart: true
-        running: root.ready && root.backend
-                 && root.backend.status === BlockchainBackend.Running
-        onTriggered: {
-            if (!root.backend) return
-            logos.watch(
-                root.backend.getCryptarchiaInfo(),
-                function(result) {
-                    if (result.success) {
-                        root.cryptarchiaInfoJson = result.value
-                        root.cryptarchiaInfoError = ""
-                    } else {
-                        root.cryptarchiaInfoError = _d.errorText(result.error)
-                    }
-                },
-                function(error) { root.cryptarchiaInfoError = _d.errorText(error) }
-            )
+        repeat: false
+        interval: root.statusRetryMs > 0 ? root.statusRetryMs : root.statusPollBaseMs
+        onTriggered: root.pollNodeStatus()
+    }
+
+    function pollNodeStatus() {
+        if (!root.statusPollActive || !root.backend)
+            return
+        logos.watch(
+            root.backend.getCryptarchiaInfo(),
+            function(result) {
+                if (result.success)
+                    root._onStatusPollSuccess(result.value)
+                else
+                    root._onStatusPollFailure(_d.errorText(result.error))
+            },
+            function(error) { root._onStatusPollFailure(_d.errorText(error)) }
+        )
+    }
+
+    function _scheduleNextPoll() {
+        // Guard against rescheduling after the node has left Running (e.g. the
+        // user stopped it, or we gave up below).
+        if (root.statusPollActive)
+            cryptarchiaTimer.restart()
+    }
+
+    function _onStatusPollSuccess(value) {
+        root.cryptarchiaInfoJson = value
+        root.cryptarchiaInfoError = ""
+        root.statusRetryMs = 0             // recovered: back to the base cadence
+        root.statusCapRetryCount = 0
+        root.statusUnresponsive = false
+        root.statusNextPollSeconds = 0
+        root._scheduleNextPoll()
+    }
+
+    function _onStatusPollFailure(message) {
+        root.cryptarchiaInfoError = message
+
+        if (root.statusRetryMs >= root.statusPollMaxMs) {
+            // Already at the cap: retry there a bounded number of times before
+            // giving up.
+            root.statusCapRetryCount += 1
+            if (root.statusCapRetryCount >= root.statusMaxRetries) {
+                // Out of retries: the status RPC won't answer. Do NOT touch the
+                // node (it may well be alive — see the comment above). Just
+                // pause monitoring; an incoming block or the Resume button will
+                // bring it back.
+                root.statusRetryMs = 0
+                root.statusCapRetryCount = 0
+                root.statusUnresponsive = false
+                root.statusNextPollSeconds = 0
+                root.monitoringPaused = true   // flips statusPollActive → stops the loop
+                return
+            }
+            root.statusUnresponsive = true
+            root.statusNextPollSeconds = Math.ceil(root.statusRetryMs / 1000)
+            root._scheduleNextPoll()
+            return
         }
+
+        // Exponential backoff: 2s, 4s, 8s, … capped at 2^6 s.
+        root.statusRetryMs = root.statusRetryMs === 0
+            ? root.statusPollBaseMs
+            : Math.min(root.statusRetryMs * 2, root.statusPollMaxMs)
+        root.statusUnresponsive = true
+        root.statusNextPollSeconds = Math.ceil(root.statusRetryMs / 1000)
+        root._scheduleNextPoll()
+    }
+
+    // Live countdown to the next retry while backing off, purely for display.
+    // Reset to the full backoff on each scheduled retry and ticked down once a
+    // second; the actual poll is driven by `cryptarchiaTimer`, not this.
+    property int statusNextPollSeconds: 0
+
+    Timer {
+        id: statusCountdownTimer
+        interval: 1000
+        repeat: true
+        running: root.statusUnresponsive
+        onTriggered: {
+            if (root.statusNextPollSeconds > 0)
+                root.statusNextPollSeconds -= 1
+        }
+    }
+
+    // Resume the status monitor after it was paused (backoff exhausted). Clears
+    // the pause, which flips `statusPollActive` back on and — via its change
+    // handler — resets the backoff and fires an immediate poll. No-op if the
+    // node isn't Running.
+    function resumeMonitoring() {
+        if (root.monitoringPaused && root.nodeRunning)
+            root.monitoringPaused = false
     }
 
     // Wallet's claimable ("pending") vouchers. Auto-refreshed on every incoming
@@ -182,12 +315,17 @@ Rectangle {
         )
     }
 
-    // Incoming blocks arrive as row insertions on the remoted block model.
+    // Incoming blocks arrive as row insertions on the remoted block model. A
+    // new block is proof the node is alive, so it also auto-resumes a paused
+    // status monitor.
     Connections {
         target: root.blockModel
         enabled: root.blockModel !== null
         ignoreUnknownSignals: true
-        function onRowsInserted() { root.refreshClaimableVouchers() }
+        function onRowsInserted() {
+            root.resumeMonitoring()
+            root.refreshClaimableVouchers()
+        }
     }
 
     // Initial load when the node reaches Running (before the next block).
@@ -383,23 +521,38 @@ Rectangle {
 
                         StatusConfigView {
                             Layout.fillWidth: true
-                            statusText: root.backend
-                                ? _d.getStatusString(root.backend.status)
-                                : qsTr("Not Connected")
-                            statusColor: root.backend
-                                ? _d.getStatusColor(root.backend.status)
-                                : Theme.palette.error
+                            statusText: !root.backend
+                                ? qsTr("Not Connected")
+                                : root.monitoringPaused
+                                    ? qsTr("Status unavailable")
+                                    : root.statusUnresponsive
+                                        ? qsTr("Unresponsive (retrying in %1s)").arg(root.statusNextPollSeconds)
+                                        : _d.getStatusString(root.backend.status)
+                            statusColor: !root.backend
+                                ? Theme.palette.error
+                                : (root.monitoringPaused || root.statusUnresponsive)
+                                    ? Theme.palette.warning
+                                    : _d.getStatusColor(root.backend.status)
                             userConfig: root.backend ? root.backend.userConfig : ""
                             deploymentConfig: root.backend ? root.backend.deploymentConfig : ""
                             useGeneratedConfig: root.backend ? root.backend.useGeneratedConfig : false
+                            // Offer Start only from a state where the backend
+                            // confirms the node is down (NotStarted / Stopped).
+                            // In the ambiguous Error state we can't rule out a
+                            // live node, so Start is withheld and Stop is offered
+                            // instead (it reconciles — see stopBlockchain()).
                             canStart: root.backend
                                       && !!root.backend.userConfig
-                                      && root.backend.status !== BlockchainBackend.Starting
-                                      && root.backend.status !== BlockchainBackend.Stopping
-                            isRunning: opPage.nodeRunning
+                                      && (root.backend.status === BlockchainBackend.NotStarted
+                                          || root.backend.status === BlockchainBackend.Stopped)
+                            canStop: root.backend
+                                     && (root.backend.status === BlockchainBackend.Running
+                                         || root.backend.status === BlockchainBackend.Error)
+                            monitoringPaused: root.monitoringPaused
 
                             onStartRequested: if (root.backend) root.backend.startBlockchain()
                             onStopRequested: if (root.backend) root.backend.stopBlockchain()
+                            onResumeMonitoringRequested: root.resumeMonitoring()
                             onChangeConfigRequested: _d.currentPage = 0
                         }
 
@@ -740,4 +893,5 @@ Rectangle {
             }
         }
     }
+
 }
