@@ -9,6 +9,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -25,8 +26,64 @@ const QString BlockchainBackend::BLOCKCHAIN_MODULE_NAME =
 
 void BlockchainBackend::setError(const QString& message)
 {
-    setLastErrorMessage(message);
+    // If the SDK handed us the opaque no-reply string ("Call failed."), ask the
+    // node's own log why, so the UI shows a real cause instead of a dead end.
+    QString honest = message;
+    if (message.contains(QStringLiteral("Call failed"), Qt::CaseInsensitive)) {
+        const QString real = lastNodeError();
+        if (!real.isEmpty())
+            honest = real;
+    }
+    setLastErrorMessage(honest);
     setStatus(Error);
+}
+
+// Tail the node's newest log file and map a known failure signature to a
+// plain-language cause. Returns empty when nothing recognisable is found (the
+// caller then keeps the original message).
+QString BlockchainBackend::lastNodeError() const
+{
+    const QString cfg = userConfig();
+    if (cfg.isEmpty())
+        return {};
+    const QDir logsDir(QFileInfo(cfg).absoluteDir().filePath(QStringLiteral("logs")));
+    if (!logsDir.exists())
+        return {};
+    const QFileInfoList files = logsDir.entryInfoList(QDir::Files, QDir::Time);
+    if (files.isEmpty())
+        return {};
+    QFile f(files.first().absoluteFilePath());
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+        return {};
+    const qint64 tail = qMin<qint64>(f.size(), 128 * 1024);
+    f.seek(f.size() - tail);
+    const QStringList lines = QString::fromUtf8(f.readAll()).split(QLatin1Char('\n'));
+    f.close();
+
+    for (int i = lines.size() - 1; i >= 0; --i) {
+        const QString& ln = lines.at(i);
+        // Recovery FIRST — it is progress, not an error.
+        if (ln.contains(QStringLiteral("blocks to replay")) || ln.contains(QStringLiteral("Chain recovery"))
+            || ln.contains(QStringLiteral("recovering chain state")))
+            return QStringLiteral("The node is replaying stored blocks to catch up — this can take a few minutes.");
+        if (ln.contains(QStringLiteral("crashed (signal")) || ln.contains(QStringLiteral("panicked"))
+            || ln.contains(QStringLiteral("SIGABRT")) || ln.contains(QStringLiteral("SIGSEGV")))
+            return QStringLiteral("The node process crashed — see the log, then reset chain state to recover.");
+        if (ln.contains(QStringLiteral("Storage backend error")) || ln.contains(QStringLiteral("from storage"))
+            || ln.contains(QStringLiteral("Storage request failed")))
+            return QStringLiteral("The chain database is in a bad state — reset chain state to recover.");
+        if (ln.contains(QStringLiteral("AddrInUse")) || ln.contains(QStringLiteral("address already in use"))
+            || ln.contains(QStringLiteral("failed to bind")))
+            return QStringLiteral("A required network port is already in use — another node may still be running.");
+        if (ln.contains(QStringLiteral("AllPeersFailed")) || ln.contains(QStringLiteral("does not support")))
+            return QStringLiteral("Couldn't sync from the configured peers (unreachable, or a different network/version).");
+        if (ln.contains(QStringLiteral("No space left")) || ln.contains(QStringLiteral("ENOSPC")))
+            return QStringLiteral("The disk is full — free up space, then try again.");
+        if (ln.contains(QStringLiteral("missing field")) || ln.contains(QStringLiteral("failed to parse"))
+            || ln.contains(QStringLiteral("deserialize")))
+            return QStringLiteral("The node config couldn't be parsed — regenerate the config.");
+    }
+    return {};
 }
 
 static QString toLocalPath(const QString& pathInput)
@@ -231,8 +288,17 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
     if (!m_blockchainClient)
         return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
 
-    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_cryptarchia_info"))));
+    LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_cryptarchia_info")));
+    // The node view polls this; swap the opaque no-reply string for the node's
+    // real reason (crash / recovering / storage / peers) from its log.
+    if (!r.success
+        && r.error.toString().contains(QStringLiteral("Call failed"), Qt::CaseInsensitive)) {
+        const QString real = lastNodeError();
+        if (!real.isEmpty())
+            r.error = real;
+    }
+    return result::toVariantMap(r);
 }
 
 QVariantMap BlockchainBackend::getBlock(QString headerIdHex)
