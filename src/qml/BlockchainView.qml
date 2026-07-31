@@ -118,7 +118,36 @@ Rectangle {
             return
         _d.initialRouted = true
         if (root.backend.userConfig && root.backend.userConfig.length > 0)
-            _d.currentPage = 1
+            _d.currentPage = 1        // config exists → node view
+        else
+            _d.currentPage = 2        // no config → first-run welcome
+    }
+
+    // One-click: generate a default testnet config and start the node. The
+    // default bootstrap peers are the same set as PR #39 (peers pre-fill) — happy
+    // to source them however the team prefers; kept here so a newcomer reaches a
+    // syncing node in a single click.
+    function _runNodeOneClick() {
+        if (!root.backend) return
+        var peers = [
+            "/ip4/65.109.51.37/udp/3000/quic-v1/p2p/12D3KooWFrouXfmrR4nsLMtE7wu15DoMJ6VtoUtHinREZCvbWHar",
+            "/ip4/65.109.51.37/udp/3001/quic-v1/p2p/12D3KooWJRGau8M1rjT7R5e4YYsgdFhsMX35nRDtMwCDjxQkXAHz",
+            "/ip4/65.109.51.37/udp/3002/quic-v1/p2p/12D3KooWQXJavMDTRscjauFSgVAB1VLB6Rzpy2uY5SU9Tk7927tb",
+            "/ip4/65.109.51.37/udp/50001/quic-v1/p2p/12D3KooWSQc7CcGtvWDPF1yCbBthFnQjprfCVHmfmNDUrSmqQsU1"
+        ]
+        logos.watch(
+            root.backend.generateConfig("", peers, 0, 0, "", "", false, 0, "", ""),
+            function(result) {
+                if (!result.success) return
+                root.backend.userConfig =
+                    (result.value !== undefined && result.value !== "")
+                        ? result.value : root.backend.generatedUserConfigPath
+                root.backend.useGeneratedConfig = true
+                _d.currentPage = 1
+                root.backend.startBlockchain()
+            },
+            function(error) {}
+        )
     }
 
     function refreshPeerId() {
@@ -891,6 +920,13 @@ Rectangle {
                     }
                 }
             }
+        }
+
+        // First-run welcome screen — shown when no config exists yet (page 2).
+        FirstRunView {
+            onRunNodeRequested: root._runNodeOneClick()
+            onHaveConfigRequested: { configChoiceView.showSetConfigPath(); _d.currentPage = 0 }
+            onGenerateCustomRequested: _d.currentPage = 0
         }
     }
 
