@@ -106,7 +106,7 @@ ColumnLayout {
                             Layout.alignment: Qt.AlignRight
                             Layout.preferredHeight: 40
                             Layout.preferredWidth: 40
-                            onCopyText: root.copyToClipboard(transferResultText.text)
+                            value: transferResultText.text
                             visible: transferResultText.text
                         }
                     }

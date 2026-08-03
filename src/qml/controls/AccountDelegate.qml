@@ -61,7 +61,7 @@ ItemDelegate {
                 Layout.alignment: Qt.AlignRight
                 Layout.preferredHeight: 40
                 Layout.preferredWidth: 40
-                onCopyText: root.copyRequested(model.address || "")
+                value: model.address || ""
             }
         }
 

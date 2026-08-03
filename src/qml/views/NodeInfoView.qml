@@ -55,7 +55,7 @@ Rectangle {
                 Layout.preferredHeight: 24
                 Layout.preferredWidth: 24
                 visible: root.peerId.length > 0
-                onCopyText: root.copyToClipboard(root.peerId)
+                value: root.peerId
             }
         }
     }

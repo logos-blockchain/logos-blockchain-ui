@@ -195,7 +195,7 @@ Rectangle {
                     font.bold: true
                 }
                 Item { Layout.fillWidth: true }
-                LogosCopyButton { onCopyText: del.copyToClipboard(model.rawJson || "") }
+                LogosCopyButton { value: model.rawJson || "" }
             }
             JsonBlock {
                 Layout.fillWidth: true
