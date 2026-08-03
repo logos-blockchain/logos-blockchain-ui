@@ -290,7 +290,7 @@ ColumnLayout {
                         LogosCopyButton {
                             ToolTip.visible: hovered
                             ToolTip.text: qsTr("Copy raw block JSON")
-                            onCopyText: root.copyToClipboard(root.pretty(root.rawJson))
+                            value: root.pretty(root.rawJson)
                         }
                     }
 
@@ -407,7 +407,7 @@ ColumnLayout {
                         LogosCopyButton {
                             ToolTip.visible: hovered
                             ToolTip.text: qsTr("Copy raw transaction JSON")
-                            onCopyText: root.copyToClipboard(root.pretty(root.rawJson))
+                            value: root.pretty(root.rawJson)
                         }
                     }
 

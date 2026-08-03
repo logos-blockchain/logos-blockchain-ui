@@ -84,7 +84,7 @@ ColumnLayout {
         }
         LogosCopyButton {
             // Copy the tx id when available, otherwise the full tx JSON.
-            onCopyText: txRoot.copyToClipboard(txRoot.txId !== "" ? txRoot.txId : txRoot.json)
+            value: txRoot.txId !== "" ? txRoot.txId : txRoot.json
         }
     }
 
@@ -145,7 +145,7 @@ ColumnLayout {
                 font.bold: true
             }
             LogosCopyButton {
-                onCopyText: txRoot.copyToClipboard(txRoot.pretty(opView.op ? opView.op.payload : null))
+                value: txRoot.pretty(opView.op ? opView.op.payload : null)
             }
         }
 
@@ -168,7 +168,7 @@ ColumnLayout {
                 font.pixelSize: Theme.typography.secondaryText
             }
             Item { Layout.fillWidth: true }
-            LogosCopyButton { onCopyText: txRoot.copyToClipboard(txRoot.pretty(opView.proof)) }
+            LogosCopyButton { value: txRoot.pretty(opView.proof) }
         }
         JsonBlock {
             Layout.fillWidth: true

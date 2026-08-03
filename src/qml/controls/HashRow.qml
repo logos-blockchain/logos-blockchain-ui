@@ -36,6 +36,6 @@ RowLayout {
     }
     LogosCopyButton {
         visible: root.copyable && root.value && root.value.length > 0
-        onCopyText: root.copyRequested(root.value)
+        value: root.value
     }
 }
