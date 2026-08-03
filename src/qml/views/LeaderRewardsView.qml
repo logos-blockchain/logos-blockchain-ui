@@ -188,7 +188,7 @@ ColumnLayout {
                         Layout.alignment: Qt.AlignRight
                         Layout.preferredHeight: 40
                         Layout.preferredWidth: 40
-                        onCopyText: root.copyToClipboard(leaderClaimResultText.text)
+                        value: leaderClaimResultText.text
                         visible: leaderClaimResultText.text
                     }
                 }
@@ -222,7 +222,7 @@ ColumnLayout {
             Layout.preferredHeight: 24
             Layout.preferredWidth: 24
             visible: vf.value.length > 0
-            onCopyText: root.copyToClipboard(vf.value)
+            value: vf.value
         }
     }
 }

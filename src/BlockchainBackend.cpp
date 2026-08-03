@@ -8,6 +8,7 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
+#include <QFile>
 #include <QGuiApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -135,13 +136,28 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     const QString savedDeploymentConfig =
         s.value("deploymentConfigPath").toString();
 
+    const auto restorableOr = [](const QString& saved, const char* what) -> QString {
+        if (saved.isEmpty())
+            return QString();
+        const QString local = toLocalPath(saved);
+        if (QFile::exists(local))
+            return local;
+        qWarning() << "BlockchainBackend: ignoring saved" << what
+                   << "- file no longer exists:" << local;
+        return QString();
+    };
+
+    const QString restoredUserConfig = restorableOr(savedUserConfig, "user config");
+    const QString restoredDeploymentConfig =
+        restorableOr(savedDeploymentConfig, "deployment config");
+
     if (!envConfigPath.isEmpty())
         setUserConfig(toLocalPath(envConfigPath));
-    else if (!savedUserConfig.isEmpty())
-        setUserConfig(toLocalPath(savedUserConfig));
+    else if (!restoredUserConfig.isEmpty())
+        setUserConfig(restoredUserConfig);
 
-    if (!savedDeploymentConfig.isEmpty())
-        setDeploymentConfig(toLocalPath(savedDeploymentConfig));
+    if (!restoredDeploymentConfig.isEmpty())
+        setDeploymentConfig(restoredDeploymentConfig);
 
     // Re-apply pre-.rep behavior: normalize file URLs, then persist (as master did in setters).
     connect(this, &BlockchainBackendSimpleSource::userConfigChanged, this, [this]() {
