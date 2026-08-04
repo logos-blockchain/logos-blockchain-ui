@@ -16,8 +16,17 @@ ColumnLayout {
     signal transferRequested(string fromKeyHex, string toKeyHex, string amount)
     signal copyToClipboard(string text)
 
-    function setTransferResult(text) {
-        transferResultText.text = text
+    property string resultHash: ""
+    property string resultError: ""
+
+    function setTransferHash(hash) {
+        root.resultHash = hash
+        root.resultError = ""
+    }
+
+    function setTransferError(message) {
+        root.resultError = message
+        root.resultHash = ""
     }
 
     spacing: Theme.spacing.large
@@ -76,40 +85,28 @@ ColumnLayout {
 
             RowLayout {
                 Layout.fillWidth: true
-                Layout.preferredHeight: transferButton.implicitHeight
+                spacing: Theme.spacing.small
 
                 LogosButton {
                     id: transferButton
-                    Layout.preferredWidth: 60
-                    Layout.alignment: Qt.AlignRight
+                    Layout.alignment: Qt.AlignTop
                     text: qsTr("Send")
                     onClicked: root.transferRequested(transferFromCombo.currentText.trim(), transferToField.text.trim(), transferAmountField.text)
                 }
 
-                LogosButton {
+                LogosSelectableText {
+                    id: transferResult
                     Layout.fillWidth: true
-                    enabled: true
-                    padding: Theme.spacing.small
-                    contentItem: RowLayout {
-                        width: parent.width
-                        anchors.centerIn: parent
-                        LogosText {
-                            id: transferResultText
-                            Layout.fillWidth: true
-                            color: Theme.palette.textSecondary
-                            font.pixelSize: Theme.typography.secondaryText
-                            font.weight: Theme.typography.weightMedium
-                            wrapMode: Text.WordWrap
-                            elide: Text.ElideRight
-                        }
-                        LogosCopyButton {
-                            Layout.alignment: Qt.AlignRight
-                            Layout.preferredHeight: 40
-                            Layout.preferredWidth: 40
-                            value: transferResultText.text
-                            visible: transferResultText.text
-                        }
-                    }
+                    Layout.alignment: Qt.AlignVCenter
+                    visible: root.resultHash.length > 0 || root.resultError.length > 0
+                    text: root.resultHash.length > 0
+                              ? qsTr("Tx hash: ") + root.resultHash
+                              : root.resultError
+                    color: root.resultError.length > 0 ? Theme.palette.error
+                                                       : Theme.palette.text
+                    font.pixelSize: Theme.typography.secondaryText
+                    wrapMode: TextEdit.Wrap
+                    horizontalAlignment: TextEdit.AlignRight
                 }
             }
         }
