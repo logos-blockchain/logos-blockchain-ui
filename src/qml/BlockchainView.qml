@@ -687,12 +687,12 @@ Rectangle {
                                     root.backend.transferFunds(fromKeyHex, toKeyHex, amount),
                                     function(result) {
                                         if (result.success) {
-                                            transferView.setTransferResult(result.value)
+                                            transferView.setTransferHash(result.value)
                                         } else {
-                                            transferView.setTransferResult(_d.errorText(result.error))
+                                            transferView.setTransferError(_d.errorText(result.error))
                                         }
                                     },
-                                    function(error) { transferView.setTransferResult(_d.errorText(error)) }
+                                    function(error) { transferView.setTransferError(_d.errorText(error)) }
                                 )
                             }
                             onCopyToClipboard: (text) => {

@@ -181,7 +181,7 @@ ColumnLayout {
                 LogosTextField {
                     id: idField
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 30
+                    Layout.preferredHeight: searchButton.implicitHeight
                     placeholderText: qsTr("Block id or transaction hash (hex)")
                     enabled: root.nodeRunning && !root.busy
 
@@ -194,8 +194,7 @@ ColumnLayout {
                 }
 
                 LogosButton {
-                    Layout.preferredWidth: 90
-                    Layout.preferredHeight: 30
+                    id: searchButton
                     text: root.busy ? qsTr("…") : qsTr("Search")
                     enabled: root.nodeRunning && !root.busy && idField.text.trim().length > 0
                     onClicked: root.doSearch()
