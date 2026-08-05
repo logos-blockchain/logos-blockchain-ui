@@ -212,7 +212,7 @@ ColumnLayout {
         onClicked: d.doGenerate()
     }
 
-    TextEdit {
+    LogosSelectableText {
         Layout.alignment: Qt.AlignHCenter
         Layout.fillWidth: true
         text: root.resultMessage
@@ -220,11 +220,6 @@ ColumnLayout {
         font.pixelSize: Theme.typography.secondaryText
         wrapMode: Text.WordWrap
         visible: root.resultMessage !== ""
-        readOnly: true
-        selectByMouse: true
-        selectedTextColor: Theme.palette.background
-        selectionColor: Theme.palette.primary
-        background: null
     }
 
     FileDialog {
