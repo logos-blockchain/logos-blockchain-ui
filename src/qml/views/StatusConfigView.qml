@@ -46,12 +46,16 @@ Rectangle {
         // Status Card
         RowLayout {
             Layout.alignment: Qt.AlignVCenter
+            Layout.fillWidth: true
             spacing: Theme.spacing.medium
 
             ColumnLayout {
+                Layout.fillWidth: true
                 LogosText {
+                    Layout.fillWidth: true
                     font.bold: true
                     text: root.statusText
+                    elide: Text.ElideRight
                     color: root.statusColor
                 }
                 LogosText {

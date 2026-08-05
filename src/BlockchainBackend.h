@@ -1,6 +1,7 @@
 #ifndef BLOCKCHAIN_BACKEND_H
 #define BLOCKCHAIN_BACKEND_H
 
+#include <QElapsedTimer>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -37,6 +38,15 @@ public:
     AccountsModel* accounts() const { return m_accountsModel; }
     BlockModel* blocks() const { return m_blockModel; }
 
+    // One node-log signature and what to tell the user when it is seen.
+    // `recovering` marks progress rather than failure (replaying stored
+    // blocks): those match at any log level, failures only on ERROR/WARN.
+    struct Rule {
+        const char* needle;
+        const char* message;
+        bool recovering;
+    };
+
 public slots:
     // Overrides of the pure-virtual slots generated from the .rep.
     void startBlockchain() override;
@@ -69,6 +79,12 @@ public slots:
 private:
     void fetchBalancesForAccounts(const QStringList& list);
     void setError(const QString& message);
+    const Rule* diagnoseNode() const; // cached; call this
+    const Rule* scanNodeLog() const;
+    QString newestNodeLogPath() const;
+
+    mutable QElapsedTimer m_diagnosisAge;
+    mutable const Rule* m_lastDiagnosis = nullptr;
 
     LogosAPI* m_logosAPI = nullptr;
     LogosAPIClient* m_blockchainClient = nullptr;
