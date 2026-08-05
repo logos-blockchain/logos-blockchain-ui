@@ -8,6 +8,8 @@ class BlockchainBackend
     PROP(bool useGeneratedConfig READWRITE)
     PROP(QString generatedUserConfigPath READONLY)
     PROP(QString lastErrorMessage READONLY)
+    // lastErrorMessage is progress (replaying blocks), not a failure.
+    PROP(bool nodeRecovering READONLY)
 
     SLOT(void startBlockchain())
     SLOT(void stopBlockchain())

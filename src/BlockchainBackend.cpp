@@ -11,6 +11,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QRegularExpression>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSettings>
@@ -28,62 +29,18 @@ void BlockchainBackend::setError(const QString& message)
 {
     // If the SDK handed us the opaque no-reply string ("Call failed."), ask the
     // node's own log why, so the UI shows a real cause instead of a dead end.
-    QString honest = message;
     if (message.contains(QStringLiteral("Call failed"), Qt::CaseInsensitive)) {
-        const QString real = lastNodeError();
-        if (!real.isEmpty())
-            honest = real;
+        if (const Rule* cause = diagnoseNode()) {
+            setLastErrorMessage(tr(cause->message));
+            setNodeRecovering(cause->recovering);
+            // A recovering node is coming up, not broken.
+            setStatus(cause->recovering ? Starting : Error);
+            return;
+        }
     }
-    setLastErrorMessage(honest);
+    setLastErrorMessage(message);
+    setNodeRecovering(false);
     setStatus(Error);
-}
-
-// Tail the node's newest log file and map a known failure signature to a
-// plain-language cause. Returns empty when nothing recognisable is found (the
-// caller then keeps the original message).
-QString BlockchainBackend::lastNodeError() const
-{
-    const QString cfg = userConfig();
-    if (cfg.isEmpty())
-        return {};
-    const QDir logsDir(QFileInfo(cfg).absoluteDir().filePath(QStringLiteral("logs")));
-    if (!logsDir.exists())
-        return {};
-    const QFileInfoList files = logsDir.entryInfoList(QDir::Files, QDir::Time);
-    if (files.isEmpty())
-        return {};
-    QFile f(files.first().absoluteFilePath());
-    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
-        return {};
-    const qint64 tail = qMin<qint64>(f.size(), 128 * 1024);
-    f.seek(f.size() - tail);
-    const QStringList lines = QString::fromUtf8(f.readAll()).split(QLatin1Char('\n'));
-    f.close();
-
-    for (int i = lines.size() - 1; i >= 0; --i) {
-        const QString& ln = lines.at(i);
-        // Recovery FIRST — it is progress, not an error.
-        if (ln.contains(QStringLiteral("blocks to replay")) || ln.contains(QStringLiteral("Chain recovery"))
-            || ln.contains(QStringLiteral("recovering chain state")))
-            return QStringLiteral("The node is replaying stored blocks to catch up — this can take a few minutes.");
-        if (ln.contains(QStringLiteral("crashed (signal")) || ln.contains(QStringLiteral("panicked"))
-            || ln.contains(QStringLiteral("SIGABRT")) || ln.contains(QStringLiteral("SIGSEGV")))
-            return QStringLiteral("The node process crashed — see the log, then reset chain state to recover.");
-        if (ln.contains(QStringLiteral("Storage backend error")) || ln.contains(QStringLiteral("from storage"))
-            || ln.contains(QStringLiteral("Storage request failed")))
-            return QStringLiteral("The chain database is in a bad state — reset chain state to recover.");
-        if (ln.contains(QStringLiteral("AddrInUse")) || ln.contains(QStringLiteral("address already in use"))
-            || ln.contains(QStringLiteral("failed to bind")))
-            return QStringLiteral("A required network port is already in use — another node may still be running.");
-        if (ln.contains(QStringLiteral("AllPeersFailed")) || ln.contains(QStringLiteral("does not support")))
-            return QStringLiteral("Couldn't sync from the configured peers (unreachable, or a different network/version).");
-        if (ln.contains(QStringLiteral("No space left")) || ln.contains(QStringLiteral("ENOSPC")))
-            return QStringLiteral("The disk is full — free up space, then try again.");
-        if (ln.contains(QStringLiteral("missing field")) || ln.contains(QStringLiteral("failed to parse"))
-            || ln.contains(QStringLiteral("deserialize")))
-            return QStringLiteral("The node config couldn't be parsed — regenerate the config.");
-    }
-    return {};
 }
 
 static QString toLocalPath(const QString& pathInput)
@@ -91,6 +48,121 @@ static QString toLocalPath(const QString& pathInput)
     if (pathInput.trimmed().isEmpty())
         return pathInput;
     return QUrl::fromUserInput(pathInput).toLocalFile();
+}
+
+namespace {
+
+// How much of the log tail to scan, and how long a verdict stays good for.
+constexpr qint64 kLogTailBytes = 128 * 1024;
+constexpr qint64 kDiagnosisCacheMs = 2000;
+
+// Recovery rules come first so they win within a line: they mean progress, and
+// the node logs them at INFO, below the severity gate the failure rules need.
+const BlockchainBackend::Rule kRules[] = {
+    {"blocks to replay",       QT_TR_NOOP("Catching up — replaying stored blocks."),      true},
+    {"Chain recovery",         QT_TR_NOOP("Catching up — replaying stored blocks."),      true},
+    {"recovering chain state", QT_TR_NOOP("Catching up — replaying stored blocks."),      true},
+
+    {"crashed (signal",        QT_TR_NOOP("Node crashed. Reset chain state to recover."), false},
+    {"panicked",               QT_TR_NOOP("Node crashed. Reset chain state to recover."), false},
+    {"SIGABRT",                QT_TR_NOOP("Node crashed. Reset chain state to recover."), false},
+    {"SIGSEGV",                QT_TR_NOOP("Node crashed. Reset chain state to recover."), false},
+    {"Storage backend error",  QT_TR_NOOP("Chain database corrupted. Reset chain state."), false},
+    {"Storage request failed", QT_TR_NOOP("Chain database corrupted. Reset chain state."), false},
+    {"AddrInUse",              QT_TR_NOOP("Port already in use."),                        false},
+    {"address already in use", QT_TR_NOOP("Port already in use."),                        false},
+    {"failed to bind",         QT_TR_NOOP("Port already in use."),                        false},
+    {"AllPeersFailed",         QT_TR_NOOP("Can't reach the configured peers."),           false},
+    {"No space left",          QT_TR_NOOP("Disk full."),                                  false},
+    {"ENOSPC",                 QT_TR_NOOP("Disk full."),                                  false},
+    {"missing field",          QT_TR_NOOP("Config couldn't be parsed. Regenerate it."),   false},
+    {"failed to parse",        QT_TR_NOOP("Config couldn't be parsed. Regenerate it."),   false},
+    {"deserialize",            QT_TR_NOOP("Config couldn't be parsed. Regenerate it."),   false},
+};
+
+// `tracing` writes the level as a bare uppercase token ("...Z ERROR target: ...").
+// Failure needles are short substrings, so they are only matched against such
+// lines — a routine "loaded block from storage" at INFO must not read as
+// database corruption.
+bool isFailureLine(const QString& line)
+{
+    static const QRegularExpression levelRe(
+        QStringLiteral("(?:^|\\s)(?:ERROR|WARN|FATAL)(?:\\s|:)"));
+    return levelRe.match(line).hasMatch();
+}
+
+} // namespace
+
+// The module routes logs to "<persistence>/logs" while the config goes to
+// "<persistence>/<output>", so the log dir is a sibling of the config only when
+// the config sits at the persistence root (the default, empty-output case). A
+// relative output pushes the config a level down — probe both.
+QString BlockchainBackend::newestNodeLogPath() const
+{
+    const QString cfg = userConfig();
+    if (cfg.trimmed().isEmpty())
+        return {};
+    const QString local = toLocalPath(cfg);
+    QDir dir = QFileInfo(local.isEmpty() ? cfg : local).absoluteDir();
+
+    // The config's own directory, then its parent. No further: an unrelated
+    // "logs" higher up the tree must not be mistaken for the node's.
+    QFileInfo newest;
+    for (int level = 0; level < 2; ++level) {
+        const QFileInfoList files = QDir(dir.filePath(QStringLiteral("logs")))
+                                        .entryInfoList(QDir::Files, QDir::Time);
+        if (!files.isEmpty()
+            && (!newest.exists() || files.first().lastModified() > newest.lastModified()))
+            newest = files.first();
+        if (!dir.cdUp())
+            break;
+    }
+
+    return newest.exists() ? newest.absoluteFilePath() : QString();
+}
+
+// Tail the node's newest log and map a known signature to a cause. Null when
+// nothing recognisable is found (the caller then keeps the original message).
+const BlockchainBackend::Rule* BlockchainBackend::scanNodeLog() const
+{
+    QFile f(newestNodeLogPath());
+    if (f.fileName().isEmpty() || !f.open(QIODevice::ReadOnly))
+        return nullptr;
+
+    const qint64 size = f.size();
+    const qint64 tail = qMin<qint64>(size, kLogTailBytes);
+    if (!f.seek(size - tail))
+        return nullptr;
+    QByteArray buf = f.readAll();
+
+    // A mid-file seek can land inside a multi-byte sequence; drop the partial
+    // first line rather than decoding it into replacement characters.
+    if (tail < size)
+        buf = buf.mid(buf.indexOf('\n') + 1);
+
+    const QStringList lines = QString::fromUtf8(buf).split(QLatin1Char('\n'));
+    for (int i = lines.size() - 1; i >= 0; --i) {
+        const QString& line = lines.at(i);
+        const bool failureLine = isFailureLine(line);
+        for (const Rule& rule : kRules) {
+            if (!rule.recovering && !failureLine)
+                continue;
+            if (line.contains(QLatin1String(rule.needle)))
+                return &rule;
+        }
+    }
+    return nullptr;
+}
+
+// The node view polls getCryptarchiaInfo on a timer; without this cache every
+// failed tick would re-read and re-scan the log tail.
+const BlockchainBackend::Rule* BlockchainBackend::diagnoseNode() const
+{
+    if (m_diagnosisAge.isValid() && m_diagnosisAge.elapsed() < kDiagnosisCacheMs)
+        return m_lastDiagnosis;
+    m_lastDiagnosis = scanNodeLog();
+    m_diagnosisAge.restart();
+    return m_lastDiagnosis;
 }
 
 namespace result {
@@ -291,12 +363,14 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
     LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_cryptarchia_info")));
     // The node view polls this; swap the opaque no-reply string for the node's
-    // real reason (crash / recovering / storage / peers) from its log.
-    if (!r.success
-        && r.error.toString().contains(QStringLiteral("Call failed"), Qt::CaseInsensitive)) {
-        const QString real = lastNodeError();
-        if (!real.isEmpty())
-            r.error = real;
+    // real reason from its log.
+    if (r.success) {
+        setNodeRecovering(false);
+    } else if (r.error.toString().contains(QStringLiteral("Call failed"), Qt::CaseInsensitive)) {
+        if (const Rule* cause = diagnoseNode()) {
+            r.error = tr(cause->message);
+            setNodeRecovering(cause->recovering);
+        }
     }
     return result::toVariantMap(r);
 }
@@ -365,12 +439,17 @@ void BlockchainBackend::startBlockchain()
         return;
     }
 
+    // Starting now renders lastErrorMessage, so clear the previous run's.
+    setLastErrorMessage(QString());
+    setNodeRecovering(false);
+    m_diagnosisAge.invalidate();
     setStatus(Starting);
 
     const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "start", userConfig(), deploymentConfig()));
 
     if (r.success) {
+        setNodeRecovering(false);
         setStatus(Running);
         QTimer::singleShot(500, this, [this]() { refreshAccounts(); });
     } else {

@@ -348,7 +348,11 @@ Rectangle {
         function getStatusString(s) {
             switch(s) {
             case BlockchainBackend.NotStarted: return qsTr("Not Started")
-            case BlockchainBackend.Starting: return qsTr("Starting...")
+            // A recovering node is still starting up; it explains itself
+            // through lastErrorMessage.
+            case BlockchainBackend.Starting:
+                return root.backend.nodeRecovering
+                    ? root.backend.lastErrorMessage : qsTr("Starting...")
             case BlockchainBackend.Running: return qsTr("Running")
             case BlockchainBackend.Stopping: return qsTr("Stopping...")
             case BlockchainBackend.Stopped: return qsTr("Stopped")
@@ -567,6 +571,7 @@ Rectangle {
                             visible: opPage.nodeRunning
                             infoJson: root.cryptarchiaInfoJson
                             errorText: root.cryptarchiaInfoError
+                            errorIsNotice: !!root.backend && root.backend.nodeRecovering
                             onCopyToClipboard: (text) => root.copyText(text)
                         }
 

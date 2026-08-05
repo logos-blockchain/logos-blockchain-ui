@@ -15,6 +15,8 @@ Rectangle {
 
     property string infoJson: ""
     property string errorText: ""
+    // errorText is progress, not a failure — don't paint a healthy node red.
+    property bool errorIsNotice: false
 
     signal copyToClipboard(string text)
 
@@ -99,7 +101,7 @@ Rectangle {
             Layout.fillWidth: true
             visible: root.errorText.length > 0
             text: root.errorText
-            color: Theme.palette.error
+            color: root.errorIsNotice ? Theme.palette.warning : Theme.palette.error
             font.pixelSize: Theme.typography.secondaryText
             wrapMode: Text.WordWrap
         }
