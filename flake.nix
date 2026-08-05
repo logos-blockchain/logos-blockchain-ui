@@ -4,7 +4,7 @@
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder/0.2.6";
     nix-bundle-lgx.url = "github:logos-co/nix-bundle-lgx";
-    blockchain_module.url = "github:logos-blockchain/logos-blockchain-module?ref=0.2.1-rc.3";
+    blockchain_module.url = "github:logos-blockchain/logos-blockchain-module?ref=0.2.1";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
