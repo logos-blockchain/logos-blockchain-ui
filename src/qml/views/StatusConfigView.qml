@@ -124,11 +124,12 @@ Rectangle {
                     }
                     LogosText {
                         Layout.fillWidth: true
-                        text: (root.useGeneratedConfig && root.deploymentConfig ?
-                                   root.deploymentConfig :
-                                   root.useGeneratedConfig ?
-                                       qsTr("Default") :
-                                       (root.deploymentConfig || qsTr("No file selected")))
+                        // An empty deployment config is valid, not missing: the
+                        // module treats it as a null deployment and uses its
+                        // built-in default network. Show that explicitly instead
+                        // of "No file selected" so the default start reads as
+                        // intentional in every flow.
+                        text: root.deploymentConfig || qsTr("Default (built-in network)")
                         font.pixelSize: Theme.typography.secondaryText
                         color: Theme.palette.textSecondary
                         elide: Text.ElideMiddle

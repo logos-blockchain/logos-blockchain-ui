@@ -55,10 +55,21 @@ ColumnLayout {
         }
         LogosText {
             Layout.fillWidth: true
-            text: root.deploymentConfigPath || qsTr("No file selected")
+            // Empty deployment config is not an error: the module reads it as a
+            // null deployment and falls back to its built-in default network.
+            text: root.deploymentConfigPath || qsTr("Default (built-in network)")
             font.pixelSize: Theme.typography.secondaryText
             color: Theme.palette.textSecondary
             wrapMode: Text.WordWrap
+        }
+        // Clearing the deployment config resets it to the built-in default. This
+        // is the only way back to the default once a custom file has been picked
+        // (or restored from a previous session), so a stale path can't silently
+        // ride along into start().
+        LogosButton {
+            text: qsTr("Use default")
+            visible: !!root.deploymentConfigPath
+            onClicked: root.deploymentConfigPathSelected("")
         }
         LogosButton {
             text: qsTr("Browse")
