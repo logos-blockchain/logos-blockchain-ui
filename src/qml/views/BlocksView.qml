@@ -43,26 +43,20 @@ Control {
 
             LogosButton {
                 text: qsTr("Clear")
-                Layout.preferredWidth: 80
-                Layout.preferredHeight: 32
                 onClicked: root.clearRequested()
             }
         }
 
         // Block list
-        Rectangle {
+        LogosFrame {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            color: Theme.palette.backgroundSecondary
+            padding: Theme.spacing.small
+            backgroundColor: Theme.palette.backgroundSecondary
             radius: Theme.spacing.radiusLarge
-            border.color: Theme.palette.border
-            border.width: 1
 
-            ListView {
+            contentItem: LogosListView {
                 id: blocksListView
-                anchors.fill: parent
-                anchors.margins: Theme.spacing.small
-                clip: true
                 model: root.blockModel
                 spacing: Theme.spacing.small
 

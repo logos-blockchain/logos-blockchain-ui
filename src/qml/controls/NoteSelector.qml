@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
 import Logos.Theme
@@ -96,22 +95,17 @@ ColumnLayout {
         wrapMode: Text.WordWrap
     }
 
-    Rectangle {
+    LogosFrame {
         Layout.fillWidth: true
         Layout.preferredHeight: 220
         visible: notesModel.count > 0
-        color: Theme.palette.backgroundTertiary
+        padding: Theme.spacing.small
+        backgroundColor: Theme.palette.backgroundTertiary
         radius: Theme.spacing.radiusLarge
-        border.color: Theme.palette.border
-        border.width: 1
 
-        ListView {
+        contentItem: LogosListView {
             id: notesList
-            anchors.fill: parent
-            anchors.margins: Theme.spacing.small
-            clip: true
             model: notesModel
-            spacing: Theme.spacing.tiny
 
             delegate: RowLayout {
                 width: notesList.width

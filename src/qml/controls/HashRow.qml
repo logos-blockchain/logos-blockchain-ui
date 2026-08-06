@@ -32,7 +32,7 @@ RowLayout {
         text: root.value && root.value.length > 0 ? root.value : "—"
         elide: Text.ElideMiddle
         font.pixelSize: Theme.typography.secondaryText
-        font.family: "monospace"
+        font.family: Theme.typography.mono
     }
     LogosCopyButton {
         visible: root.copyable && root.value && root.value.length > 0

@@ -37,20 +37,14 @@ ColumnLayout {
     spacing: Theme.spacing.large
 
     // ---- Claimable vouchers card ----
-    Rectangle {
+    LogosFrame {
         Layout.fillWidth: true
-        Layout.preferredHeight: vouchersCol.implicitHeight + 2 * Theme.spacing.large
-        color: Theme.palette.backgroundTertiary
+        padding: Theme.spacing.large
+        backgroundColor: Theme.palette.backgroundTertiary
         radius: Theme.spacing.radiusLarge
-        border.color: Theme.palette.border
-        border.width: 1
 
-        ColumnLayout {
+        contentItem: ColumnLayout {
             id: vouchersCol
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.margins: Theme.spacing.large
             spacing: Theme.spacing.small
 
             RowLayout {
@@ -62,20 +56,12 @@ ColumnLayout {
                     font.bold: true
                 }
                 // Pending counter badge
-                Rectangle {
-                    radius: Theme.spacing.radiusSmall
-                    color: Theme.palette.backgroundSecondary
-                    border.color: Theme.palette.border
-                    border.width: 1
-                    implicitWidth: pendingText.implicitWidth + 2 * Theme.spacing.small
-                    implicitHeight: pendingText.implicitHeight + Theme.spacing.tiny
-                    LogosText {
-                        id: pendingText
-                        anchors.centerIn: parent
-                        text: qsTr("%1 pending").arg(root.vouchers.length)
-                        font.pixelSize: Theme.typography.secondaryText
-                        color: Theme.palette.textSecondary
-                    }
+                LogosBadge {
+                    text: qsTr("%1 pending").arg(root.vouchers.length)
+                    backgroundColor: Theme.palette.backgroundSecondary
+                    borderColor: Theme.palette.border
+                    labelItem.color: Theme.palette.textSecondary
+                    labelItem.font.pixelSize: Theme.typography.secondaryText
                 }
                 Item { Layout.fillWidth: true }
                 LogosText {
@@ -103,7 +89,10 @@ ColumnLayout {
                 spacing: Theme.spacing.small
                 model: root.vouchers
                 snapMode: ListView.SnapToItem
-                ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
+                ScrollBar.horizontal: LogosScrollBar {
+                    orientation: Qt.Horizontal
+                    policy: ScrollBar.AsNeeded
+                }
 
                 delegate: Rectangle {
                     width: 260
@@ -146,20 +135,14 @@ ColumnLayout {
     }
 
     // ---- Claim action ----
-    Rectangle {
+    LogosFrame {
         Layout.fillWidth: true
-        Layout.preferredHeight: claimRow.height + 2 * Theme.spacing.large
-        color: Theme.palette.backgroundTertiary
+        padding: Theme.spacing.large
+        backgroundColor: Theme.palette.backgroundTertiary
         radius: Theme.spacing.radiusLarge
-        border.color: Theme.palette.border
-        border.width: 1
 
-        RowLayout {
+        contentItem: RowLayout {
             id: claimRow
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.margins: Theme.spacing.large
 
             LogosButton {
                 id: leaderClaimButton
@@ -216,7 +199,7 @@ ColumnLayout {
             text: vf.value || "—"
             elide: Text.ElideMiddle
             font.pixelSize: Theme.typography.secondaryText
-            font.family: "monospace"
+            font.family: Theme.typography.mono
         }
         LogosCopyButton {
             Layout.preferredHeight: 24

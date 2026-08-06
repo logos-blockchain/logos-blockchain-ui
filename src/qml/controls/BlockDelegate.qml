@@ -66,21 +66,13 @@ Rectangle {
             }
 
             // Version badge
-            Rectangle {
+            LogosBadge {
                 visible: !del.isUnparsed && (model.version || "").length > 0
-                radius: Theme.spacing.radiusSmall
-                color: Theme.palette.backgroundSecondary
-                border.color: Theme.palette.border
-                border.width: 1
-                implicitWidth: versionText.implicitWidth + 2 * Theme.spacing.small
-                implicitHeight: versionText.implicitHeight + Theme.spacing.tiny
-                LogosText {
-                    id: versionText
-                    anchors.centerIn: parent
-                    text: model.version || ""
-                    font.pixelSize: Theme.typography.secondaryText
-                    color: Theme.palette.textSecondary
-                }
+                text: model.version || ""
+                backgroundColor: Theme.palette.backgroundSecondary
+                borderColor: Theme.palette.border
+                labelItem.color: Theme.palette.textSecondary
+                labelItem.font.pixelSize: Theme.typography.secondaryText
             }
 
             LogosText {

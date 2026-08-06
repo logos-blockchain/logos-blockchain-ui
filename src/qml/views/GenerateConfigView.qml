@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
 import QtCore
@@ -56,6 +55,8 @@ ColumnLayout {
         font.pixelSize: Theme.typography.secondaryText
         color: Theme.palette.textSecondary
         wrapMode: Text.WordWrap
+        Layout.fillWidth: true
+        Layout.minimumWidth: 0
     }
 
     // Output path (defaults to generated path; user can change via text or folder browse)
@@ -89,22 +90,14 @@ ColumnLayout {
         font.pixelSize: Theme.typography.secondaryText
     }
 
-    ScrollView {
+    LogosScrollView {
         Layout.fillWidth: true
         Layout.preferredHeight: 60
-        clip: true
-        TextArea {
+        LogosTextArea {
             id: initialPeersArea
-            background: Rectangle {
-                radius: Theme.spacing.radiusSmall
-                color: Theme.palette.backgroundSecondary
-                border.width: 1
-                border.color: d.inputActiveFocus ? Theme.palette.overlayOrange : Theme.palette.backgroundElevated
-            }
+            focusBorderColor: Theme.palette.overlayOrange
             placeholderText: qsTr("Peer addresses, one per line")
-            placeholderTextColor: Theme.palette.textTertiary
             font.pixelSize: Theme.typography.secondaryText
-            color: Theme.palette.text
         }
     }
 
@@ -116,26 +109,24 @@ ColumnLayout {
             text: qsTr("Net port")
             font.pixelSize: Theme.typography.secondaryText
         }
-        SpinBox {
+        LogosSpinBox {
             id: netPortSpin
             from: 0
             to: 65535
             value: 0
             Layout.preferredWidth: 100
-            editable: true
         }
         Item { Layout.fillWidth: true }
         LogosText {
             text: qsTr("Blend port")
             font.pixelSize: Theme.typography.secondaryText
         }
-        SpinBox {
+        LogosSpinBox {
             id: blendPortSpin
             from: 0
             to: 65535
             value: 0
             Layout.preferredWidth: 100
-            editable: true
         }
     }
 
@@ -151,11 +142,10 @@ ColumnLayout {
         placeholderText: qsTr("External address (e.g. /ip4/1.2.3.4/udp/3000/quic-v1)")
     }
 
-    CheckBox {
+    LogosCheckbox {
         id: noPublicIpCheckBox
         text: qsTr("No public IP check")
         font.pixelSize: Theme.typography.secondaryText
-        palette.windowText: Theme.palette.text
     }
 
     // Deployment
@@ -171,17 +161,15 @@ ColumnLayout {
                                           customDeploymentField.implicitHeight,
                                           browseDeploymentButton.implicitHeight)
         spacing: Theme.spacing.medium
-        RadioButton {
+        LogosRadioButton {
             id: defaultNetworkRadioButton
             font.pixelSize: Theme.typography.secondaryText
-            palette.windowText: Theme.palette.text
             checked: true
             text: qsTr("Default")
         }
-        RadioButton {
+        LogosRadioButton {
             id: customNetworkRadioButton
             font.pixelSize: Theme.typography.secondaryText
-            palette.windowText: Theme.palette.text
             text: qsTr("Custom config")
         }
         LogosTextField {

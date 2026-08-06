@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
 import Logos.Theme
@@ -46,6 +45,8 @@ ColumnLayout {
         font.pixelSize: Theme.typography.secondaryText
         color: Theme.palette.textSecondary
         wrapMode: Text.WordWrap
+        Layout.fillWidth: true
+        Layout.minimumWidth: 0
     }
 
     RowLayout {
