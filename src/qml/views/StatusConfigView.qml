@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
 import Logos.Theme
@@ -11,6 +10,7 @@ Rectangle {
     // --- Public API ---
     required property string statusText
     required property color  statusColor
+    property string statusDetail: ""
     required property string userConfig
     required property string deploymentConfig
     required property bool   useGeneratedConfig
@@ -59,23 +59,24 @@ Rectangle {
                     color: root.statusColor
                 }
                 LogosText {
-                    text: qsTr("Mainnet - chain ID 1")
+                    Layout.fillWidth: true
+                    text: root.statusDetail || qsTr("Mainnet - chain ID 1")
                     font.pixelSize: Theme.typography.secondaryText
-                    color: Theme.palette.textSecondary
+                    color: root.statusDetail ? root.statusColor : Theme.palette.textSecondary
+                    elide: Text.ElideRight
                 }
             }
             // Resume the paused status monitor. Node is untouched — this only
             // restarts polling.
             LogosButton {
                 visible: root.monitoringPaused
-                Layout.preferredHeight: 40
                 Layout.preferredWidth: 150
                 text: qsTr("Resume monitoring")
                 onClicked: root.resumeMonitoringRequested()
             }
 
             LogosButton {
-                Layout.preferredHeight: 40
+                // Width pinned so the label toggling Start/Stop doesn't jitter.
                 Layout.preferredWidth: 100
                 enabled: root.canStop || root.canStart
                 text: root.canStop ? qsTr("Stop Node") : qsTr("Start Node")

@@ -348,17 +348,24 @@ Rectangle {
         function getStatusString(s) {
             switch(s) {
             case BlockchainBackend.NotStarted: return qsTr("Not Started")
-            // A recovering node is still starting up; it explains itself
-            // through lastErrorMessage.
-            case BlockchainBackend.Starting:
-                return root.backend.nodeRecovering
-                    ? root.backend.lastErrorMessage : qsTr("Starting...")
+            case BlockchainBackend.Starting: return qsTr("Starting...")
             case BlockchainBackend.Running: return qsTr("Running")
             case BlockchainBackend.Stopping: return qsTr("Stopping...")
             case BlockchainBackend.Stopped: return qsTr("Stopped")
-            case BlockchainBackend.Error: return _d.errorText(root.backend.lastErrorMessage)
+            case BlockchainBackend.Error: return qsTr("Error")
             default: return qsTr("Unknown")
             }
+        }
+
+        // Second line under the status word. Long explanations from the node's
+        // log belong here, not in the bold status line where they'd compete
+        // with "Running" and have to be elided to fit.
+        function getStatusDetail(s) {
+            if (!root.backend || !root.backend.lastErrorMessage)
+                return ""
+            const explains = s === BlockchainBackend.Error
+                || (s === BlockchainBackend.Starting && root.backend.nodeRecovering)
+            return explains ? root.backend.lastErrorMessage : ""
         }
         function getStatusColor(s) {
             switch(s) {
@@ -383,14 +390,14 @@ Rectangle {
     ColumnLayout {
         anchors.centerIn: parent
         visible: !root.ready
-        spacing: 12
-        Text {
+        spacing: Theme.spacing.medium
+        LogosText {
             Layout.alignment: Qt.AlignHCenter
             text: qsTr("Connecting to blockchain backend...")
             color: Theme.palette.textSecondary
             font.pixelSize: Theme.typography.secondaryText
         }
-        BusyIndicator { Layout.alignment: Qt.AlignHCenter; running: !root.ready }
+        LogosSpinner { Layout.alignment: Qt.AlignHCenter; running: !root.ready }
     }
 
     StackLayout {
@@ -400,9 +407,8 @@ Rectangle {
         visible: root.ready
 
         // Page 1: Config choice
-        ScrollView {
+        LogosScrollView {
             id: configChoiceScrollView
-            clip: true
             ConfigChoiceView {
                 id: configChoiceView
                 width: configChoiceScrollView.availableWidth
@@ -532,6 +538,9 @@ Rectangle {
                                     : root.statusUnresponsive
                                         ? qsTr("Unresponsive (retrying in %1s)").arg(root.statusNextPollSeconds)
                                         : _d.getStatusString(root.backend.status)
+                            statusDetail: root.backend && !root.monitoringPaused && !root.statusUnresponsive
+                                ? _d.getStatusDetail(root.backend.status)
+                                : ""
                             statusColor: !root.backend
                                 ? Theme.palette.error
                                 : (root.monitoringPaused || root.statusUnresponsive)
@@ -649,21 +658,21 @@ Rectangle {
                             accountsModel: root.accountsModel
 
                             onGetBalanceRequested: function(addressHex) {
-                                if (!root.backend) return
+                                if (!root.backend) {
+                                    accountsView.setBalanceResult(
+                                        addressHex, false, qsTr("Not connected to the module."))
+                                    return
+                                }
                                 logos.watch(
                                     root.backend.getBalance(addressHex),
                                     function(result) {
-                                        if (result.success) {
-                                            accountsView.lastBalanceErrorAddress = ""
-                                            accountsView.lastBalanceError = ""
-                                        } else {
-                                            accountsView.lastBalanceErrorAddress = addressHex
-                                            accountsView.lastBalanceError = _d.errorText(result.error)
-                                        }
+                                        accountsView.setBalanceResult(
+                                            addressHex, result.success,
+                                            result.success ? "" : _d.errorText(result.error))
                                     },
                                     function(error) {
-                                        accountsView.lastBalanceErrorAddress = addressHex
-                                        accountsView.lastBalanceError = _d.errorText(error)
+                                        accountsView.setBalanceResult(
+                                            addressHex, false, _d.errorText(error))
                                     }
                                 )
                             }
@@ -874,25 +883,27 @@ Rectangle {
                     // the other SVG icons; the pin colours up when pinned. Its
                     // own click handling stops the nav-background MouseArea
                     // below from also selecting the item.
-                    Button {
+                    LogosIconButton {
+                        id: pinButton
                         visible: pinnable
                         Layout.alignment: Qt.AlignVCenter
                         Layout.preferredWidth: 28
                         Layout.preferredHeight: 28
-                        display: AbstractButton.IconOnly
                         flat: true
-                        padding: 4
-                        icon.source: Qt.resolvedUrl("icons/pin.svg")
-                        icon.width: 18
-                        icon.height: 18
-                        icon.color: opPage.accountsPinned
+                        size: 28
+                        iconSize: 18
+                        iconSource: Qt.resolvedUrl("icons/pin.svg")
+                        iconColor: opPage.accountsPinned
                             ? Theme.palette.primary
                             : Theme.palette.textTertiary
                         onClicked: opPage.accountsPinned = !opPage.accountsPinned
 
-                        ToolTip.visible: hovered
-                        ToolTip.text: opPage.accountsPinned
-                            ? qsTr("Unpin accounts") : qsTr("Pin accounts")
+                        LogosToolTip {
+                            visible: pinButton.hovered
+                            placement: LogosToolTip.Placement.Top
+                            text: opPage.accountsPinned
+                                ? qsTr("Unpin accounts") : qsTr("Pin accounts")
+                        }
                     }
                 }
             }

@@ -14,22 +14,25 @@ Item {
     implicitWidth: 28
     implicitHeight: 28
 
-    Button {
+    LogosIconButton {
         id: btn
         anchors.fill: parent
-        display: AbstractButton.IconOnly
         flat: true
-        padding: 4
-        icon.source: Qt.resolvedUrl("../icons/info.svg")
-        icon.width: 18
-        icon.height: 18
-        icon.color: (btn.hovered || popup.visible)
+        size: 28
+        iconSize: 18
+        iconSource: Qt.resolvedUrl("../icons/info.svg")
+        iconColor: (btn.hovered || popup.visible)
             ? Theme.palette.primary
             : Theme.palette.textTertiary
         onClicked: popup.visible ? popup.close() : popup.open()
 
-        ToolTip.visible: btn.hovered && !popup.visible
-        ToolTip.text: qsTr("What is this?")
+        // Short hover hint. The wrapping body text lives in `popup` — a
+        // LogosToolTip is a single-line tip and won't wrap a paragraph.
+        LogosToolTip {
+            text: qsTr("What is this?")
+            placement: LogosToolTip.Placement.Top
+            visible: btn.hovered && !popup.visible
+        }
     }
 
     Popup {
@@ -43,10 +46,7 @@ Item {
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
-        background: Rectangle {
-            color: Theme.palette.backgroundSecondary
-            border.color: Theme.palette.border
-            border.width: 1
+        background: LogosFrame {
             radius: Theme.spacing.radiusLarge
         }
         contentItem: LogosText {

@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
 import Logos.Theme
@@ -144,20 +143,14 @@ ColumnLayout {
     spacing: Theme.spacing.large
 
     // ---- Search bar ----
-    Rectangle {
+    LogosFrame {
         Layout.fillWidth: true
-        Layout.preferredHeight: searchCol.implicitHeight + 2 * Theme.spacing.large
-        color: Theme.palette.backgroundTertiary
+        padding: Theme.spacing.large
+        backgroundColor: Theme.palette.backgroundTertiary
         radius: Theme.spacing.radiusLarge
-        border.color: Theme.palette.border
-        border.width: 1
 
-        ColumnLayout {
+        contentItem: ColumnLayout {
             id: searchCol
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.margins: Theme.spacing.large
             spacing: Theme.spacing.small
 
             RowLayout {
@@ -225,33 +218,25 @@ ColumnLayout {
     }
 
     // ---- Result area ----
-    ScrollView {
+    LogosScrollView {
         id: resultScroll
         Layout.fillWidth: true
         Layout.fillHeight: true
         visible: root.kind === "block" || root.kind === "transaction"
-        clip: true
 
         ColumnLayout {
             width: resultScroll.availableWidth
             spacing: Theme.spacing.large
 
             // ---- Block result ----
-            Rectangle {
+            LogosFrame {
                 Layout.fillWidth: true
                 visible: root.kind === "block"
-                Layout.preferredHeight: blockCol.implicitHeight + 2 * Theme.spacing.large
-                color: Theme.palette.backgroundTertiary
+                padding: Theme.spacing.large
+                backgroundColor: Theme.palette.backgroundTertiary
                 radius: Theme.spacing.radiusLarge
-                border.color: Theme.palette.border
-                border.width: 1
-
-                ColumnLayout {
+                contentItem: ColumnLayout {
                     id: blockCol
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.margins: Theme.spacing.large
                     spacing: Theme.spacing.small
 
                     RowLayout {
@@ -269,27 +254,26 @@ ColumnLayout {
                             font.pixelSize: Theme.typography.secondaryText
                             color: Theme.palette.textSecondary
                         }
-                        Rectangle {
+                        LogosBadge {
                             visible: root.block && root.block.version.length > 0
-                            radius: Theme.spacing.radiusSmall
-                            color: Theme.palette.backgroundSecondary
-                            border.color: Theme.palette.border
-                            border.width: 1
-                            implicitWidth: verText.implicitWidth + 2 * Theme.spacing.small
-                            implicitHeight: verText.implicitHeight + Theme.spacing.tiny
-                            LogosText {
-                                id: verText
-                                anchors.centerIn: parent
-                                text: root.block ? root.block.version : ""
-                                font.pixelSize: Theme.typography.secondaryText
-                                color: Theme.palette.textSecondary
-                            }
+                            text: root.block ? root.block.version : ""
+                            backgroundColor: Theme.palette.backgroundSecondary
+                            borderColor: Theme.palette.border
+                            labelItem.color: Theme.palette.textSecondary
+                            labelItem.font.pixelSize: Theme.typography.secondaryText
                         }
                         Item { Layout.fillWidth: true }
                         LogosCopyButton {
-                            ToolTip.visible: hovered
-                            ToolTip.text: qsTr("Copy raw block JSON")
+                            id: copyBlockJson
                             value: root.pretty(root.rawJson)
+                            // Not the attached QQC2 ToolTip: that renders Qt's
+                            // default styling and collides with this button's
+                            // own "Copied" LogosToolTip.
+                            LogosToolTip {
+                                text: qsTr("Copy raw block JSON")
+                                placement: LogosToolTip.Placement.Top
+                                visible: copyBlockJson.hovered && !copyBlockJson.recentlyCopied
+                            }
                         }
                     }
 
@@ -371,21 +355,15 @@ ColumnLayout {
             }
 
             // ---- Transaction result ----
-            Rectangle {
+            LogosFrame {
                 Layout.fillWidth: true
                 visible: root.kind === "transaction"
-                Layout.preferredHeight: txCol.implicitHeight + 2 * Theme.spacing.large
-                color: Theme.palette.backgroundTertiary
+                padding: Theme.spacing.large
+                backgroundColor: Theme.palette.backgroundTertiary
                 radius: Theme.spacing.radiusLarge
-                border.color: Theme.palette.border
-                border.width: 1
 
-                ColumnLayout {
+                contentItem: ColumnLayout {
                     id: txCol
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.margins: Theme.spacing.large
                     spacing: Theme.spacing.small
 
                     RowLayout {
@@ -404,9 +382,13 @@ ColumnLayout {
                         }
                         Item { Layout.fillWidth: true }
                         LogosCopyButton {
-                            ToolTip.visible: hovered
-                            ToolTip.text: qsTr("Copy raw transaction JSON")
+                            id: copyTxJson
                             value: root.pretty(root.rawJson)
+                            LogosToolTip {
+                                text: qsTr("Copy raw transaction JSON")
+                                placement: LogosToolTip.Placement.Top
+                                visible: copyTxJson.hovered && !copyTxJson.recentlyCopied
+                            }
                         }
                     }
 

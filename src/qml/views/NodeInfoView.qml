@@ -1,11 +1,9 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
 import Logos.Theme
 import Logos.Controls
 
-import "../controls"
 
 // "Node info" card — node identity that doesn't depend on the consensus
 // runtime. Currently the self libp2p peer id (derived from the user config).
