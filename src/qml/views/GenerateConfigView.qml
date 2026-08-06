@@ -212,7 +212,7 @@ ColumnLayout {
         onClicked: d.doGenerate()
     }
 
-    LogosText {
+    LogosSelectableText {
         Layout.alignment: Qt.AlignHCenter
         Layout.fillWidth: true
         text: root.resultMessage
