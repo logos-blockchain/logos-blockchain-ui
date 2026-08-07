@@ -54,6 +54,7 @@ ColumnLayout {
         spacing: Theme.spacing.large
 
         LogosButton {
+            objectName: "chooserGenerateButton"
             text: qsTr("Generate config")
             Layout.preferredHeight: 50
             Layout.fillWidth: true
@@ -61,6 +62,7 @@ ColumnLayout {
         }
 
         LogosButton {
+            objectName: "chooserSetPathButton"
             text: qsTr("Set path to config")
             Layout.preferredHeight: 50
             Layout.fillWidth: true

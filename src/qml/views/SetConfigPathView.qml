@@ -71,6 +71,7 @@ ColumnLayout {
         Layout.alignment: Qt.AlignHCenter
         Layout.fillWidth: true
         Layout.preferredHeight: 50
+        objectName: "continueToNodeButton"
         text: qsTr("Continue")
         enabled: !!root.userConfigPath
         onClicked: root.setPathToConfigsRequested()

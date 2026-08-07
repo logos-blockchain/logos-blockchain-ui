@@ -16,3 +16,10 @@ state/
 /result-*
 /logs/
 *.log
+
+# Doc-test output: generated artifacts are disposable, but keep the rendered
+# .md that the docs embed.
+doctests/outputs/*
+!doctests/outputs/*.md
+doctests/preview-outputs
+doctest-local
