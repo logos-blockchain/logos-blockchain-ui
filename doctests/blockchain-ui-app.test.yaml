@@ -1,0 +1,216 @@
+name: "Driving the Blockchain UI App Headlessly"
+output: blockchain-ui-app.md
+release: ""
+
+intro: |
+  `logos-blockchain-ui` is the QML interface for the Logos blockchain node. It is
+  **QML-only**: the view drives `blockchain_module` — and through it the node
+  itself — entirely over the `logos` bridge.
+
+  Because it is built with `logos-module-builder`'s `mkLogosQmlModule`, its flake
+  exposes a self-contained standalone app (`apps.default`) that bundles and
+  auto-loads the backend module tree. This doc-test launches that app **headless**
+  (`QT_QPA_PLATFORM=offscreen`) and drives it through the QML inspector with
+  [`logos-qt-mcp`](https://github.com/logos-co/logos-qt-mcp): it walks the
+  first-run config chooser, generates a node config from the UI, and then visits
+  each operation panel — Accounts, Transfer, Leader Rewards, Channel Deposit —
+  capturing screenshots along the way.
+
+  > This doc-test deliberately **does not start a node**. Starting one means
+  > bootstrapping against a live network, which depends on reachable peers running
+  > a matching chainsync protocol version — not something a reproducible test
+  > should rely on. For the node lifecycle, see the module's
+  > [`blockchain-module-runtime`](https://github.com/logos-blockchain/logos-blockchain-module/blob/master/doctests/blockchain-module-runtime.test.yaml)
+  > doc-test, which runs a node with IBD skipped.
+
+what_you_build: "The `logos-blockchain-ui` standalone app, launched headless and driven through its QML UI to generate a node config and reach the node view."
+
+what_you_learn:
+  - How a QML-only Logos UI exposes a runnable standalone app that bundles its backend
+  - How to drive a headless Qt/QML app with logos-qt-mcp (wait, click, type, assert)
+  - How the first-run chooser routes between generating a config and pointing at an existing one
+  - How a UI action round-trips into `blockchain_module` over the Logos bridge
+  - How to capture screenshots of the running UI for documentation and CI
+
+prerequisites:
+  - |
+    **Nix** with flakes enabled (see [nixos.org](https://nixos.org/download.html)).
+  - "**A Linux or macOS machine.** The app runs headless via `QT_QPA_PLATFORM=offscreen`, so no display is required."
+
+sections:
+  - title: "Build the qt-mcp test driver"
+    step: true
+    text: |
+      [`logos-qt-mcp`](https://github.com/logos-co/logos-qt-mcp) connects to the
+      QML inspector port a Logos standalone app opens, and lets a test wait for
+      text, click by label, set fields and take screenshots.
+    steps:
+      - title: "Build it"
+        run: "nix build 'github:logos-co/logos-qt-mcp' --out-link ./result-mcp"
+        code_block: |
+          nix build 'github:logos-co/logos-qt-mcp' --out-link ./result-mcp
+
+  - title: "Launch the app and walk the UI"
+    step: true
+    text: |
+      The standalone app bundles the UI plugin together with `blockchain_module`
+      and the native node library it links, so the first launch builds a lot —
+      hence the generous timeouts.
+
+      On first run the app opens on the **config chooser**: a node needs a config
+      before it can start, and the chooser is where you either generate one or
+      point at a file you already have.
+    steps:
+      - title: "Launch and drive the app"
+        ui_test:
+          # Taller than the 1024x768 default: logos-qt-mcp drives by clicking an
+          # element's scene position and cannot scroll, so a generous window keeps
+          # the generate form's fields on-screen. --height is exposed by
+          # logos-standalone-app. Timeouts are large because the app bundle (UI
+          # plugin + blockchain_module + the node library) builds during launch.
+          launch: "nix run github:logos-blockchain/logos-blockchain-ui{release} --no-write-lock-file -- --height 1000"
+          qt_mcp: "result-mcp"
+          build_timeout: 3600
+          launch_timeout: 3600
+          tests:
+            # The view routes straight to the node page when a config is already
+            # saved in QSettings (see _applyInitialRoute), so on a machine that
+            # has run the app before, the chooser is not what opens. "Change" is
+            # the real route back, and clicking it works from either state.
+            - name: "Go to the config chooser"
+              action: click_object
+              find_by: "objectName"
+              find_value: "changeConfigButton"
+
+            - name: "Chooser is shown"
+              action: wait_for
+              texts: ["Choose how to set up your node config", "Generate config", "Set path to config"]
+              timeout: 10000
+              screenshot: "blockchain-ui-chooser.png"
+              text: |
+                The chooser is where a node config is generated or selected. On a
+                first run the app lands here by itself; once a config has been
+                saved it opens on the node view instead, and this is the route
+                back — the same one the node view's **Change** button takes.
+
+            - name: "Open the generate-config form"
+              action: click_object
+              find_by: "objectName"
+              find_value: "chooserGenerateButton"
+
+            - name: "Generate form is rendered"
+              action: wait_for
+              texts:
+                - "Generate user config"
+                - "All fields are optional. Values are passed as args to generate config."
+                - "Initial peers (one per line)"
+                - "Net port"
+                - "Blend port"
+              timeout: 8000
+              screenshot: "blockchain-ui-generate.png"
+              text: |
+                Every field here maps to an argument of the module's
+                `generate_user_config` call. Leaving the output path empty is the
+                safe default — the module then writes the config, and the node's
+                state, database and log directories, under its own per-instance
+                directory, which is always writable.
+
+            - name: "Set the HTTP address"
+              action: set_text
+              find_by: "placeholderText"
+              find_value: "HTTP address (e.g. 0.0.0.0:8080)"
+              value: "0.0.0.0:18080"
+
+            # The form's submit button and the chooser button that opens the
+            # form share the caption "Generate config", so they are addressed by
+            # objectName rather than by text.
+            - name: "Generate the config"
+              action: click_object
+              find_by: "objectName"
+              find_value: "generateSubmitButton"
+
+            - name: "Generate succeeded and routed to the set-path view"
+              action: wait_for
+              texts: ["Select your config files, then continue to the node."]
+              timeout: 10000
+              screenshot: "blockchain-ui-generated.png"
+              text: |
+                Reaching this view *is* the assertion: the UI only calls
+                `showSetConfigPath()` when `generate_user_config` returns
+                success, so arriving here proves the round-trip into
+                `blockchain_module` worked and a real config was written.
+
+                The resolved path is displayed here, but it is machine-specific
+                and text matching is exact, so it is not asserted directly.
+
+                It is rendered as selectable text so a failure here — a parse
+                error, or a path that is not writable — can be copied out of the
+                UI rather than retyped from a screenshot.
+
+            # A successful generate does not jump to the node view: it lands on
+            # the set-path sub-view with the resolved path filled in. "Continue"
+            # is the operator's next step, and the doc-test takes the same one.
+            - name: "Continue to the node view"
+              action: click_object
+              find_by: "objectName"
+              find_value: "continueToNodeButton"
+
+            - name: "Node view shows the config, node not started"
+              action: wait_for
+              texts: ["Not Started"]
+              timeout: 8000
+              screenshot: "blockchain-ui-node.png"
+              text: |
+                The status reads **Not Started** — the operator starts the node
+                explicitly; generating or selecting a config never starts one.
+
+                The line under the status carries the node's own explanation when
+                something goes wrong, so a failed start shows a real cause rather
+                than a generic error.
+
+            - name: "Operations and Explorer are gated on a running node"
+              action: wait_for
+              texts: ["Node", "Operations", "Explorer"]
+              timeout: 6000
+              screenshot: "blockchain-ui-tabs.png"
+              text: |
+                All three tabs are present, but **Operations** and **Explorer**
+                are disabled until the node is running — they are declared
+                `enabled: opPage.nodeRunning`. That is why this doc-test stops
+                here: the wallet, transfer, leader-rewards and channel-deposit
+                panels all live behind the Operations tab, and none of them can
+                be reached without first bootstrapping a node against a live
+                network.
+
+                Everything up to this point — the chooser, the generate form, the
+                round-trip into `blockchain_module`, and the node view — needs no
+                network at all, which is what makes it reproducible.
+
+  - title: "What this does not cover"
+    text: |
+      This doc-test stops at the node view, because everything past it is gated
+      on a running node:
+
+      - **The Operations and Explorer tabs** are declared
+        `enabled: opPage.nodeRunning`, so the Accounts, Transfer, Leader Rewards
+        and Channel Deposit panels cannot be opened until a node is up.
+      - **Bootstrapping and syncing** need reachable peers speaking a matching
+        chainsync protocol version. When they do not match the node fails Initial
+        Block Download with `AllPeersFailed` — a real failure, but driven by
+        network state rather than by this repository.
+      - **Balances and transactions** need a chain that is progressing.
+
+      Note the generate form has no `skip_ibd` control, so a config produced
+      through the UI always carries bootstrap peers. That is the single change
+      that would unlock a UI end-to-end doc-test: expose `skip_ibd` in the form
+      (the module already accepts it), and the UI could start a peerless node the
+      same way the module's
+      [`blockchain-module-runtime`](https://github.com/logos-blockchain/logos-blockchain-module/blob/master/doctests/blockchain-module-runtime.test.yaml)
+      doc-test does — at which point the operation panels become reachable and
+      assertable.
+
+      Navigation here goes through `call_method` on `objectName` handles
+      (`blockchainRoot`, `configChoiceView`, `generateConfigView`) rather than by
+      clicking captions. That is deliberate: the chooser's "Generate config"
+      button and the form's submit button share a caption, so click-by-text
+      cannot address them unambiguously.

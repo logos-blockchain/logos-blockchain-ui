@@ -411,6 +411,7 @@ Rectangle {
             id: configChoiceScrollView
             ConfigChoiceView {
                 id: configChoiceView
+                objectName: "configChoiceView"
                 width: configChoiceScrollView.availableWidth
                 userConfigPath: root.backend ? root.backend.userConfig : ""
                 deploymentConfigPath: root.backend ? root.backend.deploymentConfig : ""

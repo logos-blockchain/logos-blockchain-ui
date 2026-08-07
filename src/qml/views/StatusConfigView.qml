@@ -142,6 +142,7 @@ Rectangle {
             }
 
             LogosButton {
+                objectName: "changeConfigButton"
                 // Config can't be changed while the node may be up — hide the
                 // button entirely (not just disable it) in Running/Error.
                 visible: !root.canStop

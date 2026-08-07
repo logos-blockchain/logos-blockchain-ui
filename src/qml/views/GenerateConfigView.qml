@@ -196,6 +196,7 @@ ColumnLayout {
         Layout.alignment: Qt.AlignHCenter
         Layout.fillWidth: true
         Layout.preferredHeight: 50
+        objectName: "generateSubmitButton"
         text: qsTr("Generate config")
         onClicked: d.doGenerate()
     }
