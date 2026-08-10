@@ -213,6 +213,8 @@ Rectangle {
     function pollNodeStatus() {
         if (!root.statusPollActive || !root.backend)
             return
+        // Recompute the Blend status on the same cadence as the consensus poll.
+        root.backend.refreshBlendStatus()
         logos.watch(
             root.backend.getCryptarchiaInfo(),
             function(result) {
@@ -373,6 +375,27 @@ Rectangle {
             case BlockchainBackend.Starting:
             case BlockchainBackend.Stopping: return Theme.palette.warning
             default: return Theme.palette.error
+            }
+        }
+
+        // Blend state → the word shown on the right of the Blend block (the
+        // block's "Blend" label supplies the noun, like "Consensus" → "Online").
+        function getBlendString(s) {
+            switch(s) {
+            case BlockchainBackend.Edge: return qsTr("edge")
+            case BlockchainBackend.Core: return qsTr("core")
+            case BlockchainBackend.Broadcast: return qsTr("broadcast")
+            case BlockchainBackend.BlendError: return qsTr("error")
+            case BlockchainBackend.Unknown: return qsTr("unknown")
+            default: return qsTr("inactive")
+            }
+        }
+        // Blue while actively mixing (edge/core); muted otherwise.
+        function getBlendColor(s) {
+            switch(s) {
+            case BlockchainBackend.Edge:
+            case BlockchainBackend.Core: return Theme.palette.info
+            default: return Theme.palette.textSecondary
             }
         }
         property int currentPage: 0
@@ -583,6 +606,16 @@ Rectangle {
                             errorText: root.cryptarchiaInfoError
                             errorIsNotice: !!root.backend && root.backend.nodeRecovering
                             onCopyToClipboard: (text) => root.copyText(text)
+                        }
+
+                        // Blend participation, directly under the Consensus block.
+                        BlendInfoView {
+                            Layout.fillWidth: true
+                            visible: opPage.nodeRunning
+                            statusText: root.backend ? _d.getBlendString(root.backend.blendStatus) : ""
+                            statusColor: root.backend ? _d.getBlendColor(root.backend.blendStatus)
+                                                      : Theme.palette.textSecondary
+                            eventText: root.backend ? root.backend.lastBlendEvent : ""
                         }
 
                         Item {
