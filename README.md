@@ -93,18 +93,22 @@ nix develop          # enter development shell
 ```
 logos-blockchain-ui/
 ├── flake.nix                       # mkLogosQmlModule
-├── metadata.json                   # Module config (ui_qml type)
+├── metadata.json                   # Module config (ui_qml + interface: universal)
 ├── CMakeLists.txt                  # logos_module() macro
 └── src/
-    ├── BlockchainBackend.rep       # RemoteObject interface
-    ├── BlockchainBackend.h/cpp     # Business logic (extends BlockchainBackendSimpleSource)
-    ├── BlockchainPlugin.h/cpp      # Thin plugin entry point
-    ├── BlockchainPluginInterface.h # Plugin interface marker
+    ├── BlockchainBackend.rep       # RemoteObject interface (the view contract)
+    ├── BlockchainBackend.h/cpp     # Business logic (extends BlockchainBackendSimpleSource
+    │                               # + LogosUiPluginContext)
     ├── AccountsModel.h/cpp         # QAbstractListModel for accounts
-    ├── LogModel.h/cpp              # QAbstractListModel for logs
+    ├── BlockModel.h/cpp            # QAbstractListModel for blocks
     └── qml/
         └── BlockchainView.qml     # QML frontend (+ sub-views)
 ```
+
+The `*Interface.h` and `*Plugin.{h,cpp}` classes (`Q_PLUGIN_METADATA`,
+`initLogos` wiring, QtRO registration, `setBackend`) are **generated** into
+`generated_code/` from the `.rep` + `metadata.json#codegen` — they are not
+checked in.
 
 ## Configuration
 

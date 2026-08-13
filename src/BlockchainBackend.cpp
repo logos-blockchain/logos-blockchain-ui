@@ -2,6 +2,12 @@
 #include "logos_api.h"
 #include "logos_api_client.h"
 
+// Generated umbrella: completes LogosModules, the typed-dependency aggregate
+// behind LogosUiPluginContext::modules(). Its `api` member is the LogosAPI the
+// host handed the plugin — the same pointer the hand-written plugin used to
+// pass to this constructor.
+#include "logos_sdk.h"
+
 #include <QByteArray>
 #include <QClipboard>
 #include <QCoreApplication>
@@ -245,9 +251,8 @@ static QByteArray decodeBase58(const QString& input, bool* ok)
     return bytes;
 }
 
-BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
+BlockchainBackend::BlockchainBackend(QObject* parent)
     : BlockchainBackendSimpleSource(parent)
-    , m_logosAPI(logosAPI)
     , m_accountsModel(new AccountsModel(this))
     , m_blockModel(new BlockModel(this))
 {
@@ -309,6 +314,16 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         QSettings("Logos", "BlockchainUI")
             .setValue("deploymentConfigPath", deploymentConfig());
     });
+}
+
+// Everything below used to be the tail of the constructor, which the
+// hand-written BlockchainPlugin::initLogos called with the host's LogosAPI*.
+// The generated glue default-constructs the backend instead and calls this hook
+// once modules() is live — still before setBackend()/enableRemoting, so the view
+// cannot call a slot before the client exists, exactly as before.
+void BlockchainBackend::onContextReady()
+{
+    m_logosAPI = modules().api;
 
     if (!m_logosAPI) {
         qWarning() << "BlockchainBackend: constructed without LogosAPI";

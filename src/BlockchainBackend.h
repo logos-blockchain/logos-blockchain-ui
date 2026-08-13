@@ -9,6 +9,7 @@
 #include <QVariantMap>
 
 #include "rep_BlockchainBackend_source.h"
+#include "logos_ui_plugin_context.h"
 
 #include "AccountsModel.h"
 #include "BlockModel.h"
@@ -19,20 +20,26 @@ class LogosAPIClient;
 // Source-side implementation of the BlockchainBackend .rep interface.
 //
 // Inheriting from BlockchainBackendSimpleSource gives us the generated PROPs,
-// SLOTs and SIGNALs from BlockchainBackend.rep.
+// SLOTs and SIGNALs from BlockchainBackend.rep. LogosUiPluginContext is the
+// universal-authoring half: the generated *Plugin glue default-constructs this
+// backend, then hands over the typed-dependency aggregate and fires
+// onContextReady() — which is where everything that needs the framework (the
+// blockchain_module client, the newBlock subscription) is wired up. Nothing
+// that touches a dependency may run in the constructor.
 //
 // AccountsModel* / BlockModel* are subclass-only Q_PROPERTYs — QAbstractItemModel*
 // can't flow through a .rep, so ui-host auto-remotes each such property as
 // "<module>/<propertyName>" (see logos-view-module-runtime/ui-host/main.cpp).
 // QML acquires them via logos.model("blockchain_ui", "accounts"|"blocks").
-class BlockchainBackend : public BlockchainBackendSimpleSource
+class BlockchainBackend : public BlockchainBackendSimpleSource,
+                          public LogosUiPluginContext
 {
     Q_OBJECT
     Q_PROPERTY(AccountsModel* accounts READ accounts CONSTANT)
     Q_PROPERTY(BlockModel* blocks READ blocks CONSTANT)
 
 public:
-    explicit BlockchainBackend(LogosAPI* logosAPI, QObject* parent = nullptr);
+    explicit BlockchainBackend(QObject* parent = nullptr);
     ~BlockchainBackend() override;
 
     AccountsModel* accounts() const { return m_accountsModel; }
@@ -75,6 +82,13 @@ public slots:
                                     QString optionalTipHex) override;
     void clearBlocks() override;
     void copyToClipboard(QString text) override;
+
+protected:
+    // Fires once the generated plugin glue has wired the typed-dependency
+    // aggregate. Acquires the blockchain_module client and arms the newBlock
+    // subscription — the work the hand-written plugin's initLogos used to do
+    // by constructing this backend with a LogosAPI*.
+    void onContextReady() override;
 
 private:
     void fetchBalancesForAccounts(const QStringList& list);

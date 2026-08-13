@@ -3,12 +3,18 @@
   "display_name": "Blockchain",
   "version": "0.2.1-rc.3",
   "type": "ui_qml",
+  "interface": "universal",
   "category": "blockchain",
   "description": "Blockchain UI module for the Logos application",
   "main": "blockchain_ui_plugin",
   "icon": "src/icons/blockchain.png",
   "view": "qml/BlockchainView.qml",
   "dependencies": ["blockchain_module"],
+  "codegen": {
+    "rep": "src/BlockchainBackend.rep",
+    "backend_class": "BlockchainBackend",
+    "backend_header": "BlockchainBackend.h"
+  },
   "nix": {
     "packages": {
       "build": [],

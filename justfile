@@ -69,4 +69,4 @@ lint:
         -p cmake-build-debug \
         --header-filter='src/.*' \
         --extra-arg-before=--driver-mode=g++ \
-        src/BlockchainPlugin.cpp src/BlockchainBackend.cpp src/AccountsModel.cpp src/LogModel.cpp
+        src/BlockchainBackend.cpp src/AccountsModel.cpp src/BlockModel.cpp
