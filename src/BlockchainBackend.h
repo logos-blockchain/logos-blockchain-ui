@@ -75,6 +75,9 @@ public slots:
                                     QString optionalTipHex) override;
     void clearBlocks() override;
     void copyToClipboard(QString text) override;
+    // Recompute blendStatus + lastBlendEvent from the live node mode, /blend/info,
+    // and the blend::service node log. Driven by the node-view status poll.
+    void refreshBlendStatus() override;
 
 private:
     void fetchBalancesForAccounts(const QStringList& list);
@@ -82,6 +85,13 @@ private:
     const Rule* diagnoseNode() const; // cached; call this
     const Rule* scanNodeLog() const;
     QString newestNodeLogPath() const;
+    // Blend status sources (curl to the node's local HTTP API + the node log).
+    // getBlendInfo(): /blend/info → { ok, coreInfoPresent, mixPeers }.
+    // nodeMode(): /cryptarchia/info state ("Online"/"Bootstrapping"/"").
+    // blendStateFromLog(): map the blend::service log tail → BlendStatus + *outEvent.
+    QVariantMap getBlendInfo() const;
+    QString nodeMode() const;
+    BlendStatus blendStateFromLog(QString* outEvent) const;
 
     mutable QElapsedTimer m_diagnosisAge;
     mutable const Rule* m_lastDiagnosis = nullptr;

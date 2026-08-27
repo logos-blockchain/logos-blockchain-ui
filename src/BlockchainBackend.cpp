@@ -12,8 +12,11 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QRegularExpression>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonValue>
+#include <QProcess>
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QTimer>
@@ -353,6 +356,154 @@ QVariantMap BlockchainBackend::claimLeaderRewards()
 
     return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "leader_claim")));
+}
+
+// ── Blend Network status ─────────────────────────────────────────────────────
+// The node exposes its state over a local HTTP API; we shell out to curl (the
+// app's Qt/QML network stack is unreliable on the packaged build). Every string
+// matched below is verbatim from the node's own output — no invented codes.
+
+// /blend/info → { ok, coreInfoPresent, mixPeers }. core_info is present ONLY for a
+// Core (full) Blend node. The endpoint answers once Online; it can hang while the
+// node is still bootstrapping, so callers gate on nodeMode() first.
+QVariantMap BlockchainBackend::getBlendInfo() const
+{
+    QVariantMap out;
+    out.insert(QStringLiteral("ok"), false);
+    out.insert(QStringLiteral("coreInfoPresent"), false);
+    out.insert(QStringLiteral("mixPeers"), -1);
+    QProcess p;
+    p.start(QStringLiteral("curl"),
+            {QStringLiteral("-sS"), QStringLiteral("-m"), QStringLiteral("3"),
+             QStringLiteral("http://127.0.0.1:8080/blend/info")});
+    if (!p.waitForFinished(4000)) { p.kill(); return out; }
+    const QJsonDocument doc = QJsonDocument::fromJson(p.readAllStandardOutput());
+    if (!doc.isObject())
+        return out;
+    const QJsonObject o = doc.object();
+    out.insert(QStringLiteral("ok"), true);
+    const QJsonValue ci = o.value(QStringLiteral("core_info"));
+    if (ci.isObject()) {
+        out.insert(QStringLiteral("coreInfoPresent"), true);
+        out.insert(QStringLiteral("mixPeers"),
+                   ci.toObject().value(QStringLiteral("current_epoch_peers")).toArray().size());
+    }
+    return out;
+}
+
+// Node consensus mode ("Online" / "Bootstrapping" / "" if the API doesn't answer).
+// The authoritative gate: Blend can't run until the chain is Online.
+QString BlockchainBackend::nodeMode() const
+{
+    QProcess p;
+    p.start(QStringLiteral("curl"),
+            {QStringLiteral("-sS"), QStringLiteral("-m"), QStringLiteral("3"),
+             QStringLiteral("http://127.0.0.1:8080/cryptarchia/info")});
+    if (!p.waitForFinished(4000)) { p.kill(); return {}; }
+    const QJsonDocument doc = QJsonDocument::fromJson(p.readAllStandardOutput());
+    if (!doc.isObject())
+        return {};
+    const QJsonObject o = doc.object();
+    const QJsonObject ci = o.value(QStringLiteral("cryptarchia_info")).toObject();
+    if (ci.contains(QStringLiteral("state")))
+        return ci.value(QStringLiteral("state")).toString();
+    return o.value(QStringLiteral("state")).toString();
+}
+
+// Map the blend::service log lifecycle → a state + a plain-language event line.
+// The lifecycle line is written once (at the Online transition / an epoch
+// boundary) and the node rotates its log, so scan the newest few files in the
+// node's log dir (located via newestNodeLogPath()), newest-first.
+BlockchainBackend::BlendStatus
+BlockchainBackend::blendStateFromLog(QString* outEvent) const
+{
+    if (outEvent)
+        outEvent->clear();
+    const QString newestLog = newestNodeLogPath();
+    if (newestLog.isEmpty())
+        return Unknown;
+    const QFileInfoList files =
+        QFileInfo(newestLog).absoluteDir().entryInfoList(QDir::Files, QDir::Time);  // newest first
+    const int maxFiles = qMin(6, static_cast<int>(files.size()));
+    for (int fi = 0; fi < maxFiles; ++fi) {
+        QFile f(files.at(fi).absoluteFilePath());
+        if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+            continue;
+        const qint64 tail = qMin<qint64>(f.size(), 512 * 1024);
+        f.seek(f.size() - tail);
+        const QStringList lines = QString::fromUtf8(f.readAll()).split(QLatin1Char('\n'));
+        f.close();
+        for (int i = lines.size() - 1; i >= 0; --i) {
+            const QString& ln = lines.at(i);
+            if (ln.contains(QStringLiteral("Failed to join blend network"))
+                || (ln.contains(QStringLiteral("SDP service")) && ln.contains(QStringLiteral("channel closed")))) {
+                if (outEvent)
+                    *outEvent = ln.section(QStringLiteral("] "), -1).trimmed();
+                return BlendError;
+            }
+            if (ln.contains(QStringLiteral("does not satisfy edge node condition"))) {
+                if (outEvent)
+                    *outEvent = QStringLiteral("too few Blend nodes this epoch, no privacy");
+                return Broadcast;
+            }
+            if (ln.contains(QStringLiteral("Blend edge swarm started"))
+                || ln.contains(QStringLiteral("Service 'BlendEdge' is ready"))
+                || ln.contains(QStringLiteral("Service 'Blend' is ready"))) {
+                if (outEvent)
+                    *outEvent = QStringLiteral("your proposals are being mixed");
+                return Edge;
+            }
+            if (ln.contains(QStringLiteral("Waiting for chain to become Online"))) {
+                if (outEvent)
+                    *outEvent = QStringLiteral("waiting for the node to reach Online");
+                return WaitingForOnline;
+            }
+        }
+    }
+    return Unknown;
+}
+
+// Recompute the Blend status. Drives off the live node mode (not the log alone,
+// which rotates): not Running → Off; Error → NodeError; not Online → waiting;
+// Online + /blend/info core_info → Core; Online + not core → Edge by default,
+// unless the log shows this epoch fell back to broadcast (or blend errored).
+void BlockchainBackend::refreshBlendStatus()
+{
+    BlendStatus st = Unknown;
+    QString evt;
+    const BlockchainStatus ns = status();
+    if (ns == Error) {
+        st = NodeError;
+        evt = lastErrorMessage();
+    } else if (ns != Running) {
+        st = Off;
+    } else {
+        const QString mode = nodeMode();
+        if (mode != QLatin1String("Online")) {
+            st = WaitingForOnline;
+            evt = QStringLiteral("waiting for the node to reach Online");
+        } else {
+            const QVariantMap bi = getBlendInfo();
+            if (bi.value(QStringLiteral("ok")).toBool()
+                && bi.value(QStringLiteral("coreInfoPresent")).toBool()) {
+                st = Core;
+                const int mp = bi.value(QStringLiteral("mixPeers")).toInt();
+                evt = mp >= 0
+                          ? QStringLiteral("%1 mix peers this epoch").arg(mp)
+                          : QStringLiteral("mixing for the network");
+            } else {
+                const BlendStatus fromLog = blendStateFromLog(&evt);
+                if (fromLog == Broadcast || fromLog == BlendError) {
+                    st = fromLog;   // evt already set from the log
+                } else {
+                    st = Edge;
+                    evt = QStringLiteral("your proposals are being mixed");
+                }
+            }
+        }
+    }
+    setBlendStatus(st);
+    setLastBlendEvent(evt);
 }
 
 QVariantMap BlockchainBackend::getCryptarchiaInfo()
