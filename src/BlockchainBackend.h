@@ -56,6 +56,7 @@ public slots:
     QVariantMap transferFunds(QString fromKeyHex, QString toKeyHex, QString amountStr) override;
     QVariantMap claimLeaderRewards() override;
     QVariantMap getCryptarchiaInfo() override;
+    QVariantMap getTimeInfo() override;
     QVariantMap getBlock(QString headerIdHex) override;
     QVariantMap getTransaction(QString txHashHex) override;
     QVariantMap findTransactionInBlocks(QString txHashHex) override;

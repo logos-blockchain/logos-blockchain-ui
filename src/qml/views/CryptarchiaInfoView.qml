@@ -4,7 +4,6 @@ import QtQuick.Layouts
 import Logos.Theme
 import Logos.Controls
 
-import "../controls"
 
 // Live Cryptarchia consensus state, polled from get_cryptarchia_info.
 // The result `value` is a JSON string; parsed defensively (nested under
@@ -17,29 +16,10 @@ Rectangle {
     // errorText is progress, not a failure — don't paint a healthy node red.
     property bool errorIsNotice: false
 
-    signal copyToClipboard(string text)
-
     readonly property var info: parse(infoJson)
 
     function parse(s) {
         try { return s && s.length > 0 ? JSON.parse(s) : null } catch (e) { return null }
-    }
-
-    function field(key) {
-        if (!info) return undefined
-        if (info.cryptarchia_info && info.cryptarchia_info[key] !== undefined)
-            return info.cryptarchia_info[key]
-        return info[key]
-    }
-
-    function num(key) {
-        var v = field(key)
-        return (v === undefined || v === null) ? qsTr("—") : String(v)
-    }
-
-    function hash(key) {
-        var v = field(key)
-        return (v === undefined || v === null) ? "" : String(v)
     }
 
     // mode lives at the top level (ChainServiceMode); accept string or the
@@ -103,42 +83,6 @@ Rectangle {
             color: root.errorIsNotice ? Theme.palette.warning : Theme.palette.error
             font.pixelSize: Theme.typography.secondaryText
             wrapMode: Text.WordWrap
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            visible: root.errorText.length === 0
-            spacing: Theme.spacing.large
-            LogosText {
-                text: qsTr("Slot: %1").arg(root.num("slot"))
-                font.pixelSize: Theme.typography.secondaryText
-                color: Theme.palette.textSecondary
-            }
-            LogosText {
-                text: qsTr("Height: %1").arg(root.num("height"))
-                font.pixelSize: Theme.typography.secondaryText
-                color: Theme.palette.textSecondary
-            }
-            LogosText {
-                visible: root.field("lib_slot") !== undefined
-                text: qsTr("LIB slot: %1").arg(root.num("lib_slot"))
-                font.pixelSize: Theme.typography.secondaryText
-                color: Theme.palette.textSecondary
-            }
-            Item { Layout.fillWidth: true }
-        }
-
-        HashRow {
-            visible: root.errorText.length === 0
-            label: qsTr("Tip")
-            value: root.hash("tip")
-            onCopyRequested: (t) => root.copyToClipboard(t)
-        }
-        HashRow {
-            visible: root.errorText.length === 0
-            label: qsTr("LIB")
-            value: root.hash("lib")
-            onCopyRequested: (t) => root.copyToClipboard(t)
         }
     }
 }

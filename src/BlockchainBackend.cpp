@@ -355,6 +355,18 @@ QVariantMap BlockchainBackend::claimLeaderRewards()
         BLOCKCHAIN_MODULE_NAME, "leader_claim")));
 }
 
+// Consensus time info as JSON: { slot_duration_ms, genesis_time_unix_ms,
+// current_slot, current_epoch }. The node view pairs current_slot with the
+// chain tip's slot to show how far behind the head the chain is.
+QVariantMap BlockchainBackend::getTimeInfo()
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_time_info"))));
+}
+
 QVariantMap BlockchainBackend::getCryptarchiaInfo()
 {
     if (!m_blockchainClient)

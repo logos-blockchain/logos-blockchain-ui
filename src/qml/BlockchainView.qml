@@ -149,6 +149,9 @@ Rectangle {
     // and let the user (or the next incoming block) resume it.
     property string cryptarchiaInfoJson: ""
     property string cryptarchiaInfoError: ""
+    // Consensus clock, polled alongside the chain info. Its current_slot is what
+    // the At Headslot tile measures the chain tip against.
+    property string timeInfoJson: ""
 
     // UI status overrides driven by the poll loop, taking precedence over the
     // backend's own status in the status tag:
@@ -168,8 +171,11 @@ Rectangle {
         && root.backend.status === BlockchainBackend.Running
 
     onNodeRunningChanged: {
-        if (!nodeRunning)
+        if (!nodeRunning) {
             root.monitoringPaused = false
+            root.cryptarchiaInfoJson = ""
+            root.timeInfoJson = ""
+        }
     }
 
     // Poll cadence / backoff. Healthy cadence is `statusPollBaseMs`; after a
@@ -232,8 +238,19 @@ Rectangle {
             cryptarchiaTimer.restart()
     }
 
+    function _pollTimeInfo() {
+        if (!root.backend)
+            return
+        logos.watch(
+            root.backend.getTimeInfo(),
+            function(result) { root.timeInfoJson = result.success ? result.value : "" },
+            function(error) { root.timeInfoJson = "" }
+        )
+    }
+
     function _onStatusPollSuccess(value) {
         root.cryptarchiaInfoJson = value
+        root._pollTimeInfo()
         root.cryptarchiaInfoError = ""
         root.statusRetryMs = 0             // recovered: back to the base cadence
         root.statusCapRetryCount = 0
@@ -527,7 +544,6 @@ Rectangle {
 
                     ColumnLayout {
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
                         spacing: Theme.spacing.large
 
                         StatusConfigView {
@@ -570,30 +586,31 @@ Rectangle {
                             onChangeConfigRequested: _d.currentPage = 0
                         }
 
-                        NodeInfoView {
-                            Layout.fillWidth: true
-                            peerId: root.peerId
-                            onCopyToClipboard: (text) => root.copyText(text)
-                        }
-
                         CryptarchiaInfoView {
                             Layout.fillWidth: true
-                            visible: opPage.nodeRunning
                             infoJson: root.cryptarchiaInfoJson
                             errorText: root.cryptarchiaInfoError
                             errorIsNotice: !!root.backend && root.backend.nodeRecovering
-                            onCopyToClipboard: (text) => root.copyText(text)
                         }
 
-                        Item {
-                            Layout.preferredHeight: Theme.spacing.small
+                        ChainStatsView {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 170
+                            infoJson: root.cryptarchiaInfoJson
+                            timeInfoJson: root.timeInfoJson
+                            peerId: root.peerId
+                            onCopyToClipboard: (text) => root.copyText(text)
                         }
                     }
 
                     BlocksView {
                         Layout.fillWidth: true
-                        Layout.fillHeight: false
-                        Layout.preferredHeight: operationStack.height / 2
+                        emptyText: !opPage.nodeRunning
+                                   ? qsTr("Start the node to see blocks arrive.")
+                                   : root.cryptarchiaInfoJson.length === 0
+                                     ? qsTr("Waiting for the node to report its state...")
+                                     : qsTr("Waiting for the next block. Only blocks produced from now on are listed.")
+                        Layout.fillHeight: true
                         Layout.minimumHeight: 150
 
                         blockModel: root.blockModel

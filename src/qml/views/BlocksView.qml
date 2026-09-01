@@ -14,6 +14,7 @@ Control {
 
     // --- Public API ---
     required property var blockModel
+    property string emptyText: qsTr("No blocks yet...")
 
     signal clearRequested()
     signal copyToClipboard(string text)
@@ -149,7 +150,7 @@ Control {
                         // model's own count property — use it for the empty state.
                         visible: blocksListView.count === 0
                         anchors.centerIn: parent
-                        text: qsTr("No blocks yet...")
+                        text: root.emptyText
                         font.pixelSize: Theme.typography.secondaryText
                         color: Theme.palette.textSecondary
                     }
