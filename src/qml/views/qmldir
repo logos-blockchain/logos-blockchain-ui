@@ -10,3 +10,4 @@ ChannelDepositView 1.0 ChannelDepositView.qml
 ChainStatsView 1.0 ChainStatsView.qml
 NodeOverviewView 1.0 NodeOverviewView.qml
 NodeStatusCard 1.0 NodeStatusCard.qml
+ValidatorStatusCard 1.0 ValidatorStatusCard.qml

@@ -26,6 +26,7 @@ Control {
 
     signal manageRequested()
     signal addressSelected(string addressHex)
+    signal refreshRequested()
 
     property QtObject d: QtObject {
         id: d
@@ -187,6 +188,18 @@ Control {
                             enabled: d.count > 1
                             iconSource: LogosIcons.arrowRight
                             onClicked: d.step(1)
+                        }
+
+                        // Balances are only fetched once, ~500ms after the node
+                        // starts, so this is the way to pull a fresh number
+                        // without leaving for the accounts view.
+                        LogosIconButton {
+                            flat: true
+                            size: 28
+                            iconSize: 16
+                            iconSource: LogosIcons.refresh
+                            iconColor: Theme.palette.textTertiary
+                            onClicked: root.refreshRequested()
                         }
 
                         LogosIcon {

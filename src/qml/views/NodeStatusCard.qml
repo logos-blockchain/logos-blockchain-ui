@@ -226,20 +226,32 @@ Control {
                 Layout.fillWidth: true
                 spacing: Theme.spacing.small
 
-                LogosIcon {
-                    Layout.alignment: Qt.AlignVCenter
-                    Layout.preferredWidth: 22
-                    Layout.preferredHeight: 22
-                    source: Qt.resolvedUrl("../icons/node-tree.svg")
-                    color: Theme.palette.primary
-                }
+                // The dot matrix makes this row ~56px tall, so centring the
+                // title in it would drop it well below the sibling card's
+                // heading. Group icon + title and pin the pair to the top, so
+                // both cards' headings start at the same y.
+                RowLayout {
+                    Layout.alignment: Qt.AlignTop
+                    // A layout nested in a layout fills by default; without
+                    // this it stretches and the AlignTop above does nothing.
+                    Layout.fillHeight: false
+                    spacing: Theme.spacing.small
 
-                LogosText {
-                    Layout.alignment: Qt.AlignVCenter
-                    text: qsTr("Node")
-                    color: Theme.palette.text
-                    font.pixelSize: Theme.typography.panelTitleText
-                    font.weight: Theme.typography.weightMedium
+                    LogosIcon {
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        source: Qt.resolvedUrl("../icons/node-tree.svg")
+                        color: Theme.palette.primary
+                    }
+
+                    LogosText {
+                        Layout.alignment: Qt.AlignVCenter
+                        text: qsTr("Node")
+                        color: Theme.palette.text
+                        font.pixelSize: Theme.typography.panelTitleText
+                        font.weight: Theme.typography.weightMedium
+                    }
                 }
 
                 Item { Layout.fillWidth: true }

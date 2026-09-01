@@ -525,9 +525,34 @@ Rectangle {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 accountsModel: root.accountsModel
+                                // Refreshes every account, not just the selected
+                                // one, so the validator card's total updates too.
+                                onRefreshRequested: if (root.backend) root.backend.refreshAccounts()
                                 onManageRequested: {
                                     operationTabBar.currentIndex = 1
                                     opPage.operationIndex = 0
+                                }
+                            }
+
+                            ValidatorStatusCard {
+                                Layout.preferredWidth: 340
+                                Layout.fillWidth: false
+                                Layout.fillHeight: true
+
+                                accountsModel: root.accountsModel
+                                vouchersJson: root.claimableVouchersJson
+                                canClaim: root.nodeRunning
+
+                                // Same call the rewards view in the operations
+                                // tab makes; refresh the list either way so the
+                                // count reflects the claim.
+                                onClaimRequested: {
+                                    if (!root.backend) return
+                                    logos.watch(
+                                        root.backend.claimLeaderRewards(),
+                                        function(result) { root.refreshClaimableVouchers() },
+                                        function(error) { root.refreshClaimableVouchers() }
+                                    )
                                 }
                             }
 
