@@ -529,6 +529,7 @@ Rectangle {
 
                             NodeOverviewView {
                                 Layout.fillWidth: true
+                                Layout.minimumWidth: 320
                                 Layout.fillHeight: true
                                 accountsModel: root.accountsModel
                                 // Refreshes every account, not just the selected

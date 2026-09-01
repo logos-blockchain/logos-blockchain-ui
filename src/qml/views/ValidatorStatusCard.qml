@@ -123,6 +123,7 @@ Control {
     }
 
     contentItem: LogosFrame {
+        clip: true
         padding: Theme.spacing.large
         backgroundColor: Theme.palette.surfaceRaised
         borderColor: "transparent"

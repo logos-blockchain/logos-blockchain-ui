@@ -163,7 +163,7 @@ Control {
             if (root.statusLabelOverride.length > 0)
                 return root.statusLabelOverride
             switch (root.status) {
-            case BlockchainBackend.NotStarted: return qsTr("Not started")
+            case BlockchainBackend.NotStarted: return qsTr("Not Started")
             case BlockchainBackend.Starting:   return qsTr("Starting…")
             case BlockchainBackend.Running:    return qsTr("Running")
             case BlockchainBackend.Stopping:   return qsTr("Stopping…")
@@ -213,6 +213,7 @@ Control {
     }
 
     contentItem: LogosFrame {
+        clip: true
         padding: Theme.spacing.large
         backgroundColor: Theme.palette.surfaceRaised
         borderColor: "transparent"
@@ -422,6 +423,9 @@ Control {
                 Item { Layout.fillHeight: true }
 
                 LogosButton {
+                    // Load-bearing: the doc-test's first action clicks this to
+                    // reach the config chooser (doctests/blockchain-ui-app.test.yaml).
+                    objectName: "changeConfigButton"
                     Layout.topMargin: Theme.spacing.small
                     Layout.alignment: Qt.AlignRight
                     visible: !root.canStop

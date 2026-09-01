@@ -86,6 +86,7 @@ Control {
     }
 
     contentItem: LogosFrame {
+        clip: true
         padding: Theme.spacing.large
         backgroundColor: Theme.palette.surfaceRaised
         borderColor: "transparent"
@@ -162,13 +163,13 @@ Control {
                             font.weight: Theme.typography.weightMedium
                         }
 
-                        Item { Layout.fillWidth: true }
-
                         // Switching here re-points the balance below, since both
-                        // read the same row of the accounts model.
+                        // read the same row of the accounts model
                         LogosComboBox {
                             id: accountPicker
+                            Layout.fillWidth: true
                             Layout.preferredWidth: 260
+                            Layout.minimumWidth: 60
                             enabled: d.count > 0
                             model: d.labels
                             currentIndex: d.index
