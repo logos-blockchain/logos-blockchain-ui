@@ -593,6 +593,16 @@ Rectangle {
                             errorIsNotice: !!root.backend && root.backend.nodeRecovering
                         }
 
+                        NodeOverviewView {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 320
+                            accountsModel: root.accountsModel
+                            onManageRequested: {
+                                operationTabBar.currentIndex = 1
+                                opPage.operationIndex = 0
+                            }
+                        }
+
                         ChainStatsView {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 170

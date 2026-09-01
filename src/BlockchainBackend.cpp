@@ -553,7 +553,8 @@ QVariantMap BlockchainBackend::getBalance(QString addressHex)
               BLOCKCHAIN_MODULE_NAME, "wallet_get_balance", addressHex))
         : result::err(QStringLiteral("Module not initialized."));
 
-    m_accountsModel->setBalanceForAddress(addressHex, result::toDisplayMessage(lr));
+    m_accountsModel->setBalanceForAddress(
+        addressHex, lr.success ? lr.value.toString() : QString());
     return result::toVariantMap(lr);
 }
 

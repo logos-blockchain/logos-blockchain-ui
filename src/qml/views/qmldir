@@ -1,4 +1,3 @@
-module views
 StatusConfigView 1.0 StatusConfigView.qml
 BlocksView 1.0 BlocksView.qml
 CryptarchiaInfoView 1.0 CryptarchiaInfoView.qml
@@ -11,3 +10,5 @@ GenerateConfigView 1.0 GenerateConfigView.qml
 ConfigChoiceView 1.0 ConfigChoiceView.qml
 SetConfigPathView 1.0 SetConfigPathView.qml
 ChannelDepositView 1.0 ChannelDepositView.qml
+ChainStatsView 1.0 ChainStatsView.qml
+NodeOverviewView 1.0 NodeOverviewView.qml
