@@ -204,7 +204,7 @@ Control {
                 spacing: Theme.spacing.medium
 
                 ColumnLayout {
-                    Layout.fillWidth: true
+                    Layout.fillWidth: false
                     spacing: Theme.spacing.tiny
 
                     LogosText {
@@ -221,10 +221,12 @@ Control {
                     }
                 }
 
+                Item { Layout.fillWidth: true }
+
                 LogosButton {
-                    // Bottom-right, so it sits on the count's baseline rather
+                    // Bottom-aligned so it sits on the count's baseline rather
                     // than floating midway between the label and the number.
-                    Layout.alignment: Qt.AlignRight | Qt.AlignBottom
+                    Layout.alignment: Qt.AlignBottom
                     text: qsTr("Claim")
                     enabled: root.canClaim && d.voucherCount > 0
                     onClicked: root.claimRequested()
