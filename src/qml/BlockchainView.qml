@@ -522,12 +522,12 @@ Rectangle {
                 currentIndex: operationTabBar.currentIndex
 
                 // ---- Tab 0: Node information (status + logs) ----
-                SplitView {
-                    orientation: Qt.Vertical
+                ColumnLayout {
+                    spacing: Theme.spacing.large
 
                     ColumnLayout {
-                        SplitView.fillWidth: true
-                        SplitView.minimumHeight: 120
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
                         spacing: Theme.spacing.large
 
                         StatusConfigView {
@@ -591,8 +591,10 @@ Rectangle {
                     }
 
                     BlocksView {
-                        SplitView.fillWidth: true
-                        SplitView.minimumHeight: 150
+                        Layout.fillWidth: true
+                        Layout.fillHeight: false
+                        Layout.preferredHeight: operationStack.height / 2
+                        Layout.minimumHeight: 150
 
                         blockModel: root.blockModel
                         onClearRequested: if (root.backend) root.backend.clearBlocks()
