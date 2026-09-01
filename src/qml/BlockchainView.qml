@@ -362,36 +362,6 @@ Rectangle {
             return qsTr("Error: %1").arg(message)
         }
 
-        function getStatusString(s) {
-            switch(s) {
-            case BlockchainBackend.NotStarted: return qsTr("Not Started")
-            case BlockchainBackend.Starting: return qsTr("Starting...")
-            case BlockchainBackend.Running: return qsTr("Running")
-            case BlockchainBackend.Stopping: return qsTr("Stopping...")
-            case BlockchainBackend.Stopped: return qsTr("Stopped")
-            case BlockchainBackend.Error: return qsTr("Error")
-            default: return qsTr("Unknown")
-            }
-        }
-
-        // Second line under the status word. Long explanations from the node's
-        // log belong here, not in the bold status line where they'd compete
-        // with "Running" and have to be elided to fit.
-        function getStatusDetail(s) {
-            if (!root.backend || !root.backend.lastErrorMessage)
-                return ""
-            const explains = s === BlockchainBackend.Error
-                || (s === BlockchainBackend.Starting && root.backend.nodeRecovering)
-            return explains ? root.backend.lastErrorMessage : ""
-        }
-        function getStatusColor(s) {
-            switch(s) {
-            case BlockchainBackend.Running: return Theme.palette.success
-            case BlockchainBackend.Starting:
-            case BlockchainBackend.Stopping: return Theme.palette.warning
-            default: return Theme.palette.error
-            }
-        }
         property int currentPage: 0
 
         // Guards the one-time startup route (see root._applyInitialRoute):
@@ -546,60 +516,56 @@ Rectangle {
                         Layout.fillWidth: true
                         spacing: Theme.spacing.large
 
-                        StatusConfigView {
+                        RowLayout {
                             Layout.fillWidth: true
-                            statusText: !root.backend
-                                ? qsTr("Not Connected")
-                                : root.monitoringPaused
-                                    ? qsTr("Status unavailable")
-                                    : root.statusUnresponsive
-                                        ? qsTr("Unresponsive (retrying in %1s)").arg(root.statusNextPollSeconds)
-                                        : _d.getStatusString(root.backend.status)
-                            statusDetail: root.backend && !root.monitoringPaused && !root.statusUnresponsive
-                                ? _d.getStatusDetail(root.backend.status)
-                                : ""
-                            statusColor: !root.backend
-                                ? Theme.palette.error
-                                : (root.monitoringPaused || root.statusUnresponsive)
-                                    ? Theme.palette.warning
-                                    : _d.getStatusColor(root.backend.status)
-                            userConfig: root.backend ? root.backend.userConfig : ""
-                            deploymentConfig: root.backend ? root.backend.deploymentConfig : ""
-                            useGeneratedConfig: root.backend ? root.backend.useGeneratedConfig : false
-                            // Offer Start only from a state where the backend
-                            // confirms the node is down (NotStarted / Stopped).
-                            // In the ambiguous Error state we can't rule out a
-                            // live node, so Start is withheld and Stop is offered
-                            // instead (it reconciles — see stopBlockchain()).
-                            canStart: root.backend
-                                      && !!root.backend.userConfig
-                                      && (root.backend.status === BlockchainBackend.NotStarted
-                                          || root.backend.status === BlockchainBackend.Stopped)
-                            canStop: root.backend
-                                     && (root.backend.status === BlockchainBackend.Running
-                                         || root.backend.status === BlockchainBackend.Error)
-                            monitoringPaused: root.monitoringPaused
+                            Layout.fillHeight: false
+                            spacing: Theme.spacing.large
 
-                            onStartRequested: if (root.backend) root.backend.startBlockchain()
-                            onStopRequested: if (root.backend) root.backend.stopBlockchain()
-                            onResumeMonitoringRequested: root.resumeMonitoring()
-                            onChangeConfigRequested: _d.currentPage = 0
-                        }
+                            NodeOverviewView {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                accountsModel: root.accountsModel
+                                onManageRequested: {
+                                    operationTabBar.currentIndex = 1
+                                    opPage.operationIndex = 0
+                                }
+                            }
 
-                        CryptarchiaInfoView {
-                            Layout.fillWidth: true
-                            infoJson: root.cryptarchiaInfoJson
-                            errorText: root.cryptarchiaInfoError
-                            errorIsNotice: !!root.backend && root.backend.nodeRecovering
-                        }
+                            NodeStatusCard {
+                                Layout.preferredWidth: 340
+                                Layout.fillWidth: false
+                                Layout.fillHeight: true
 
-                        NodeOverviewView {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 320
-                            accountsModel: root.accountsModel
-                            onManageRequested: {
-                                operationTabBar.currentIndex = 1
-                                opPage.operationIndex = 0
+                                status: root.backend ? root.backend.status : -1
+                                statusMessage: root.cryptarchiaInfoError
+                                               || (root.backend ? root.backend.lastErrorMessage : "")
+                                messageIsNotice: !root.cryptarchiaInfoError
+                                                 && !!root.backend && root.backend.nodeRecovering
+                                infoJson: root.cryptarchiaInfoJson
+                                timeInfoJson: root.timeInfoJson
+                                userConfig: root.backend ? root.backend.userConfig : ""
+                                deploymentConfig: root.backend ? root.backend.deploymentConfig : ""
+                                useGeneratedConfig: root.backend ? root.backend.useGeneratedConfig : false
+                                monitoringPaused: root.monitoringPaused
+                                statusLabelOverride: !root.backend
+                                    ? qsTr("Not Connected")
+                                    : root.monitoringPaused
+                                        ? qsTr("Status unavailable")
+                                        : root.statusUnresponsive
+                                            ? qsTr("Unresponsive (retrying in %1s)").arg(root.statusNextPollSeconds)
+                                            : ""
+                                canStart: root.backend
+                                          && !!root.backend.userConfig
+                                          && (root.backend.status === BlockchainBackend.NotStarted
+                                              || root.backend.status === BlockchainBackend.Stopped)
+                                canStop: root.backend
+                                         && (root.backend.status === BlockchainBackend.Running
+                                             || root.backend.status === BlockchainBackend.Error)
+
+                                onStartRequested: if (root.backend) root.backend.startBlockchain()
+                                onStopRequested: if (root.backend) root.backend.stopBlockchain()
+                                onResumeMonitoringRequested: root.resumeMonitoring()
+                                onChangeConfigRequested: _d.currentPage = 0
                             }
                         }
 

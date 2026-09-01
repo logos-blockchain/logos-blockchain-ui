@@ -84,8 +84,7 @@ Control {
         color: Theme.palette.background
     }
 
-    LogosFrame {
-        anchors.fill: parent
+    contentItem: LogosFrame {
         padding: Theme.spacing.large
         backgroundColor: Theme.palette.surfaceRaised
         borderColor: "transparent"
@@ -219,7 +218,6 @@ Control {
                         elide: Text.ElideRight
                     }
 
-                    Item { Layout.fillHeight: true }
                 }
             }
 
