@@ -37,9 +37,14 @@ Item {
 
     Popup {
         id: popup
-        // Right-aligned to the button, opening downward.
-        x: root.width - width
         y: root.height + Theme.spacing.tiny
+        margins: Theme.spacing.small
+
+        onAboutToShow: {
+            const desired = root.width - width
+            const overhang = Theme.spacing.small - root.mapToItem(null, desired, 0).x
+            popup.x = overhang > 0 ? desired + overhang : desired
+        }
         width: 300
         padding: Theme.spacing.medium
         modal: false

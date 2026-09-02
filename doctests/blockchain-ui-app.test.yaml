@@ -12,9 +12,8 @@ intro: |
   auto-loads the backend module tree. This doc-test launches that app **headless**
   (`QT_QPA_PLATFORM=offscreen`) and drives it through the QML inspector with
   [`logos-qt-mcp`](https://github.com/logos-co/logos-qt-mcp): it walks the
-  first-run config chooser, generates a node config from the UI, and then visits
-  each operation panel — Accounts, Transfer, Leader Rewards, Channel Deposit —
-  capturing screenshots along the way.
+  first-run config chooser, generates a node config from the UI, and reaches the
+  dashboard, capturing screenshots along the way.
 
   > This doc-test deliberately **does not start a node**. Starting one means
   > bootstrapping against a live network, which depends on reachable peers running
@@ -23,7 +22,7 @@ intro: |
   > [`blockchain-module-runtime`](https://github.com/logos-blockchain/logos-blockchain-module/blob/master/doctests/blockchain-module-runtime.test.yaml)
   > doc-test, which runs a node with IBD skipped.
 
-what_you_build: "The `logos-blockchain-ui` standalone app, launched headless and driven through its QML UI to generate a node config and reach the node view."
+what_you_build: "The `logos-blockchain-ui` standalone app, launched headless and driven through its QML UI to generate a node config and reach the dashboard."
 
 what_you_learn:
   - How a QML-only Logos UI exposes a runnable standalone app that bundles its backend
@@ -150,12 +149,12 @@ sections:
             # A successful generate does not jump to the node view: it lands on
             # the set-path sub-view with the resolved path filled in. "Continue"
             # is the operator's next step, and the doc-test takes the same one.
-            - name: "Continue to the node view"
+            - name: "Continue to the dashboard"
               action: click_object
               find_by: "objectName"
               find_value: "continueToNodeButton"
 
-            - name: "Node view shows the config, node not started"
+            - name: "Dashboard shows the config, node not started"
               action: wait_for
               texts: ["Not Started"]
               timeout: 8000
@@ -168,22 +167,22 @@ sections:
                 something goes wrong, so a failed start shows a real cause rather
                 than a generic error.
 
-            - name: "Operations and Explorer are gated on a running node"
+            - name: "Most sections are gated on a running node"
               action: wait_for
-              texts: ["Node", "Operations", "Explorer"]
+              texts: ["Dashboard", "Accounts", "Leader Rewards", "Explorer"]
               timeout: 6000
-              screenshot: "blockchain-ui-tabs.png"
+              screenshot: "blockchain-ui-nav.png"
               text: |
-                All three tabs are present, but **Operations** and **Explorer**
-                are disabled until the node is running — they are declared
-                `enabled: opPage.nodeRunning`. That is why this doc-test stops
-                here: the wallet, transfer, leader-rewards and channel-deposit
-                panels all live behind the Operations tab, and none of them can
-                be reached without first bootstrapping a node against a live
-                network.
+                Navigation is a left-hand menu, one entry per section. Every
+                entry is rendered, but only **Dashboard** is usable before the
+                node is up: the rest carry `needsNode` in the nav model and are
+                disabled until it runs. That is why this doc-test stops here —
+                the accounts, transfer, leader-rewards and channel-deposit
+                sections cannot be reached without first bootstrapping a node
+                against a live network.
 
                 Everything up to this point — the chooser, the generate form, the
-                round-trip into `blockchain_module`, and the node view — needs no
+                round-trip into `blockchain_module`, and the dashboard — needs no
                 network at all, which is what makes it reproducible.
 
   - title: "What this does not cover"
@@ -191,9 +190,9 @@ sections:
       This doc-test stops at the node view, because everything past it is gated
       on a running node:
 
-      - **The Operations and Explorer tabs** are declared
-        `enabled: opPage.nodeRunning`, so the Accounts, Transfer, Leader Rewards
-        and Channel Deposit panels cannot be opened until a node is up.
+      - **Every section except Dashboard** is disabled until a node is up: the
+        nav model marks them `needsNode`, so the Accounts, Transfer, Leader
+        Rewards, Channel Deposit and Explorer sections cannot be opened.
       - **Bootstrapping and syncing** need reachable peers speaking a matching
         chainsync protocol version. When they do not match the node fails Initial
         Block Download with `AllPeersFailed` — a real failure, but driven by

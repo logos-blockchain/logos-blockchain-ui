@@ -18,6 +18,7 @@ class BlockchainBackend
     SLOT(QVariantMap transferFunds(QString fromKeyHex, QString toKeyHex, QString amountStr))
     SLOT(QVariantMap claimLeaderRewards())
     SLOT(QVariantMap getCryptarchiaInfo())
+    SLOT(QVariantMap getTimeInfo())
     SLOT(QVariantMap getBlock(QString headerIdHex))
     SLOT(QVariantMap getTransaction(QString txHashHex))
     SLOT(QVariantMap findTransactionInBlocks(QString txHashHex))

@@ -10,6 +10,7 @@ import Logos.Controls
 // factory plugin.
 import Logos.BlockchainBackend 1.0
 
+import "controls"
 import "views"
 
 Rectangle {
@@ -149,6 +150,9 @@ Rectangle {
     // and let the user (or the next incoming block) resume it.
     property string cryptarchiaInfoJson: ""
     property string cryptarchiaInfoError: ""
+    // Consensus clock, polled alongside the chain info. Its current_slot is what
+    // the At Headslot tile measures the chain tip against.
+    property string timeInfoJson: ""
 
     // UI status overrides driven by the poll loop, taking precedence over the
     // backend's own status in the status tag:
@@ -168,8 +172,11 @@ Rectangle {
         && root.backend.status === BlockchainBackend.Running
 
     onNodeRunningChanged: {
-        if (!nodeRunning)
+        if (!nodeRunning) {
             root.monitoringPaused = false
+            root.cryptarchiaInfoJson = ""
+            root.timeInfoJson = ""
+        }
     }
 
     // Poll cadence / backoff. Healthy cadence is `statusPollBaseMs`; after a
@@ -232,8 +239,19 @@ Rectangle {
             cryptarchiaTimer.restart()
     }
 
+    function _pollTimeInfo() {
+        if (!root.backend)
+            return
+        logos.watch(
+            root.backend.getTimeInfo(),
+            function(result) { root.timeInfoJson = result.success ? result.value : "" },
+            function(error) { root.timeInfoJson = "" }
+        )
+    }
+
     function _onStatusPollSuccess(value) {
         root.cryptarchiaInfoJson = value
+        root._pollTimeInfo()
         root.cryptarchiaInfoError = ""
         root.statusRetryMs = 0             // recovered: back to the base cadence
         root.statusCapRetryCount = 0
@@ -345,36 +363,6 @@ Rectangle {
             return qsTr("Error: %1").arg(message)
         }
 
-        function getStatusString(s) {
-            switch(s) {
-            case BlockchainBackend.NotStarted: return qsTr("Not Started")
-            case BlockchainBackend.Starting: return qsTr("Starting...")
-            case BlockchainBackend.Running: return qsTr("Running")
-            case BlockchainBackend.Stopping: return qsTr("Stopping...")
-            case BlockchainBackend.Stopped: return qsTr("Stopped")
-            case BlockchainBackend.Error: return qsTr("Error")
-            default: return qsTr("Unknown")
-            }
-        }
-
-        // Second line under the status word. Long explanations from the node's
-        // log belong here, not in the bold status line where they'd compete
-        // with "Running" and have to be elided to fit.
-        function getStatusDetail(s) {
-            if (!root.backend || !root.backend.lastErrorMessage)
-                return ""
-            const explains = s === BlockchainBackend.Error
-                || (s === BlockchainBackend.Starting && root.backend.nodeRecovering)
-            return explains ? root.backend.lastErrorMessage : ""
-        }
-        function getStatusColor(s) {
-            switch(s) {
-            case BlockchainBackend.Running: return Theme.palette.success
-            case BlockchainBackend.Starting:
-            case BlockchainBackend.Stopping: return Theme.palette.warning
-            default: return Theme.palette.error
-            }
-        }
         property int currentPage: 0
 
         // Guards the one-time startup route (see root._applyInitialRoute):
@@ -476,123 +464,161 @@ Rectangle {
             }
         }
 
-        // Page 2: Node information + Wallet operations (tabbed)
-        ColumnLayout {
+        // Page 2: node dashboard, wallet operations and the explorer, behind a
+        // left nav. Same idiom as basecamp's Settings/AppManager sidebars —
+        // LogosListView + LogosItemDelegate; the design system has no packaged
+        // sidebar component.
+        RowLayout {
             id: opPage
             spacing: Theme.spacing.medium
 
-            // Selected operation inside the Operations tab's sidebar nav.
-            //   0 Accounts · 1 Transfer · 2 Leader Rewards · 3 Channel Deposit
-            property int operationIndex: 0
-
-            // When pinned, Accounts stays visible (stacked on top) even while a
-            // different operation is selected.
-            property bool accountsPinned: false
+            // Selected section. The nav model above and the StackLayout's
+            // children are index-for-index: 0 Dashboard · 1 Accounts ·
+            // 2 Leader Rewards · 3 Explorer · 4 Transfer · 5 Channel Deposit.
+            // Reorder one and you must reorder the other.
+            property int sectionIndex: 0
 
             readonly property bool nodeRunning: root.backend
                 ? root.backend.status === BlockchainBackend.Running
                 : false
 
             // Wallet operations require a running node. If the node stops while
-            // the Operations tab is open, fall back to the Node tab so the user
-            // isn't stranded on a disabled tab.
+            // Operations or Explorer is open, fall back to Dashboard so the
+            // user isn't stranded on a disabled section.
             onNodeRunningChanged: {
                 if (!nodeRunning)
-                    operationTabBar.currentIndex = 0
+                    opPage.sectionIndex = 0
             }
 
-            LogosTabBar {
-                id: operationTabBar
-                Layout.fillWidth: true
-                LogosTabButton { text: qsTr("Node") }
-                LogosTabButton {
-                    text: qsTr("Operations")
-                    enabled: opPage.nodeRunning
-                }
-                LogosTabButton {
-                    text: qsTr("Explorer")
-                    enabled: opPage.nodeRunning
-                }
+            SectionNav {
+                id: sectionsList
+
+                // Index-for-index with operationStack's children below.
+                sections: [
+                    { label: qsTr("Dashboard"), icon: "dashboard.svg", needsNode: false },
+                    { label: qsTr("Accounts"), icon: "accounts.svg", needsNode: true },
+                    { label: qsTr("Leader Rewards"), icon: "open-arm-line.svg", needsNode: true },
+                    { label: qsTr("Explorer"), icon: "global-line.svg", needsNode: true },
+                    { label: qsTr("Transfer"), icon: "", needsNode: true },
+                    { label: qsTr("Channel Deposit"), icon: "", needsNode: true }
+                ]
+                nodeRunning: opPage.nodeRunning
+                iconDir: Qt.resolvedUrl("icons/")
+                currentIndex: opPage.sectionIndex
+                onSectionActivated: (index) => opPage.sectionIndex = index
             }
 
             StackLayout {
                 id: operationStack
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                currentIndex: operationTabBar.currentIndex
+                currentIndex: opPage.sectionIndex
 
-                // ---- Tab 0: Node information (status + logs) ----
-                SplitView {
-                    orientation: Qt.Vertical
+                // ---- Section 0: Dashboard ----
+                ColumnLayout {
+                    spacing: Theme.spacing.large
 
                     ColumnLayout {
-                        SplitView.fillWidth: true
-                        SplitView.minimumHeight: 120
+                        Layout.fillWidth: true
                         spacing: Theme.spacing.large
 
-                        StatusConfigView {
+                        RowLayout {
                             Layout.fillWidth: true
-                            statusText: !root.backend
-                                ? qsTr("Not Connected")
-                                : root.monitoringPaused
-                                    ? qsTr("Status unavailable")
-                                    : root.statusUnresponsive
-                                        ? qsTr("Unresponsive (retrying in %1s)").arg(root.statusNextPollSeconds)
-                                        : _d.getStatusString(root.backend.status)
-                            statusDetail: root.backend && !root.monitoringPaused && !root.statusUnresponsive
-                                ? _d.getStatusDetail(root.backend.status)
-                                : ""
-                            statusColor: !root.backend
-                                ? Theme.palette.error
-                                : (root.monitoringPaused || root.statusUnresponsive)
-                                    ? Theme.palette.warning
-                                    : _d.getStatusColor(root.backend.status)
-                            userConfig: root.backend ? root.backend.userConfig : ""
-                            deploymentConfig: root.backend ? root.backend.deploymentConfig : ""
-                            useGeneratedConfig: root.backend ? root.backend.useGeneratedConfig : false
-                            // Offer Start only from a state where the backend
-                            // confirms the node is down (NotStarted / Stopped).
-                            // In the ambiguous Error state we can't rule out a
-                            // live node, so Start is withheld and Stop is offered
-                            // instead (it reconciles — see stopBlockchain()).
-                            canStart: root.backend
-                                      && !!root.backend.userConfig
-                                      && (root.backend.status === BlockchainBackend.NotStarted
-                                          || root.backend.status === BlockchainBackend.Stopped)
-                            canStop: root.backend
-                                     && (root.backend.status === BlockchainBackend.Running
-                                         || root.backend.status === BlockchainBackend.Error)
-                            monitoringPaused: root.monitoringPaused
+                            Layout.fillHeight: false
+                            spacing: Theme.spacing.large
 
-                            onStartRequested: if (root.backend) root.backend.startBlockchain()
-                            onStopRequested: if (root.backend) root.backend.stopBlockchain()
-                            onResumeMonitoringRequested: root.resumeMonitoring()
-                            onChangeConfigRequested: _d.currentPage = 0
+                            NodeOverviewView {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 320
+                                Layout.fillHeight: true
+                                accountsModel: root.accountsModel
+                                // Refreshes every account, not just the selected
+                                // one, so the validator card's total updates too.
+                                onRefreshRequested: if (root.backend) root.backend.refreshAccounts()
+                                onManageRequested: {
+                                    opPage.sectionIndex = 1
+                                }
+                            }
+
+                            ValidatorStatusCard {
+                                Layout.preferredWidth: 340
+                                Layout.fillWidth: false
+                                Layout.fillHeight: true
+
+                                accountsModel: root.accountsModel
+                                vouchersJson: root.claimableVouchersJson
+                                canClaim: root.nodeRunning
+
+                                // Same call the rewards view in the operations
+                                // tab makes; refresh the list either way so the
+                                // count reflects the claim.
+                                onClaimRequested: {
+                                    if (!root.backend) return
+                                    logos.watch(
+                                        root.backend.claimLeaderRewards(),
+                                        function(result) { root.refreshClaimableVouchers() },
+                                        function(error) { root.refreshClaimableVouchers() }
+                                    )
+                                }
+                            }
+
+                            NodeStatusCard {
+                                Layout.preferredWidth: 340
+                                Layout.fillWidth: false
+                                Layout.fillHeight: true
+
+                                status: root.backend ? root.backend.status : -1
+                                statusMessage: root.cryptarchiaInfoError
+                                               || (root.backend ? root.backend.lastErrorMessage : "")
+                                messageIsNotice: !root.cryptarchiaInfoError
+                                                 && !!root.backend && root.backend.nodeRecovering
+                                infoJson: root.cryptarchiaInfoJson
+                                timeInfoJson: root.timeInfoJson
+                                userConfig: root.backend ? root.backend.userConfig : ""
+                                deploymentConfig: root.backend ? root.backend.deploymentConfig : ""
+                                useGeneratedConfig: root.backend ? root.backend.useGeneratedConfig : false
+                                monitoringPaused: root.monitoringPaused
+                                statusLabelOverride: !root.backend
+                                    ? qsTr("Not Connected")
+                                    : root.monitoringPaused
+                                        ? qsTr("Status unavailable")
+                                        : root.statusUnresponsive
+                                            ? qsTr("Unresponsive (retrying in %1s)").arg(root.statusNextPollSeconds)
+                                            : ""
+                                canStart: root.backend
+                                          && !!root.backend.userConfig
+                                          && (root.backend.status === BlockchainBackend.NotStarted
+                                              || root.backend.status === BlockchainBackend.Stopped)
+                                canStop: root.backend
+                                         && (root.backend.status === BlockchainBackend.Running
+                                             || root.backend.status === BlockchainBackend.Error)
+
+                                onStartRequested: if (root.backend) root.backend.startBlockchain()
+                                onStopRequested: if (root.backend) root.backend.stopBlockchain()
+                                onResumeMonitoringRequested: root.resumeMonitoring()
+                                onChangeConfigRequested: _d.currentPage = 0
+                            }
                         }
 
-                        NodeInfoView {
+                        ChainStatsView {
                             Layout.fillWidth: true
+                            Layout.preferredHeight: 170
+                            infoJson: root.cryptarchiaInfoJson
+                            timeInfoJson: root.timeInfoJson
                             peerId: root.peerId
                             onCopyToClipboard: (text) => root.copyText(text)
-                        }
-
-                        CryptarchiaInfoView {
-                            Layout.fillWidth: true
-                            visible: opPage.nodeRunning
-                            infoJson: root.cryptarchiaInfoJson
-                            errorText: root.cryptarchiaInfoError
-                            errorIsNotice: !!root.backend && root.backend.nodeRecovering
-                            onCopyToClipboard: (text) => root.copyText(text)
-                        }
-
-                        Item {
-                            Layout.preferredHeight: Theme.spacing.small
                         }
                     }
 
                     BlocksView {
-                        SplitView.fillWidth: true
-                        SplitView.minimumHeight: 150
+                        Layout.fillWidth: true
+                        emptyText: !opPage.nodeRunning
+                                   ? qsTr("Start the node to see blocks arrive.")
+                                   : root.cryptarchiaInfoJson.length === 0
+                                     ? qsTr("Waiting for the node to report its state...")
+                                     : qsTr("Waiting for the next block. Only blocks produced from now on are listed.")
+                        Layout.fillHeight: true
+                        Layout.minimumHeight: 150
 
                         blockModel: root.blockModel
                         onClearRequested: if (root.backend) root.backend.clearBlocks()
@@ -602,186 +628,62 @@ Rectangle {
                     }
                 }
 
-                // ---- Tab 1: Wallet operations (sidebar nav + panels) ----
-                // Anchor-based (not a Layout): StackLayout force-fills this Item,
-                // and anchors give the SplitView explicit geometry. The panels
-                // have ~zero implicit height, so a plain Layout would collapse
-                // them — anchors + SplitView.fillHeight avoid that.
-                Item {
-                    // Sidebar navigation
-                    ColumnLayout {
-                        id: opSidebar
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        width: 180
-                        spacing: Theme.spacing.small
+                // ---- Sections 1-4: wallet operations, one per nav entry ----
+                AccountsView {
+                    id: accountsView
+                    accountsModel: root.accountsModel
 
-                        NavItem { label: qsTr("Accounts"); index: 0; pinnable: true }
-                        NavItem { label: qsTr("Transfer"); index: 1 }
-                        NavItem { label: qsTr("Leader Rewards"); index: 2 }
-                        NavItem { label: qsTr("Channel Deposit"); index: 3 }
-
-                        Item { Layout.fillHeight: true }
+                    onGetBalanceRequested: function(addressHex) {
+                        if (!root.backend) {
+                            accountsView.setBalanceResult(
+                                addressHex, false, qsTr("Not connected to the module."))
+                            return
+                        }
+                        logos.watch(
+                            root.backend.getBalance(addressHex),
+                            function(result) {
+                                accountsView.setBalanceResult(
+                                    addressHex, result.success,
+                                    result.success ? "" : _d.errorText(result.error))
+                            },
+                            function(error) {
+                                accountsView.setBalanceResult(
+                                    addressHex, false, _d.errorText(error))
+                            }
+                        )
                     }
-
-                    Rectangle {
-                        id: opDivider
-                        anchors.left: opSidebar.right
-                        anchors.leftMargin: Theme.spacing.large
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        width: 1
-                        color: Theme.palette.borderSecondary
-                    }
-
-                    // Operation panels. Accounts lives outside the stack so it
-                    // can stay pinned on top while another operation is shown;
-                    // a vertical SplitView keeps both visible and resizable.
-                    SplitView {
-                        anchors.left: opDivider.right
-                        anchors.leftMargin: Theme.spacing.large
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        orientation: Qt.Vertical
-
-                        AccountsView {
-                            id: accountsView
-                            visible: opPage.operationIndex === 0 || opPage.accountsPinned
-                            // Fills when it's the sole panel; when pinned beside
-                            // an operation it's a resizable 260px strip on top
-                            // (the operation below is the SplitView filler).
-                            SplitView.fillHeight: opPage.operationIndex === 0
-                            SplitView.preferredHeight: 260
-                            SplitView.minimumHeight: 120
-
-                            accountsModel: root.accountsModel
-
-                            onGetBalanceRequested: function(addressHex) {
-                                if (!root.backend) {
-                                    accountsView.setBalanceResult(
-                                        addressHex, false, qsTr("Not connected to the module."))
-                                    return
-                                }
-                                logos.watch(
-                                    root.backend.getBalance(addressHex),
-                                    function(result) {
-                                        accountsView.setBalanceResult(
-                                            addressHex, result.success,
-                                            result.success ? "" : _d.errorText(result.error))
-                                    },
-                                    function(error) {
-                                        accountsView.setBalanceResult(
-                                            addressHex, false, _d.errorText(error))
-                                    }
-                                )
-                            }
-                            onRefreshAccountsRequested: if (root.backend) root.backend.refreshAccounts()
-                            onCopyToClipboard: (text) => {
-                                root.copyText(text)
-                            }
-                        }
-
-                        // Transfer / Leader Rewards / Channel Deposit.
-                        // operationIndex 1,2,3 maps to stack index 0,1,2.
-                        StackLayout {
-                            id: otherOpsStack
-                            SplitView.fillHeight: true
-                            SplitView.minimumHeight: 150
-                            visible: opPage.operationIndex !== 0
-                            currentIndex: Math.max(0, opPage.operationIndex - 1)
-
-                        TransferView {
-                            id: transferView
-                            accountsModel: root.accountsModel
-
-                            onTransferRequested: function(fromKeyHex, toKeyHex, amount) {
-                                if (!root.backend) return
-                                logos.watch(
-                                    root.backend.transferFunds(fromKeyHex, toKeyHex, amount),
-                                    function(result) {
-                                        if (result.success) {
-                                            transferView.setTransferHash(result.value)
-                                        } else {
-                                            transferView.setTransferError(_d.errorText(result.error))
-                                        }
-                                    },
-                                    function(error) { transferView.setTransferError(_d.errorText(error)) }
-                                )
-                            }
-                            onCopyToClipboard: (text) => {
-                                root.copyText(text)
-                            }
-                        }
-
-                        LeaderRewardsView {
-                            id: leaderRewardsView
-                            vouchersJson: root.claimableVouchersJson
-
-                            onClaimLeaderRewardsRequested: function() {
-                                if (!root.backend) return
-                                logos.watch(
-                                    root.backend.claimLeaderRewards(),
-                                    function(result) {
-                                        if (result.success) {
-                                            leaderRewardsView.setLeaderClaimResult(result.value)
-                                        } else {
-                                            leaderRewardsView.setLeaderClaimResult(_d.errorText(result.error))
-                                        }
-                                        // Reflect the claim in the pending list.
-                                        root.refreshClaimableVouchers()
-                                    },
-                                    function(error) { leaderRewardsView.setLeaderClaimResult(_d.errorText(error)) }
-                                )
-                            }
-                            onCopyToClipboard: (text) => {
-                                root.copyText(text)
-                            }
-                        }
-
-                        ChannelDepositView {
-                            id: channelDepositView
-                            accountsModel: root.accountsModel
-                            nodeRunning: opPage.nodeRunning
-
-                            onGetNotesRequested: function(addressHex, optionalTipHex) {
-                                if (!root.backend) return
-                                logos.watch(
-                                    root.backend.getNotes(addressHex, optionalTipHex),
-                                    function(result) {
-                                        if (result.success)
-                                            channelDepositView.setNotes(result.value)
-                                        else
-                                            channelDepositView.setNotesError(_d.errorText(result.error))
-                                    },
-                                    function(error) { channelDepositView.setNotesError(_d.errorText(error)) }
-                                )
-                            }
-                            onSubmitRequested: function(channelIdHex, inputNoteIdHexes, metadataBase58, changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex) {
-                                if (!root.backend) return
-                                logos.watch(
-                                    root.backend.channelDepositWithNotes(
-                                        channelIdHex, inputNoteIdHexes, metadataBase58,
-                                        changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex),
-                                    function(result) {
-                                        if (result.success)
-                                            channelDepositView.setSubmitResult(true, result.value)
-                                        else
-                                            channelDepositView.setSubmitResult(false, _d.errorText(result.error))
-                                    },
-                                    function(error) { channelDepositView.setSubmitResult(false, _d.errorText(error)) }
-                                )
-                            }
-                            onCopyToClipboard: (text) => {
-                                root.copyText(text)
-                            }
-                        }
-                        }
+                    onRefreshAccountsRequested: if (root.backend) root.backend.refreshAccounts()
+                    onCopyToClipboard: (text) => {
+                        root.copyText(text)
                     }
                 }
 
-                // ---- Tab 2: Explorer (block / transaction lookup) ----
+                LeaderRewardsView {
+                    id: leaderRewardsView
+                    vouchersJson: root.claimableVouchersJson
+
+                    onClaimLeaderRewardsRequested: function() {
+                        if (!root.backend) return
+                        logos.watch(
+                            root.backend.claimLeaderRewards(),
+                            function(result) {
+                                if (result.success) {
+                                    leaderRewardsView.setLeaderClaimResult(result.value)
+                                } else {
+                                    leaderRewardsView.setLeaderClaimResult(_d.errorText(result.error))
+                                }
+                                // Reflect the claim in the pending list.
+                                root.refreshClaimableVouchers()
+                            },
+                            function(error) { leaderRewardsView.setLeaderClaimResult(_d.errorText(error)) }
+                        )
+                    }
+                    onCopyToClipboard: (text) => {
+                        root.copyText(text)
+                    }
+                }
+
+                // ---- Section 5: Explorer (block / transaction lookup) ----
                 ExplorerView {
                     id: explorerView
                     nodeRunning: opPage.nodeRunning
@@ -836,75 +738,64 @@ Rectangle {
                     }
                     onCopyToClipboard: (text) => root.copyText(text)
                 }
-            }
+                TransferView {
+                    id: transferView
+                    accountsModel: root.accountsModel
 
-            // Sidebar nav entry used by the Operations tab. `pinnable` adds a
-            // pin toggle on the right (used by Accounts) that keeps the panel
-            // visible alongside other operations.
-            component NavItem: Rectangle {
-                property string label
-                property int index
-                property bool pinnable: false
-
-                Layout.fillWidth: true
-                Layout.preferredHeight: 40
-                radius: Theme.spacing.radiusSmall
-                color: opPage.operationIndex === index
-                    ? Theme.palette.backgroundTertiary
-                    : (navMouse.containsMouse ? Theme.palette.backgroundSecondary : "transparent")
-
-                // Background click selects the operation. Sits below the row so
-                // the pin button on top captures its own clicks.
-                MouseArea {
-                    id: navMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: opPage.operationIndex = index
+                    onTransferRequested: function(fromKeyHex, toKeyHex, amount) {
+                        if (!root.backend) return
+                        logos.watch(
+                            root.backend.transferFunds(fromKeyHex, toKeyHex, amount),
+                            function(result) {
+                                if (result.success) {
+                                    transferView.setTransferHash(result.value)
+                                } else {
+                                    transferView.setTransferError(_d.errorText(result.error))
+                                }
+                            },
+                            function(error) { transferView.setTransferError(_d.errorText(error)) }
+                        )
+                    }
+                    onCopyToClipboard: (text) => {
+                        root.copyText(text)
+                    }
                 }
 
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: Theme.spacing.medium
-                    anchors.rightMargin: Theme.spacing.small
-                    spacing: Theme.spacing.small
+                ChannelDepositView {
+                    id: channelDepositView
+                    accountsModel: root.accountsModel
+                    nodeRunning: opPage.nodeRunning
 
-                    LogosText {
-                        Layout.fillWidth: true
-                        text: label
-                        elide: Text.ElideRight
-                        font.pixelSize: Theme.typography.secondaryText
-                        font.bold: opPage.operationIndex === index
-                        color: opPage.operationIndex === index
-                            ? Theme.palette.primary
-                            : Theme.palette.text
+                    onGetNotesRequested: function(addressHex, optionalTipHex) {
+                        if (!root.backend) return
+                        logos.watch(
+                            root.backend.getNotes(addressHex, optionalTipHex),
+                            function(result) {
+                                if (result.success)
+                                    channelDepositView.setNotes(result.value)
+                                else
+                                    channelDepositView.setNotesError(_d.errorText(result.error))
+                            },
+                            function(error) { channelDepositView.setNotesError(_d.errorText(error)) }
+                        )
                     }
-
-                    // Pin toggle (Accounts only). A flat icon button matching
-                    // the other SVG icons; the pin colours up when pinned. Its
-                    // own click handling stops the nav-background MouseArea
-                    // below from also selecting the item.
-                    LogosIconButton {
-                        id: pinButton
-                        visible: pinnable
-                        Layout.alignment: Qt.AlignVCenter
-                        Layout.preferredWidth: 28
-                        Layout.preferredHeight: 28
-                        flat: true
-                        size: 28
-                        iconSize: 18
-                        iconSource: Qt.resolvedUrl("icons/pin.svg")
-                        iconColor: opPage.accountsPinned
-                            ? Theme.palette.primary
-                            : Theme.palette.textTertiary
-                        onClicked: opPage.accountsPinned = !opPage.accountsPinned
-
-                        LogosToolTip {
-                            visible: pinButton.hovered
-                            placement: LogosToolTip.Placement.Top
-                            text: opPage.accountsPinned
-                                ? qsTr("Unpin accounts") : qsTr("Pin accounts")
-                        }
+                    onSubmitRequested: function(channelIdHex, inputNoteIdHexes, metadataBase58, changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex) {
+                        if (!root.backend) return
+                        logos.watch(
+                            root.backend.channelDepositWithNotes(
+                                channelIdHex, inputNoteIdHexes, metadataBase58,
+                                changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex),
+                            function(result) {
+                                if (result.success)
+                                    channelDepositView.setSubmitResult(true, result.value)
+                                else
+                                    channelDepositView.setSubmitResult(false, _d.errorText(result.error))
+                            },
+                            function(error) { channelDepositView.setSubmitResult(false, _d.errorText(error)) }
+                        )
+                    }
+                    onCopyToClipboard: (text) => {
+                        root.copyText(text)
                     }
                 }
             }
