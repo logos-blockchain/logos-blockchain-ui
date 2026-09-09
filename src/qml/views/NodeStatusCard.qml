@@ -20,6 +20,8 @@ Control {
     // get_cryptarchia_info / get_time_info payloads, as polled by BlockchainView.
     property string infoJson: ""
     property string timeInfoJson: ""
+    // The node's blend role, kept up to date by the backend.
+    property int blendRole: BlockchainBackend.Unknown
 
     property bool canStart: false
     property bool canStop: false
@@ -170,6 +172,16 @@ Control {
             case BlockchainBackend.Stopped:    return qsTr("Stopped")
             case BlockchainBackend.Error:      return qsTr("Error")
             default:                           return qsTr("Not connected")
+            }
+        }
+
+        // Unknown means blend hasn't reported (or the node isn't running):
+        // show no role rather than guess.
+        readonly property string blendLabel: {
+            switch (root.blendRole) {
+            case BlockchainBackend.Core: return qsTr("Core")
+            case BlockchainBackend.Edge: return qsTr("Edge")
+            default:                     return ""
             }
         }
 
@@ -326,6 +338,30 @@ Control {
                     Layout.alignment: Qt.AlignVCenter
                     text: d.statusLabel
                     color: Theme.palette.textSecondary
+                    font.pixelSize: Theme.typography.primaryText
+                }
+
+                LogosToolSeparator {
+                    Layout.alignment: Qt.AlignVCenter
+                    visible: d.blendLabel.length > 0
+                    padding: 0
+                    Layout.preferredHeight: 14
+                }
+
+                Rectangle {
+                    Layout.alignment: Qt.AlignVCenter
+                    visible: d.blendLabel.length > 0
+                    Layout.preferredWidth: 8
+                    Layout.preferredHeight: 8
+                    radius: width / 2
+                    color: Theme.palette.textMuted
+                }
+
+                LogosText {
+                    Layout.alignment: Qt.AlignVCenter
+                    visible: d.blendLabel.length > 0
+                    text: qsTr("Blend — %1").arg(d.blendLabel)
+                    color: Theme.palette.textTertiary
                     font.pixelSize: Theme.typography.primaryText
                 }
 

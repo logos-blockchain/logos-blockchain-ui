@@ -80,6 +80,7 @@ public slots:
 private:
     void fetchBalancesForAccounts(const QStringList& list);
     void setError(const QString& message);
+    void refreshBlendRole();
     const Rule* diagnoseNode() const; // cached; call this
     const Rule* scanNodeLog() const;
     QString newestNodeLogPath() const;
