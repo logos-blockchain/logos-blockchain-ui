@@ -55,6 +55,14 @@ namespace {
 // How much of the log tail to scan, and how long a verdict stays good for.
 constexpr qint64 kLogTailBytes = 128 * 1024;
 constexpr qint64 kDiagnosisCacheMs = 2000;
+// The node reports Online / Bootstrapping / NotStarted in get_cryptarchia_info.
+QString cryptarchiaMode(const QVariant& payload)
+{
+    return QJsonDocument::fromJson(payload.toString().toUtf8())
+        .object()
+        .value(QStringLiteral("mode"))
+        .toString();
+}
 
 // Recovery rules come first so they win within a line: they mean progress, and
 // the node logs them at INFO, below the severity gate the failure rules need.
@@ -252,6 +260,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     , m_blockModel(new BlockModel(this))
 {
     setStatus(NotStarted);
+    setBlendRole(Unknown);
     setUseGeneratedConfig(false);
     setGeneratedUserConfigPath(
         QDir::currentPath() + QStringLiteral("/user_config.yaml"));
@@ -308,6 +317,13 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         }
         QSettings("Logos", "BlockchainUI")
             .setValue("deploymentConfigPath", deploymentConfig());
+    });
+
+    // A node that isn't running has no blend role. Acquiring one is driven from
+    // getCryptarchiaInfo, which is where the readiness edge is visible.
+    connect(this, &BlockchainBackendSimpleSource::statusChanged, this, [this]() {
+        if (status() != Running)
+            setBlendRole(Unknown);
     });
 
     if (!m_logosAPI) {
@@ -367,6 +383,25 @@ QVariantMap BlockchainBackend::getTimeInfo()
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_time_info"))));
 }
 
+// blend_info answers with JSON:
+//   { "node_id": "<blend PeerId>", "core_info": null | { ... } }
+void BlockchainBackend::refreshBlendRole()
+{
+    if (!m_blockchainClient || status() != Running)
+        return;
+
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("blend_info")));
+    if (!r.success)
+        return;
+
+    const QJsonDocument doc = QJsonDocument::fromJson(r.value.toString().toUtf8());
+    if (!doc.isObject())
+        return;
+
+    setBlendRole(doc.object().value(QStringLiteral("core_info")).isObject() ? Core : Edge);
+}
+
 QVariantMap BlockchainBackend::getCryptarchiaInfo()
 {
     if (!m_blockchainClient)
@@ -378,6 +413,12 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
     // real reason from its log.
     if (r.success) {
         setNodeRecovering(false);
+        if (cryptarchiaMode(r.value) == QLatin1String("Online")) {
+            if (blendRole() == Unknown)
+                refreshBlendRole();
+        } else if (blendRole() != Unknown) {
+            setBlendRole(Unknown);
+        }
     } else if (r.error.toString().contains(QStringLiteral("Call failed"), Qt::CaseInsensitive)) {
         if (const Rule* cause = diagnoseNode()) {
             r.error = tr(cause->message);

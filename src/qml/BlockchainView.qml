@@ -574,6 +574,8 @@ Rectangle {
                                                  && !!root.backend && root.backend.nodeRecovering
                                 infoJson: root.cryptarchiaInfoJson
                                 timeInfoJson: root.timeInfoJson
+                                blendRole: root.backend ? root.backend.blendRole
+                                                        : BlockchainBackend.Unknown
                                 userConfig: root.backend ? root.backend.userConfig : ""
                                 deploymentConfig: root.backend ? root.backend.deploymentConfig : ""
                                 useGeneratedConfig: root.backend ? root.backend.useGeneratedConfig : false
