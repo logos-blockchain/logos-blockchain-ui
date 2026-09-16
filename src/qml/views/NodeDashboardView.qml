@@ -169,36 +169,18 @@ Item {
         // subset would read as the whole holding. Say so rather than imply it.
         readonly property bool partialTotal: totals.known > 0 && totals.known < accountCount
 
-        // Shortens a long figure to K/M/B/T so it fits a tile instead of
-        // eliding to a meaningless prefix. Done here rather than in
-        // LogosStatCard because the suffixes are English — a design system
-        // cannot pick them for every locale. The exact figure stays one click
-        // away on the tile's copy button.
-        readonly property int balanceMaxChars: 9
-
-        function tierNum(v) {
-            return v >= 100 ? String(Math.round(v))
-                 : v >= 10 ? v.toFixed(0)
-                 : v.toFixed(1)
-        }
-
-        function abbreviate(s) {
-            if (!s || s.length <= balanceMaxChars)
+        // Groups a long figure so it can be read at a glance
+        function groupDigits(s) {
+            if (!s)
                 return s
-            const n = parseFloat(s)
-            if (!isFinite(n))
-                return s
-            const tiers = [[1, ""], [1e3, "K"], [1e6, "M"], [1e9, "B"], [1e12, "T"]]
-            const candidates = []
-            for (let i = 0; i < tiers.length; i++) {
-                const v = n / tiers[i][0]
-                if (i === 0 || v >= 1)
-                    candidates.push(tierNum(v) + tiers[i][1])
+            const sep = Qt.locale().groupSeparator
+            let out = ""
+            for (let i = 0; i < s.length; i++) {
+                if (i > 0 && (s.length - i) % 3 === 0)
+                    out += sep
+                out += s.charAt(i)
             }
-            for (let j = 0; j < candidates.length; j++)
-                if (candidates[j].length <= balanceMaxChars)
-                    return candidates[j]
-            return candidates[candidates.length - 1]
+            return out
         }
 
         // ---- Vouchers ------------------------------------------------------
@@ -491,7 +473,8 @@ Item {
                     Layout.minimumWidth: d.minTileWidth
                     label: qsTr("Total Balance")
                     value: d.totals.text.length > 0
-                           ? d.abbreviate(d.totals.text) : qsTr("—")
+                           ? d.groupDigits(d.totals.text) : qsTr("—")
+                    valueFontSizeMode: Text.HorizontalFit
                     // A total built from a subset would read as the whole
                     // holding, so the figure itself is flagged, not just noted.
                     severity: d.partialTotal ? LogosStatCard.Warning
@@ -502,7 +485,7 @@ Item {
                     labelTrailing: [
                         LogosInfoButton {
                             title: qsTr("Total Balance")
-                            text: qsTr("Sum of the balances of every known wallet account, in base units. The node does not publish a token denomination, so this is not converted to LGO. Long figures are shortened — copy for the exact value.")
+                            text: qsTr("Sum of the balances of every known wallet account. The node reports each balance as a plain count and publishes no denomination for the token, so there is nothing to convert to and no decimal point implied — this is the figure itself, grouped for reading. Copy for the ungrouped value.")
                         }
                     ]
                     captionTrailing: [
