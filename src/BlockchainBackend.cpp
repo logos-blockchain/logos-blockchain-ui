@@ -22,6 +22,7 @@
 #include <QVariant>
 
 #include <algorithm>
+#include <limits>
 
 const QString BlockchainBackend::BLOCKCHAIN_MODULE_NAME =
     QStringLiteral("blockchain_module");
@@ -56,6 +57,19 @@ namespace {
 // How much of the log tail to scan, and how long a verdict stays good for.
 constexpr qint64 kLogTailBytes = 128 * 1024;
 constexpr qint64 kDiagnosisCacheMs = 2000;
+constexpr int kFailuresBeforeProbe = 3;
+constexpr int kStartTimeoutMs = 10 * 60 * 1000;
+// Stop gets no deadline at all. It is queued behind whatever the module is
+// already doing — one call at a time — so a stop pressed during a replay is not
+// serviced until the start ahead of it returns, and that is however long the
+// replay takes. Any finite deadline is a guess about the node's workload: too
+// short and the UI reports a failure the module then contradicts by stopping
+// anyway. The SDK takes a plain QTimer, and 0 fires immediately rather than
+// meaning "never", so the way to say "no deadline" is one that cannot elapse.
+constexpr int kStopTimeoutMs = std::numeric_limits<int>::max();
+constexpr int kLivenessProbeMs = 1500;
+// How often to ask, while the node is meant to be up.
+constexpr int kLivenessIntervalMs = 15 * 1000;
 // The node reports Online / Bootstrapping / NotStarted in get_cryptarchia_info.
 QString cryptarchiaMode(const QVariant& payload)
 {
@@ -143,6 +157,45 @@ QString BlockchainBackend::newestNodeLogPath() const
 
 // Tail the node's newest log and map a known signature to a cause. Null when
 // nothing recognisable is found (the caller then keeps the original message).
+// A dead module and a busy one both surface as the same opaque "Call failed.",
+// which is why a crashed node used to sit on "retrying in Ns" forever. Asking
+// the transport settles it: requestObject acquires a fresh replica and waits
+// for a source, so it answers null only when nothing is behind the name.
+//
+// Synchronous, hence the short timeout and the failure-count gate — this must
+// not run on the hot path.
+bool BlockchainBackend::moduleIsAlive()
+{
+    if (!m_blockchainClient)
+        return false;
+
+    LogosObject* probe =
+        m_blockchainClient->requestObject(BLOCKCHAIN_MODULE_NAME, Timeout(kLivenessProbeMs));
+    if (!probe)
+        return false;
+
+    delete probe;
+    return true;
+}
+
+void BlockchainBackend::declareModuleGone()
+{
+    m_consecutivePollFailures = 0;
+    m_livenessTimer->stop();
+    setNodeModuleReachable(false);
+    setNodeRecovering(false);
+
+    // Prefer the log's account of why, but only when it is not a recovery: the
+    // tail says "replaying stored blocks" right up to the moment the process
+    // dies, and reporting that for a dead node relabels a failure as progress.
+    const Rule* cause = diagnoseNode();
+    setLastErrorMessage(
+        (cause && !cause->recovering)
+            ? tr(cause->message)
+            : tr("The node process stopped unexpectedly. Start it again."));
+    setStatus(Error);
+}
+
 const BlockchainBackend::Rule* BlockchainBackend::scanNodeLog() const
 {
     QFile f(newestNodeLogPath());
@@ -299,6 +352,8 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     , m_blockModel(new BlockModel(this))
 {
     setStatus(NotStarted);
+    // Nothing has contradicted it yet; only a failed probe may say otherwise.
+    setNodeModuleReachable(true);
     setBlendRole(Unknown);
     setUseGeneratedConfig(false);
     setGeneratedUserConfigPath(
@@ -347,6 +402,25 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     connect(this, &BlockchainBackendSimpleSource::statusChanged, this, [this]() {
         if (status() != Running)
             noteOnline(false);
+    });
+
+    // Cheap while the module is healthy — requestObject returns as soon as a
+    // source answers — and only costs its timeout when there is nothing there,
+    // which is exactly when we are about to report it.
+    m_livenessTimer = new QTimer(this);
+    m_livenessTimer->setInterval(kLivenessIntervalMs);
+    connect(m_livenessTimer, &QTimer::timeout, this, [this]() {
+        if (!moduleIsAlive())
+            declareModuleGone();
+    });
+    connect(this, &BlockchainBackendSimpleSource::statusChanged, this, [this]() {
+        // Starting counts: start does not return until the node is fully up, so
+        // a module that dies mid-replay would otherwise sit unchallenged behind
+        // a headline that is only true because nothing can correct it.
+        if (status() == Running || status() == Starting)
+            m_livenessTimer->start();
+        else
+            m_livenessTimer->stop();
     });
 
     // Re-apply pre-.rep behavior: normalize file URLs, then persist (as master did in setters).
@@ -484,6 +558,8 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
     // The node view polls this; swap the opaque no-reply string for the node's
     // real reason from its log.
     if (r.success) {
+        m_consecutivePollFailures = 0;
+        setNodeModuleReachable(true);
         setNodeRecovering(false);
         if (cryptarchiaMode(r.value) == QLatin1String("Online")) {
             if (blendRole() == Unknown)
@@ -492,9 +568,15 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
             setBlendRole(Unknown);
         }
     } else if (r.error.toString().contains(QStringLiteral("Call failed"), Qt::CaseInsensitive)) {
-        if (const Rule* cause = diagnoseNode()) {
+        const Rule* cause = diagnoseNode();
+        if (cause) {
             r.error = tr(cause->message);
             setNodeRecovering(cause->recovering);
+        }
+
+        if (++m_consecutivePollFailures >= kFailuresBeforeProbe && !moduleIsAlive()) {
+            declareModuleGone();
+            r.error = lastErrorMessage();
         }
     }
     return result::toVariantMap(r);
@@ -574,16 +656,30 @@ void BlockchainBackend::startBlockchain()
     m_diagnosisAge.invalidate();
     setStatus(Starting);
 
-    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, "start", userConfig(), deploymentConfig()));
+    // Asynchronous for the same reason stop is: this parks the whole source for
+    // the duration otherwise, and "the duration" here is however long the node
+    // takes to replay its backlog.
+    QPointer<BlockchainBackend> self(this);
+    m_blockchainClient->invokeRemoteMethodAsync(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("start"),
+        QVariantList{ userConfig(), deploymentConfig() },
+        [self](QVariant reply) {
+            if (!self)
+                return;
 
-    if (r.success) {
-        setNodeRecovering(false);
-        setStatus(Running);
-        QTimer::singleShot(500, this, [this]() { refreshAccounts(); });
-    } else {
-        setError(r.error.toString());
-    }
+            const LogosResult r = result::toLogosResult(reply);
+            if (r.success) {
+                self->setNodeRecovering(false);
+                self->setStatus(Running);
+                QTimer::singleShot(500, self.data(), [self]() {
+                    if (self)
+                        self->refreshAccounts();
+                });
+            } else {
+                self->setError(r.error.toString());
+            }
+        },
+        Timeout(kStartTimeoutMs));
 }
 
 void BlockchainBackend::stopBlockchain()
@@ -623,7 +719,8 @@ void BlockchainBackend::stopBlockchain()
                 emit self->stopFailed(r.error.toString());
                 self->setStatus(previous);
             }
-        });
+        },
+        Timeout(kStopTimeoutMs));
 }
 
 void BlockchainBackend::refreshAccounts()

@@ -95,6 +95,10 @@ private:
     void setError(const QString& message);
     void refreshBlendRole();
     const Rule* diagnoseNode() const; // cached; call this
+    bool moduleIsAlive();
+    // Record that the module's process is gone: one place, so the poll path and
+    // the liveness timer cannot drift into telling different stories.
+    void declareModuleGone();
     const Rule* scanNodeLog() const;
     QString newestNodeLogPath() const;
 
@@ -105,6 +109,12 @@ private:
     // the node look like it has been up for a day, or for negative time.
     QElapsedTimer m_uptime;
     QTimer* m_uptimeTimer = nullptr;
+    int m_consecutivePollFailures = 0;
+
+    // Asks whether the module is still there while the node is meant to be up.
+    // The status poll only runs once the node reaches Running, so without this
+    // a module that dies mid-start is never contradicted by anything.
+    QTimer* m_livenessTimer = nullptr;
 
     LogosAPI* m_logosAPI = nullptr;
     LogosAPIClient* m_blockchainClient = nullptr;

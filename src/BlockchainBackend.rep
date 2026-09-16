@@ -28,6 +28,10 @@ class BlockchainBackend
     // Falling out of Online resets it — time online is not cumulative, and a
     // counter that survived a resync would be claiming continuity it never had.
     PROP(int uptimeSeconds READONLY)
+    // Whether the NODE module is reachable — as opposed to this backend, which
+    // is what the view could see before and which stays healthy when the node
+    // module dies. False means its process is gone, not that it is busy.
+    PROP(bool nodeModuleReachable READONLY)
 
     SLOT(void startBlockchain())
     SLOT(void stopBlockchain())

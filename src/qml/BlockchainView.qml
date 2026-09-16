@@ -493,6 +493,8 @@ Rectangle {
                     accountsModel: root.accountsModel
                     status: root.backend ? root.backend.status : -1
                     connected: root.ready && root.backend !== null
+                               && (root.backend.nodeModuleReachable === undefined
+                                   || root.backend.nodeModuleReachable)
                     everConnected: root.everReady
                     statusMessage: monitor.error
                                    || (root.backend ? root.backend.lastErrorMessage : "")

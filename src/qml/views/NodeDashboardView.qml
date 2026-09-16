@@ -174,6 +174,11 @@ Item {
         // subset would read as the whole holding. Say so rather than imply it.
         readonly property bool partialTotal: totals.known > 0 && totals.known < accountCount
 
+        // ---- Stopping ------------------------------------------------------
+        // A stop is outstanding for long enough that silence reads as a dead
+        // button rather than as work in progress.
+        property bool stopSlow: false
+
         // ---- Uptime --------------------------------------------------------
         function uptimeText(s) {
             if (s < 60)
@@ -223,7 +228,11 @@ Item {
             if (!root.connected)
                 return root.everConnected
                     ? { label: qsTr("Disconnected"),
-                        sub: qsTr("Lost contact with the node module — restart the app to reconnect."),
+                        // Prefer whatever the backend worked out about the
+                        // disappearance; the generic line is the fallback for
+                        // when it knows nothing.
+                        sub: root.statusMessage
+                             || qsTr("Lost contact with the node module — restart the app to reconnect."),
                         color: Theme.palette.error, dots: false, isError: true }
                     : { label: qsTr("Not started"), sub: "",
                         color: Theme.palette.textSecondary, dots: false, isError: false }
@@ -235,7 +244,10 @@ Item {
             // nodeRecovering set when you stop a replaying node, so testing it
             // first would swallow the Stop and leave the click without feedback.
             if (root.status === BlockchainBackend.Stopping)
-                return { label: qsTr("Stopping"), sub: "",
+                return { label: qsTr("Stopping"),
+                         sub: d.stopSlow
+                              ? qsTr("The node is busy catching up — stopping can take a while.")
+                              : "",
                          color: Theme.palette.warning, dots: true, isError: false }
             // Replay (from disk) and bootstrap (from peers) are one wait to the
             // user: catching up. The sub-line names the source, because that is
@@ -322,10 +334,15 @@ Item {
                 return -1
             if (root.status === BlockchainBackend.Error)
                 return 0                        // failed while starting
-            if (root.status === BlockchainBackend.Starting)
-                return 0                        // Started, itself in progress
+            // Recovery outranks Starting, exactly as it does in the hero above.
+            // The backend leaves status at Starting while it replays, so
+            // testing Starting first pinned the lane on "Started" while the
+            // headline already said Bootstrapping — the two reading the same
+            // two facts in opposite orders and disagreeing on screen.
             if (root.nodeRecovering)
                 return 1                        // Started done, working toward Online
+            if (root.status === BlockchainBackend.Starting)
+                return 0                        // Started, itself in progress
             if (running)
                 return 1                        // Online — busy while it syncs
             return -1
@@ -365,6 +382,20 @@ Item {
         // The longest value a tile has to hold decides the column count: below
         // this the grid drops a column instead of squeezing the number.
         readonly property int minTileWidth: 210
+    }
+
+    onStatusChanged: {
+        d.stopSlow = false
+        if (root.status === BlockchainBackend.Stopping)
+            stopSlowTimer.restart()
+        else
+            stopSlowTimer.stop()
+    }
+
+    Timer {
+        id: stopSlowTimer
+        interval: 4000
+        onTriggered: d.stopSlow = true
     }
 
     Instantiator {
@@ -496,7 +527,10 @@ Item {
                         busy: d.lifeBusy
                         failed: d.lifeFailed
                         stages: [
-                            LogosStage { label: qsTr("Started") },
+                            LogosStage {
+                                label: qsTr("Started")
+                                busyLabel: qsTr("Starting")
+                            },
                             LogosStage {
                                 label: qsTr("Online")
                                 busyLabel: qsTr("Syncing…")
