@@ -86,6 +86,7 @@ public slots:
                                     QStringList fundingPublicKeyHexes,
                                     QString maxTxFee,
                                     QString optionalTipHex) override;
+    void noteOnline(bool online) override;
     void clearBlocks() override;
     void copyToClipboard(QString text) override;
 

@@ -110,6 +110,14 @@ Rectangle {
         visible: false
     }
 
+    LogosToast {
+        id: stopFailedToast
+        parent: root
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Theme.spacing.large
+    }
+
     // Self libp2p peer id, derived from the selected user config (no running
     // node required). Refreshed when ready and whenever the config changes.
     property string peerId: ""
@@ -146,6 +154,13 @@ Rectangle {
         enabled: root.backend !== null
         ignoreUnknownSignals: true
         function onUserConfigChanged() { root.refreshPeerId() }
+        function onStopFailed(reason) {
+            if (root.quitting && root.Window.window) {
+                root.Window.window.close()
+                return
+            }
+            stopFailedToast.show(qsTr("Couldn't stop the node"), reason)
+        }
         // Ticks per block the node processes, including while it catches up.
         // The count itself is meaningless; the change is the proof of life.
         function onProcessedBlockCountChanged() { monitor.nodeProvedAlive() }
@@ -163,6 +178,14 @@ Rectangle {
     readonly property bool nodeRunning:
         root.ready && root.backend
         && root.backend.status === BlockchainBackend.Running
+
+    readonly property bool nodeOnline: root.nodeRunning && monitor.synced
+    onNodeOnlineChanged: root._pushOnline()
+
+    function _pushOnline() {
+        if (root.backend && root.backend.noteOnline)
+            root.backend.noteOnline(root.nodeOnline)
+    }
 
     // Wallet's claimable ("pending") vouchers. Auto-refreshed on every incoming
     // block, and once when the node starts running.

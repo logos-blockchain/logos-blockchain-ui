@@ -15,6 +15,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSettings>
+#include <QPointer>
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QUrl>
@@ -344,20 +345,8 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         setUptimeSeconds(static_cast<int>(m_uptime.elapsed() / 1000));
     });
     connect(this, &BlockchainBackendSimpleSource::statusChanged, this, [this]() {
-        if (status() == Running) {
-            // Guard the restart: Running can be re-announced without the node
-            // having stopped, and re-arming the clock there would sit the
-            // counter at 0 forever.
-            if (!m_uptime.isValid()) {
-                m_uptime.start();
-                setUptimeSeconds(0);
-            }
-            m_uptimeTimer->start();
-        } else {
-            m_uptimeTimer->stop();
-            m_uptime.invalidate();
-            setUptimeSeconds(0);
-        }
+        if (status() != Running)
+            noteOnline(false);
     });
 
     // Re-apply pre-.rep behavior: normalize file URLs, then persist (as master did in setters).
@@ -611,22 +600,30 @@ void BlockchainBackend::stopBlockchain()
         return;
     }
 
+    const BlockchainStatus previous = status();
     setStatus(Stopping);
 
-    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, "stop"));
+    QPointer<BlockchainBackend> self(this);
+    m_blockchainClient->invokeRemoteMethodAsync(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("stop"), QVariantList{},
+        [self, previous](QVariant reply) {
+            if (!self)
+                return;
 
-    if (r.success) {
-        setStatus(Stopped);
-    } else if (r.error.toString().contains(QStringLiteral("not running"), Qt::CaseInsensitive)) {
-        // The node was already down: "stop" reports it isn't running. Treat as
-        // reconciled rather than an error, so we land in a known-stopped state
-        // from which Start is safe again (avoids a stuck Error ⇄ "already
-        // running" loop).
-        setStatus(Stopped);
-    } else {
-        setError(r.error.toString());
-    }
+            const LogosResult r = result::toLogosResult(reply);
+            if (r.success) {
+                self->setStatus(Stopped);
+            } else if (r.error.toString().contains(QStringLiteral("not running"),
+                                                   Qt::CaseInsensitive)) {
+                self->setStatus(Stopped);
+            } else {
+                // Announce the refusal and hand the node back its previous
+                // state, so the hero tells the truth about what it is doing and
+                // the button comes back for another try.
+                emit self->stopFailed(r.error.toString());
+                self->setStatus(previous);
+            }
+        });
 }
 
 void BlockchainBackend::refreshAccounts()
@@ -793,6 +790,22 @@ QVariantMap BlockchainBackend::channelDepositWithNotes(
     return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("channel_deposit_with_notes"),
         args)));
+}
+
+void BlockchainBackend::noteOnline(bool online)
+{
+    if (online) {
+        if (!m_uptime.isValid()) {
+            m_uptime.start();
+            setUptimeSeconds(0);
+        }
+        m_uptimeTimer->start();
+        return;
+    }
+
+    m_uptimeTimer->stop();
+    m_uptime.invalidate();
+    setUptimeSeconds(0);
 }
 
 void BlockchainBackend::clearBlocks()

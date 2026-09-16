@@ -9,6 +9,8 @@ import Logos.Controls
 
 import Logos.BlockchainBackend 1.0
 
+import "infoContent.js" as InfoContent
+
 // The node dashboard: a full-width status hero carrying the lifecycle lane,
 // over a responsive grid of metric tiles.
 Item {
@@ -48,8 +50,8 @@ Item {
     // The node's genesis time hasn't arrived, so it can never reach Online.
     property bool genesisPending: false
     property double genesisUnixMs: 0
-    // Seconds since the node entered Running, ticked by the backend. "Up for",
-    // not "online for" — see the .rep.
+    // Seconds the node has been online, ticked by the backend and reset by it
+    // whenever the view stops reporting Online — see the .rep.
     property int uptimeSeconds: 0
 
     QtObject {
@@ -402,44 +404,49 @@ Item {
                         Layout.fillWidth: true
                         spacing: 0
 
-                        LogosText {
-                            text: d.display.label
-                            color: d.display.color
-                            font.pixelSize: 32
-                            font.weight: Theme.typography.weightBold
-                            elide: Text.ElideRight
-                        }
-
-                        // Reserved-width ellipsis for the transitional states:
-                        // only opacity animates, so the headline never shifts.
-                        Row {
-                            visible: d.display.dots
+                        RowLayout {
+                            Layout.fillWidth: false
+                            Layout.alignment: Qt.AlignVCenter
                             spacing: 0
 
-                            Repeater {
-                                model: 3
+                            LogosText {
+                                text: d.display.label
+                                color: d.display.color
+                                font.pixelSize: 32
+                                font.weight: Theme.typography.weightBold
+                                elide: Text.ElideRight
+                            }
 
-                                LogosText {
-                                    id: dot
+                            Row {
+                                visible: d.display.dots
+                                spacing: 0
 
-                                    required property int index
+                                Repeater {
+                                    model: 3
 
-                                    text: "."
-                                    color: d.display.color
-                                    font.pixelSize: 32
-                                    font.weight: Theme.typography.weightBold
+                                    LogosText {
+                                        id: dot
 
-                                    SequentialAnimation on opacity {
-                                        running: d.display.dots
-                                        loops: Animation.Infinite
-                                        NumberAnimation { to: 0.25; duration: 0 }
-                                        PauseAnimation { duration: dot.index * 260 }
-                                        NumberAnimation { to: 1.0; duration: 180 }
-                                        NumberAnimation { to: 0.25; duration: 180 }
-                                        PauseAnimation { duration: (2 - dot.index) * 260 + 520 }
+                                        required property int index
+
+                                        text: "."
+                                        color: d.display.color
+                                        font.pixelSize: 32
+                                        font.weight: Theme.typography.weightBold
+
+                                        SequentialAnimation on opacity {
+                                            running: d.display.dots
+                                            loops: Animation.Infinite
+                                            NumberAnimation { to: 0.25; duration: 0 }
+                                            PauseAnimation { duration: dot.index * 260 }
+                                            NumberAnimation { to: 1.0; duration: 180 }
+                                            NumberAnimation { to: 0.25; duration: 180 }
+                                            PauseAnimation { duration: (2 - dot.index) * 260 + 520 }
+                                        }
                                     }
                                 }
                             }
+
                         }
 
                         Item { Layout.fillWidth: true }
@@ -472,6 +479,13 @@ Item {
                                 wrapMode: Text.WordWrap
                                 horizontalAlignment: Text.AlignRight
                             }
+                        }
+
+                        LogosInfoButton {
+                            Layout.alignment: Qt.AlignTop
+                            Layout.leftMargin: Theme.spacing.small
+                            title: qsTr("Status")
+                            dialogContentItem: InfoSections { info: InfoContent.status }
                         }
                     }
 

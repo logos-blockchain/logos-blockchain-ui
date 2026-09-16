@@ -20,11 +20,13 @@ class BlockchainBackend
     // The processed-block stream delivered its end sentinel. Resubscribing needs
     // a node stop/start, so the silence after this is permanent, not slowness.
     PROP(bool blockStreamEnded READONLY)
-    // Whole seconds since the node entered Running, 0 whenever it is not. Counts
-    // from Running rather than from the node reporting itself caught up, because
-    // the caught-up verdict is debounced up in NodeStatusMonitor and the backend
-    // has no view of it — so this is "up for", not "online for", and the UI must
-    // word it that way.
+    // Whole seconds the node has been *online*, 0 whenever it is not. The clock
+    // lives here so it is monotonic and survives view reloads, but the online
+    // edge cannot: the caught-up verdict is a debounced reading of the status
+    // poll owned by NodeStatusMonitor, and the backend never sees it. So the
+    // view reports the edge through noteOnline() and this counts from it.
+    // Falling out of Online resets it — time online is not cumulative, and a
+    // counter that survived a resync would be claiming continuity it never had.
     PROP(int uptimeSeconds READONLY)
 
     SLOT(void startBlockchain())
@@ -43,6 +45,15 @@ class BlockchainBackend
     SLOT(QVariantMap generateConfig(QString outputPath, QStringList initialPeers, int netPort, int blendPort, QString httpAddr, QString externalAddress, bool noPublicIpCheck, int deploymentMode, QString deploymentConfigPath, QString statePath))
     SLOT(QVariantMap getNotes(QString walletAddressHex, QString optionalTipHex))
     SLOT(QVariantMap channelDepositWithNotes(QString channelIdHex, QStringList inputNoteIdHexes, QString metadataBase58, QString changePublicKeyHex, QStringList fundingPublicKeyHexes, QString maxTxFee, QString optionalTipHex))
+    // A stop the user asked for was refused. Deliberately a signal, not a state:
+    // the node is still running and still catching up, so the status must keep
+    // saying so — this is a one-off "that didn't work, try again", not a mode
+    // the UI should sit in.
+    SIGNAL(stopFailed(QString reason))
+
+    // The view's verdict on whether the node is caught up, which is what starts
+    // and stops the uptime clock above.
+    SLOT(void noteOnline(bool online))
     SLOT(void clearBlocks())
     SLOT(void copyToClipboard(QString text))
 }

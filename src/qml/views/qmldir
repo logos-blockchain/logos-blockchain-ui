@@ -9,3 +9,4 @@ SetConfigPathView 1.0 SetConfigPathView.qml
 ChannelDepositView 1.0 ChannelDepositView.qml
 NodeDashboardView 1.0 NodeDashboardView.qml
 NodeSettingsView 1.0 NodeSettingsView.qml
+InfoSections 1.0 InfoSections.qml
