@@ -7,7 +7,5 @@ GenerateConfigView 1.0 GenerateConfigView.qml
 ConfigChoiceView 1.0 ConfigChoiceView.qml
 SetConfigPathView 1.0 SetConfigPathView.qml
 ChannelDepositView 1.0 ChannelDepositView.qml
-ChainStatsView 1.0 ChainStatsView.qml
-NodeOverviewView 1.0 NodeOverviewView.qml
-NodeStatusCard 1.0 NodeStatusCard.qml
-ValidatorStatusCard 1.0 ValidatorStatusCard.qml
+NodeDashboardView 1.0 NodeDashboardView.qml
+NodeSettingsView 1.0 NodeSettingsView.qml

@@ -41,10 +41,21 @@ public:
     // One node-log signature and what to tell the user when it is seen.
     // `recovering` marks progress rather than failure (replaying stored
     // blocks): those match at any log level, failures only on ERROR/WARN.
+    // How specific a rule's verdict is. A dying node logs the reason and then
+    // the crash, and the crash line is newer — so newest-match-wins reports the
+    // consequence and buries the cause. Lower priority wins regardless of age;
+    // newest wins within a priority.
+    enum RulePriority {
+        RootCause = 0,    // the thing that actually went wrong
+        Summary = 1,      // a roll-up of root causes ("all peers failed")
+        Consequence = 2,  // what happened next (crash, panic)
+    };
+
     struct Rule {
         const char* needle;
         const char* message;
         bool recovering;
+        int priority;
     };
 
 public slots:

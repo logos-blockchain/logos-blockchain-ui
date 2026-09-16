@@ -161,7 +161,8 @@ ColumnLayout {
                     font.bold: true
                 }
                 Item { Layout.fillWidth: true }
-                InfoButton {
+                LogosInfoButton {
+                    title: qsTr("Explorer")
                     Layout.alignment: Qt.AlignVCenter
                     text: qsTr("Paste a block header id or a transaction hash, then press Search. The lookup is auto-detected: it tries a block first, then a transaction.")
                 }

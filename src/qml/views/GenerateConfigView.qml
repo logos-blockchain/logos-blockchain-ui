@@ -72,7 +72,8 @@ ColumnLayout {
             text: qsTr("Browse…")
             onClicked: outputFolderDialog.open()
         }
-        InfoButton {
+        LogosInfoButton {
+            title: qsTr("Config output path")
             text: qsTr("Leave empty (or use a relative path) to let the module store the "
                        + "config and node state in its own per-instance data directory — "
                        + "the safe default.\n\n"
