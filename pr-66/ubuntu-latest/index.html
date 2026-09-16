@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorial Execution Report</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --pass: #2ea043; --fail: #f85149; --info: #d29922;
+    --code-bg: #0b0f14;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10; background: var(--panel);
+    border-bottom: 1px solid var(--border); padding: 12px 20px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  .pill { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .pill.pass { background: rgba(46,160,67,.15); color: var(--pass); }
+  .pill.fail { background: rgba(248,81,73,.15); color: var(--fail); }
+  .pill.skip { background: rgba(210,153,34,.15); color: var(--info); }
+  select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
+  main { max-width: 1600px; margin: 0 auto; padding: 16px; }
+  .tutorial-title { font-size: 20px; font-weight: 700; margin: 24px 0 8px; color: #fff; }
+  .row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; overflow: hidden;
+  }
+  .row.preamble, .row.section { grid-template-columns: 1fr; }
+  .col { padding: 14px 18px; min-width: 0; }
+  .col.left { border-right: 1px solid var(--border); }
+  .row.preamble .col.left, .row.section .col.left { border-right: none; }
+  .col.right { background: var(--panel); }
+  /* A row containing any failed step is tinted red end-to-end so it's
+     impossible to miss when scanning the report. */
+  .row.has-fail { border-color: var(--fail); box-shadow: 0 0 0 1px var(--fail); }
+  .row.has-fail .col.left { background: rgba(248,81,73,.07); border-right-color: var(--fail); }
+  .row.has-fail .col.right { background: rgba(248,81,73,.12); }
+  .col-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 8px; }
+  .md :first-child { margin-top: 0; }
+  .md h1 { font-size: 22px; } .md h2 { font-size: 18px; } .md h3 { font-size: 15px; }
+  .md pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; overflow-x: auto; }
+  .md code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+  .md :not(pre) > code { background: rgba(110,118,129,.2); padding: .15em .4em; border-radius: 4px; }
+  .md table { border-collapse: collapse; margin: 8px 0; }
+  .md th, .md td { border: 1px solid var(--border); padding: 5px 10px; }
+  .md blockquote { border-left: 3px solid var(--border); margin: 8px 0; padding: 2px 12px; color: var(--muted); }
+  .md img { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 6px; }
+  .exec { margin-bottom: 14px; }
+  .exec:last-child { margin-bottom: 0; }
+  .exec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .badge { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 4px; }
+  .badge.pass { background: rgba(46,160,67,.15); color: var(--pass); }
+  .badge.fail { background: rgba(248,81,73,.15); color: var(--fail); }
+  .badge.info { background: rgba(210,153,34,.15); color: var(--info); }
+  .kind { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .note { color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
+  pre.cmd { background: var(--code-bg); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 6px; padding: 10px 12px; margin: 0 0 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  pre.output { background: #010409; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin: 0; overflow-x: auto; max-height: 360px; overflow-y: auto; color: #b9c1ca; }
+  pre.cmd, pre.output { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.45; }
+  .empty { color: var(--muted); font-style: italic; font-size: 12.5px; }
+  details summary { cursor: pointer; color: var(--accent); font-size: 12px; margin-bottom: 4px; }
+  /* GitHub-style permalinks: every heading carries a link icon in the left
+     gutter (revealed on hover/focus) that copies a deep link to that section.
+     scroll-margin-top keeps the target clear of the sticky header. */
+  .heading-anchored { position: relative; scroll-margin-top: 76px; }
+  a.anchor {
+    position: absolute; left: -18px; top: 0; width: 16px; height: 1.55em;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--muted); opacity: 0; text-decoration: none;
+    transition: opacity .1s ease-in;
+  }
+  a.anchor svg { width: 14px; height: 14px; display: block; }
+  .heading-anchored:hover > a.anchor, a.anchor:focus { opacity: 1; }
+  a.anchor:hover { color: var(--accent); }
+  .heading-anchored.flash { animation: flash 1.4s ease-out; border-radius: 4px; }
+  @keyframes flash {
+    from { background: rgba(88,166,255,.28); box-shadow: 0 0 0 4px rgba(88,166,255,.28); }
+    to { background: transparent; box-shadow: 0 0 0 4px transparent; }
+  }
+  #toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 7px 14px; font-size: 12.5px; z-index: 20;
+    opacity: 0; pointer-events: none; transition: opacity .15s ease-in-out;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Tutorial Execution Report</h1>
+  <span id="summary"></span>
+  <label style="margin-left:auto; font-size:12px; color:var(--muted)">Tutorial
+    <select id="picker"></select>
+  </label>
+</header>
+<main id="main"></main>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script id="report-data" type="application/json">{"generated_platform": "Linux", "summary": {"failed": 1, "passed": 1, "skipped": 0}, "tutorials": [{"meta": {"name": "Driving the Blockchain UI App Headlessly", "platform": "Linux (ext=so)", "release": "(none)"}, "rows": [{"execs": [], "md": "# Driving the Blockchain UI App Headlessly\n\n`logos-blockchain-ui` is the QML interface for the Logos blockchain node. It is\n**QML-only**: the view drives `blockchain_module` \u2014 and through it the node\nitself \u2014 entirely over the `logos` bridge.\n\nBecause it is built with `logos-module-builder`'s `mkLogosQmlModule`, its flake\nexposes a self-contained standalone app (`apps.default`) that bundles and\nauto-loads the backend module tree. This doc-test launches that app **headless**\n(`QT_QPA_PLATFORM=offscreen`) and drives it through the QML inspector with\n[`logos-qt-mcp`](https://github.com/logos-co/logos-qt-mcp): it walks the\nfirst-run config chooser, generates a node config from the UI, and reaches the\ndashboard, capturing screenshots along the way.\n\n> This doc-test deliberately **does not start a node**. Starting one means\n> bootstrapping against a live network, which depends on reachable peers running\n> a matching chainsync protocol version \u2014 not something a reproducible test\n> should rely on. For the node lifecycle, see the module's\n> [`blockchain-module-runtime`](https://github.com/logos-blockchain/logos-blockchain-module/blob/master/doctests/blockchain-module-runtime.test.yaml)\n> doc-test, which runs a node with IBD skipped.\n\n**What you'll build:** The `logos-blockchain-ui` standalone app, launched headless and driven through its QML UI to generate a node config and reach the dashboard.\n\n**What you'll learn:**\n\n- How a QML-only Logos UI exposes a runnable standalone app that bundles its backend\n- How to drive a headless Qt/QML app with logos-qt-mcp (wait, click, type, assert)\n- How the first-run chooser routes between generating a config and pointing at an existing one\n- How a UI action round-trips into `blockchain_module` over the Logos bridge\n- How to capture screenshots of the running UI for documentation and CI\n\n## Prerequisites\n\n- **Nix** with flakes enabled (see [nixos.org](https://nixos.org/download.html)).\n\n- **A Linux or macOS machine.** The app runs headless via `QT_QPA_PLATFORM=offscreen`, so no display is required."}, {"execs": [], "md": "## Step 1: Build the qt-mcp test driver\n\n[`logos-qt-mcp`](https://github.com/logos-co/logos-qt-mcp) connects to the\nQML inspector port a Logos standalone app opens, and lets a test wait for\ntext, click by label, set fields and take screenshots."}, {"execs": [{"cmd": "nix build 'github:logos-co/logos-qt-mcp' --out-link ./result-mcp", "exit_code": 0, "kind": "run", "note": "", "output": "unpacking 'github:logos-co/logos-qt-mcp/1fea509485a48ab185fafae8dc21bdbcc808a07e' into the Git cache...\ncopying path '/nix/store/jc3mfa7ybzh32bkvdj5xiib1vkx8jy6x-source' from 'https://cache.nixos.org'...\nthese 3 derivations will be built:\n  /nix/store/5hihxn65n2d3v5s0hk9h8bwm6csb59d2-qml-mcp-server-1.0.0-npm-deps.drv\n  /nix/store/vy080z96516npsdswp067wnk7kpr1xw3-qml-mcp-server-1.0.0.drv\n  /nix/store/d8bxqkiv6dzrjyls4q9a0ivwlid7a61y-logos-qt-mcp.drv\nthese 92 paths will be fetched (221.8 MiB download, 1.2 GiB unpacked):\n  /nix/store/3apspx5fhyb83153axf1b80ifiklgjbh-acl-2.3.2\n  /nix/store/877drgyy4926ps2qfraaxsd49w90bwiz-attr-2.5.2\n  /nix/store/q7sqwn7i6w2b67adw0bmix29pxg85x3w-bash-5.3p3\n  /nix/store/ddx7976jyll30xjbasghv9jailswprcp-bash-interactive-5.3p3\n  /nix/store/c43ry7z24x3jhnjlj4gpay8a4g2p3x1h-binutils-2.44\n  /nix/store/d6h99jhxcpi2b09n3kgw75jx99aslxv2-binutils-2.44-lib\n  /nix/store/l19cddv64i52rhcwahif8sgyrd3mhiqb-binutils-wrapper-2.44\n  /nix/store/scirrfdcp47bhxaaw6n5q9gwlzxd8hcr-brotli-1.1.0-lib\n  /nix/store/x1nn5jrx1im7wmmn1xmpjvyf072s5k75-bzip2-1.0.8\n  /nix/store/6yjb3zdj448rm8qsmpiq3f67kvj5683a-bzip2-1.0.8-bin\n  /nix/store/8ksax0a2mxglr5hlkj2dzl556jx7xqn5-coreutils-9.7\n  /nix/store/g3vj4z918zal30klpdd9papkavis01sh-curl-8.14.1\n  /nix/store/xpdlr2gphdqbnij8cbmca189q29lha7i-die-hook\n  /nix/store/s2fvny566vls74p4qm9v3fdqd741fh3f-diffutils-3.12\n  /nix/store/xxris3l81hc2c8ibx8fcyimwqpvfh2pp-ed-1.21.1\n  /nix/store/7k857h95ra7vwwsay8mz5han65f9n4cq-expand-response-params\n  /nix/store/wdbr9yrvz0vgsii826wlidr48m7rafdf-expat-2.7.1\n  /nix/store/v40ijzz8p2fpk9ihjck3a1ncqaqfmn3c-file-5.45\n  /nix/store/l964krgbp613d5jxga2vy5qdssj7zfzj-findutils-4.10.0\n  /nix/store/03nvbw411p097h6yxjghc33rbcrjfb9d-gawk-5.3.2\n  /nix/store/82kmz7r96navanrc2fgckh2bamiqrgsw-gcc-14.3.0\n  /nix/store/41ym1jm1b7j3rhglk82gwg9jml26z1km-gcc-14.3.0-lib\n  /nix/store/8zm936ys1dkqv2710j0w09r2mk0kj5n9-gcc-14.3.0-libgcc\n  /nix/store/95k9rsn1zsw1yvir8mj824ldhf90i4qw-gcc-wrapper-14.3.0\n  /nix/store/7vsm0dg9hl6cx0jz7q4xi8qkqqbdc52s-gdbm-1.25-lib\n  /nix/store/776irwlgfb65a782cxmyk61pck460fs9-glibc-2.40-66\n  /nix/store/4jxivbjpr86wmsziqlf7iljlwjlxz8bh-glibc-2.40-66-bin\n  /nix/store/gf3wh0x0rzb1dkx0wx1jvmipydwfzzd5-glibc-2.40-66-dev\n  /nix/store/jbi3k3zbljsd340mrkpqwm4q4qm9bbkw-gmp-6.3.0\n  /nix/store/b7pkrm3rv0sydsppr9abs4qsmcm7a4rv-gmp-with-cxx-6.3.0\n  /nix/store/k0190hq0n1n89h6rxkpkbgrqx5vj0mg5-gnu-config-2024-01-01\n  /nix/store/vlckk0vnmawq9wwh7ndkrwxlpv4h29yh-gnugrep-3.12\n  /nix/store/aqdvlkh0jdwkc22hh5vr9sl6qlw5ha74-gnumake-4.4.1\n  /nix/store/pmhkmqy0vxk47r6ndh0azybhf6gs6k25-gnused-4.9\n  /nix/store/8av8pfs7bnyc6hqj764ns4z1fnr9bva1-gnutar-1.35\n  /nix/store/8gsxxh82rf957ffbsk0q9670nhvl5lia-gzip-1.14\n  /nix/store/w24hkb1b9v50r3sgpvmk8kwyi04x7imq-icu4c-76.1\n  /nix/store/083x1zrd8rnrkq1plphxvc2vdzgk8dvj-icu4c-76.1-dev\n  /nix/store/0mi9h8h8k3djr1fih4j77psdcxlsizrv-install-shell-files\n  /nix/store/h9hb4qj3k5gijb365kgqmkib7p2fkqzh-isl-0.20\n  /nix/store/byi56qh6h63rdhfjh4plnyndfcpqx13p-jq-1.8.1\n  /nix/store/7jvwwz45qap70i6asxzcnbshhz88a5sv-jq-1.8.1-bin\n  /nix/store/1vw3n1caad61rdg020qgsil21db98x7j-keyutils-1.6.3-lib\n  /nix/store/jlf1dhlhcn8xk3swlxc9y3a0yrina46w-krb5-1.22.1-lib\n  /nix/store/i6a553gjc2i4r4p54qk5mdy3ybsiydwk-libffi-3.5.1\n  /nix/store/wwqyxsvmg41q5ckfvvv6wa50nwvz9dv4-libidn2-2.3.8\n  /nix/store/5q5z85zacyhr098ixzlqqagd1fzngp6y-libmpc-1.3.1\n  /nix/store/bywdzqksdpfd0kx50k5zvicvkir05s18-libpsl-0.21.5\n  /nix/store/va3w14p49xm87pnmxavk4j3imnqzb03m-libssh2-1.11.1\n  /nix/store/7ndy5820h69n1pgd13viph1qjq6zhhkj-libunistring-1.3\n  /nix/store/c829k68fsf2pz2hd4acar8plin4dn78z-libuv-1.51.0\n  /nix/store/r5sn5xvbjwr9c3xd56wl5ad06f6x1ggb-libuv-1.51.0-dev\n  /nix/store/cl6lxy8k94czd0v02m8db9xahrpzlfz4-linux-headers-6.16\n  /nix/store/bqwmxjkrkmn1kqivq4pr053j68biq4k4-mailcap-2.1.54\n  /nix/store/rc4dwdh0x63gfs7d2gqzbwad70ckmybm-make-shell-wrapper-hook\n  /nix/store/jqxpwk7s4ma2c8nzfcj9n60rryhdfrxd-mpdecimal-4.0.1\n  /nix/store/0wsd373lycsq0g3lav7gpmldw99g0sqf-mpfr-4.2.2\n  /nix/store/6zdgga8jx741p46wmx8xyibwz3x3fps6-ncurses-6.5\n  /nix/store/did4qx8g0fx4kyiyk9imhbbyhdg8mjba-nghttp2-1.66.0-lib\n  /nix/store/r4557ald6zn4dzmvgh8na9vwnwzgrjgc-nodejs-22.19.0\n  /nix/store/a99hiwhamgzds70gxkfnb4cm8i926356-nodejs-22.19.0-dev\n  /nix/store/1x276grqkqal97vbf7xrna218jr2kv84-nodejs-22.19.0-source\n  /nix/store/y348d92q1swi737lmxhrrwyxd92nkynf-nodejs-install-executables\n  /nix/store/841vgv8r7mvwz98g4b8f0zdbxbcjpqbn-nodejs-install-manuals\n  /nix/store/mchaffb0pllxh5dfjang6iyj33alhgn1-npm-build-hook\n  /nix/store/nc7dz1icpzm5lzyaywn17hrrnbsnzk3d-npm-config-hook\n  /nix/store/sxh44mgiha5j1c7as80bjfnbvx6vlcmm-npm-install-hook\n  /nix/store/z6fss9k317dzj5mm8zccs8xlr870zswi-oniguruma-6.9.10-lib\n  /nix/store/gi615r79j260ihhzdkhrg6qva9wfrbyy-openssl-3.5.1\n  /nix/store/nn4b544v4sanvsf22mjiw3qh8mwh6pzh-openssl-3.5.1-bin\n  /nix/store/qqfiw89h8j4pilcyqapldzq5vf0vqgxy-openssl-3.5.1-dev\n  /nix/store/856i1ajaci3kmmp15rifacfz3jvn5l3q-patch-2.8\n  /nix/store/gx2l0rnp3qcnysdddkg9dqnh2mz6w08k-patchelf-0.15.2\n  /nix/store/y667mbdld0s8rmb2i493ldyfh3lsgk1y-pcre2-10.44\n  /nix/store/wjrvsi6i4775w0f5dl9w681ql2fridpp-prefetch-npm-deps-0.1.0\n  /nix/store/v3z4bn1pxsg6699y61x86pvzif41m666-publicsuffix-list-0-unstable-2025-07-22\n  /nix/store/829wb290i87wngxlh404klwxql5v18p4-python3-3.13.7\n  /nix/store/qiir04g2blvd7nzw501v8h44w4qjyzj2-readline-8.3p1\n  /nix/store/8bsyjdxv61ha88hjrpgl6nyfjxfqnphx-sqlite-3.50.2\n  /nix/store/gmwaym3dwkrb9987z8xg4njl2kmm2dvc-sqlite-3.50.2-bin\n  /nix/store/w3ibvzff0yrpg8abrl8n2fxn0d9fpfpc-sqlite-3.50.2-dev\n  /nix/store/8yk6k80h03hz8a6743x53xqlcdpafda8-stdenv-linux\n  /nix/store/jrw7q6v8q74hhv43zgpq7i4jmxj9nwlj-stdenv-linux\n  /nix/store/795l5yj7fa6wqdkknhgja1n46y441qyp-tzdata-2025b\n  /nix/store/jwjq0fjgn7d00kswhaw2m8hbgws5vbi4-update-autotools-gnu-config-scripts-hook\n  /nix/store/qcxrf6hi3afinicfhfi73n3c8y3zlyk0-util-linux-minimal-2.41.1-lib\n  /nix/store/0ja5daq2yay3svg6f48spyfby7pgy5bm-xgcc-14.3.0-libgcc\n  /nix/store/mjszfnqrfid0c9b4dnaydkz43cmg23k7-xz-5.8.1\n  /nix/store/y9kgzp85ykrhd7l691w4djx121qygy68-xz-5.8.1-bin\n  /nix/store/09sifcahf0j1xnw80k9l33jzcs1p2qbw-zlib-1.3.1\n  /nix/store/29mcvdnd9s6sp46cjmqm0pfg4xs56rik-zlib-1.3.1-dev\n  /nix/store/bxn7mqdrckhjkmvy5ynhybmj0lmdlgb4-zstd-1.5.7\ncopying path '/nix/store/k0190hq0n1n89h6rxkpkbgrqx5vj0mg5-gnu-config-2024-01-01' from 'https://cache.nixos.org'...\ncopying path '/nix/store/mchaffb0pllxh5dfjang6iyj33alhgn1-npm-build-hook' from 'https://cache.nixos.org'...\ncopying path '/nix/store/0ja5daq2yay3svg6f48spyfby7pgy5bm-xgcc-14.3.0-libgcc' from 'https://cache.nixos.org'...\ncopying path '/nix/store/8zm936ys1dkqv2710j0w09r2mk0kj5n9-gcc-14.3.0-libgcc' from 'https://cache.nixos.org'...\ncopying path '/nix/store/7ndy5820h69n1pgd13viph1qjq6zhhkj-libunistring-1.3' from 'https://cache.nixos.org'...\ncopying path '/nix/store/0mi9h8h8k3djr1fih4j77psdcxlsizrv-install-shell-files' from 'https://cache.nixos.org'...\ncopying path '/nix/store/bqwmxjkrkmn1kqivq4pr053j68biq4k4-mailcap-2.1.54' from 'https://cache.nixos.org'...\ncopying path '/nix/store/1x276grqkqal97vbf7xrna218jr2kv84-nodejs-22.19.0-source' from 'https://cache.nixos.org'...\ncopying path '/nix/store/795l5yj7fa6wqdkknhgja1n46y441qyp-tzdata-2025b' from 'https://cache.nixos.org'...\ncopying path '/nix/store/xpdlr2gphdqbnij8cbmca189q29lha7i-die-hook' from 'https://cache.nixos.org'...\ncopying path '/nix/store/jwjq0fjgn7d00kswhaw2m8hbgws5vbi4-update-autotools-gnu-config-scripts-hook' from 'https://cache.nixos.org'...\ncopying path '/nix/store/cl6lxy8k94czd0v02m8db9xahrpzlfz4-linux-headers-6.16' from 'https://cache.nixos.org'...\ncopying path '/nix/store/v3z4bn1pxsg6699y61x86pvzif41m666-publicsuffix-list-0-unstable-2025-07-22' from 'https://cache.nixos.org'...\ncopying path '/nix/store/wwqyxsvmg41q5ckfvvv6wa50nwvz9dv4-libidn2-2.3.8' from 'https://cache.nixos.org'...\ncopying path '/nix/store/776irwlgfb65a782cxmyk61pck460fs9-glibc-2.40-66' from 'https://cache.nixos.org'...\ncopying path '/nix/store/877drgyy4926ps2qfraaxsd49w90bwiz-attr-2.5.2' from 'https://cache.nixos.org'...\ncopying path '/nix/store/q7sqwn7i6w2b67adw0bmix29pxg85x3w-bash-5.3p3' from 'https://cache.nixos.org'...\ncopying path '/nix/store/03nvbw411p097h6yxjghc33rbcrjfb9d-gawk-5.3.2' from 'https://cache.nixos.org'...\ncopying path '/nix/store/7k857h95ra7vwwsay8mz5han65f9n4cq-expand-response-params' from 'https://cache.nixos.org'...\ncopying path '/nix/store/scirrfdcp47bhxaaw6n5q9gwlzxd8hcr-brotli-1.1.0-lib' from 'https://cache.nixos.org'...\ncopying path '/nix/store/wdbr9yrvz0vgsii826wlidr48m7rafdf-expat-2.7.1' from 'https://cache.nixos.org'...\ncopying path '/nix/store/x1nn5jrx1im7wmmn1xmpjvyf072s5k75-bzip2-1.0.8' from 'https://cache.nixos.org'...\ncopying path '/nix/store/xxris3l81hc2c8ibx8fcyimwqpvfh2pp-ed-1.21.1' from 'https://cache.nixos.org'...\ncopying path '/nix/store/41ym1jm1b7j3rhglk82gwg9jml26z1km-gcc-14.3.0-lib' from 'https://cache.nixos.org'...\ncopying path '/nix/store/7vsm0dg9hl6cx0jz7q4xi8qkqqbdc52s-gdbm-1.25-lib' from 'https://cache.nixos.org'...\ncopying path '/nix/store/jbi3k3zbljsd340mrkpqwm4q4qm9bbkw-gmp-6.3.0' from 'https://cache.nixos.org'...\ncopying path '/nix/store/1vw3n1caad61rdg020qgsil21db98x7j-keyutils-1.6.3-lib' from 'https://cache.nixos.org'...\ncopying path '/nix/store/4jxivbjpr86wmsziqlf7iljlwjlxz8bh-glibc-2.40-66-bin' from 'https://cache.nixos.org'...\ncopying path '/nix/store/pmhkmqy0vxk47r6ndh0azybhf6gs6k25-gnused-4.9' from 'https://cache.nixos.org'...\ncopying path '/nix/store/aqdvlkh0jdwkc22hh5vr9sl6qlw5ha74-gnumake-4.4.1' from 'https://cache.nixos.org'...\ncopying path '/nix/store/y667mbdld0s8rmb2i493ldyfh3lsgk1y-pcre2-10.44' from 'https://cache.nixos.org'...\ncopying path '/nix/store/09sifcahf0j1xnw80k9l33jzcs1p2qbw-zlib-1.3.1' from 'https://cache.nixos.org'...\ncopying path '/nix/store/mjszfnqrfid0c9b4dnaydkz43cmg23k7-xz-5.8.1' from 'https://cache.nixos.org'...\ncopying path '/nix/store/6yjb3zdj448rm8qsmpiq3f67kvj5683a-bzip2-1.0.8-bin' from 'https://cache.nixos.org'...\ncopying path '/nix/store/3apspx5fhyb83153axf1b80ifiklgjbh-acl-2.3.2' from 'https://cache.nixos.org'...\ncopying path '/nix/store/c829k68fsf2pz2hd4acar8plin4dn78z-libuv-1.51.0' from 'https://cache.nixos.org'...\ncopying path '/nix/store/856i1ajaci3kmmp15rifacfz3jvn5l3q-patch-2.8' from 'https://cache.nixos.org'...\ncopying path '/nix/store/gi615r79j260ihhzdkhrg6qva9wfrbyy-openssl-3.5.1' from 'https://cache.nixos.org'...\ncopying path '/nix/store/6zdgga8jx741p46wmx8xyibwz3x3fps6-ncurses-6.5' from 'https://cache.nixos.org'...\ncopying path '/nix/store/i6a553gjc2i4r4p54qk5mdy3ybsiydwk-libffi-3.5.1' from 'https://cache.nixos.org'...\ncopying path '/nix/store/jqxpwk7s4ma2c8nzfcj9n60rryhdfrxd-mpdecimal-4.0.1' from 'https://cache.nixos.org'...\ncopying path '/nix/store/v40ijzz8p2fpk9ihjck3a1ncqaqfmn3c-file-5.45' from 'https://cache.nixos.org'...\ncopying path '/nix/store/29mcvdnd9s6sp46cjmqm0pfg4xs56rik-zlib-1.3.1-dev' from 'https://cache.nixos.org'...\ncopying path '/nix/store/8av8pfs7bnyc6hqj764ns4z1fnr9bva1-gnutar-1.35' from 'https://cache.nixos.org'...\ncopying path '/nix/store/8gsxxh82rf957ffbsk0q9670nhvl5lia-gzip-1.14' from 'https://cache.nixos.org'...\ncopying path '/nix/store/8bsyjdxv61ha88hjrpgl6nyfjxfqnphx-sqlite-3.50.2' from 'https://cache.nixos.org'...\ncopying path '/nix/store/r5sn5xvbjwr9c3xd56wl5ad06f6x1ggb-libuv-1.51.0-dev' from 'https://cache.nixos.org'...\ncopying path '/nix/store/rc4dwdh0x63gfs7d2gqzbwad70ckmybm-make-shell-wrapper-hook' from 'https://cache.nixos.org'...\ncopying path '/nix/store/y9kgzp85ykrhd7l691w4djx121qygy68-xz-5.8.1-bin' from 'https://cache.nixos.org'...\ncopying path '/nix/store/qcxrf6hi3afinicfhfi73n3c8y3zlyk0-util-linux-minimal-2.41.1-lib' from 'https://cache.nixos.org'...\ncopying path '/nix/store/z6fss9k317dzj5mm8zccs8xlr870zswi-oniguruma-6.9.10-lib' from 'https://cache.nixos.org'...\ncopying path '/nix/store/gf3wh0x0rzb1dkx0wx1jvmipydwfzzd5-glibc-2.40-66-dev' from 'https://cache.nixos.org'...\ncopying path '/nix/store/gmwaym3dwkrb9987z8xg4njl2kmm2dvc-sqlite-3.50.2-bin' from 'https://cache.nixos.org'...\ncopying path '/nix/store/bywdzqksdpfd0kx50k5zvicvkir05s18-libpsl-0.21.5' from 'https://cache.nixos.org'...\ncopying path '/nix/store/vlckk0vnmawq9wwh7ndkrwxlpv4h29yh-gnugrep-3.12' from 'https://cache.nixos.org'...\ncopying path '/nix/store/did4qx8g0fx4kyiyk9imhbbyhdg8mjba-nghttp2-1.66.0-lib' from 'https://cache.nixos.org'...\ncopying path '/nix/store/0wsd373lycsq0g3lav7gpmldw99g0sqf-mpfr-4.2.2' from 'https://cache.nixos.org'...\ncopying path '/nix/store/h9hb4qj3k5gijb365kgqmkib7p2fkqzh-isl-0.20' from 'https://cache.nixos.org'...\ncopying path '/nix/store/d6h99jhxcpi2b09n3kgw75jx99aslxv2-binutils-2.44-lib' from 'https://cache.nixos.org'...\ncopying path '/nix/store/byi56qh6h63rdhfjh4plnyndfcpqx13p-jq-1.8.1' from 'https://cache.nixos.org'...\ncopying path '/nix/store/7jvwwz45qap70i6asxzcnbshhz88a5sv-jq-1.8.1-bin' from 'https://cache.nixos.org'...\ncopying path '/nix/store/5q5z85zacyhr098ixzlqqagd1fzngp6y-libmpc-1.3.1' from 'https://cache.nixos.org'...\ncopying path '/nix/store/w3ibvzff0yrpg8abrl8n2fxn0d9fpfpc-sqlite-3.50.2-dev' from 'https://cache.nixos.org'...\ncopying path '/nix/store/841vgv8r7mvwz98g4b8f0zdbxbcjpqbn-nodejs-install-manuals' from 'https://cache.nixos.org'...\ncopying path '/nix/store/c43ry7z24x3jhnjlj4gpay8a4g2p3x1h-binutils-2.44' from 'https://cache.nixos.org'...\ncopying path '/nix/store/82kmz7r96navanrc2fgckh2bamiqrgsw-gcc-14.3.0' from 'https://cache.nixos.org'...\ncopying path '/nix/store/bxn7mqdrckhjkmvy5ynhybmj0lmdlgb4-zstd-1.5.7' from 'https://cache.nixos.org'...\ncopying path '/nix/store/b7pkrm3rv0sydsppr9abs4qsmcm7a4rv-gmp-with-cxx-6.3.0' from 'https://cache.nixos.org'...\ncopying path '/nix/store/w24hkb1b9v50r3sgpvmk8kwyi04x7imq-icu4c-76.1' from 'https://cache.nixos.org'...\ncopying path '/nix/store/gx2l0rnp3qcnysdddkg9dqnh2mz6w08k-patchelf-0.15.2' from 'https://cache.nixos.org'...\ncopying path '/nix/store/qiir04g2blvd7nzw501v8h44w4qjyzj2-readline-8.3p1' from 'https://cache.nixos.org'...\ncopying path '/nix/store/8ksax0a2mxglr5hlkj2dzl556jx7xqn5-coreutils-9.7' from 'https://cache.nixos.org'...\ncopying path '/nix/store/ddx7976jyll30xjbasghv9jailswprcp-bash-interactive-5.3p3' from 'https://cache.nixos.org'...\ncopying path '/nix/store/jlf1dhlhcn8xk3swlxc9y3a0yrina46w-krb5-1.22.1-lib' from 'https://cache.nixos.org'...\ncopying path '/nix/store/va3w14p49xm87pnmxavk4j3imnqzb03m-libssh2-1.11.1' from 'https://cache.nixos.org'...\ncopying path '/nix/store/nn4b544v4sanvsf22mjiw3qh8mwh6pzh-openssl-3.5.1-bin' from 'https://cache.nixos.org'...\ncopying path '/nix/store/829wb290i87wngxlh404klwxql5v18p4-python3-3.13.7' from 'https://cache.nixos.org'...\ncopying path '/nix/store/qqfiw89h8j4pilcyqapldzq5vf0vqgxy-openssl-3.5.1-dev' from 'https://cache.nixos.org'...\ncopying path '/nix/store/s2fvny566vls74p4qm9v3fdqd741fh3f-diffutils-3.12' from 'https://cache.nixos.org'...\ncopying path '/nix/store/l964krgbp613d5jxga2vy5qdssj7zfzj-findutils-4.10.0' from 'https://cache.nixos.org'...\ncopying path '/nix/store/g3vj4z918zal30klpdd9papkavis01sh-curl-8.14.1' from 'https://cache.nixos.org'...\ncopying path '/nix/store/8yk6k80h03hz8a6743x53xqlcdpafda8-stdenv-linux' from 'https://cache.nixos.org'...\ncopying path '/nix/store/wjrvsi6i4775w0f5dl9w681ql2fridpp-prefetch-npm-deps-0.1.0' from 'https://cache.nixos.org'...\nbuilding '/nix/store/5hihxn65n2d3v5s0hk9h8bwm6csb59d2-qml-mcp-server-1.0.0-npm-deps.drv'...\ncopying path '/nix/store/l19cddv64i52rhcwahif8sgyrd3mhiqb-binutils-wrapper-2.44' from 'https://cache.nixos.org'...\ncopying path '/nix/store/083x1zrd8rnrkq1plphxvc2vdzgk8dvj-icu4c-76.1-dev' from 'https://cache.nixos.org'...\ncopying path '/nix/store/r4557ald6zn4dzmvgh8na9vwnwzgrjgc-nodejs-22.19.0' from 'https://cache.nixos.org'...\ncopying path '/nix/store/y348d92q1swi737lmxhrrwyxd92nkynf-nodejs-install-executables' from 'https://cache.nixos.org'...\ncopying path '/nix/store/a99hiwhamgzds70gxkfnb4cm8i926356-nodejs-22.19.0-dev' from 'https://cache.nixos.org'...\ncopying path '/nix/store/sxh44mgiha5j1c7as80bjfnbvx6vlcmm-npm-install-hook' from 'https://cache.nixos.org'...\ncopying path '/nix/store/95k9rsn1zsw1yvir8mj824ldhf90i4qw-gcc-wrapper-14.3.0' from 'https://cache.nixos.org'...\ncopying path '/nix/store/jrw7q6v8q74hhv43zgpq7i4jmxj9nwlj-stdenv-linux' from 'https://cache.nixos.org'...\ncopying path '/nix/store/nc7dz1icpzm5lzyaywn17hrrnbsnzk3d-npm-config-hook' from 'https://cache.nixos.org'...\nbuilding '/nix/store/vy080z96516npsdswp067wnk7kpr1xw3-qml-mcp-server-1.0.0.drv'...\nbuilding '/nix/store/d8bxqkiv6dzrjyls4q9a0ivwlid7a61y-logos-qt-mcp.drv'...\n", "status": "pass"}], "md": "### 1.1 Build it\n\n```bash\nnix build 'github:logos-co/logos-qt-mcp' --out-link ./result-mcp\n```"}, {"execs": [], "md": "## Step 2: Launch the app and walk the UI\n\nThe standalone app bundles the UI plugin together with `blockchain_module`\nand the native node library it links, so the first launch builds a lot \u2014\nhence the generous timeouts.\n\nOn first run the app opens on the **config chooser**: a node needs a config\nbefore it can start, and the chooser is where you either generate one or\npoint at a file you already have."}, {"execs": [{"cmd": "nix run github:logos-blockchain/logos-blockchain-ui/90f3c4be6441e231ab1f47de209e3239805a741a --no-write-lock-file -- --height 1000\n\n# test actions:\n- Open the Settings tab: click objectName='tabSettings'\n- Go to the config chooser: click objectName='changeConfigButton'\n- Chooser is shown: wait for ['Choose how to set up your node config', 'Generate config', 'Set path to config']\n- Open the generate-config form: click objectName='chooserGenerateButton'\n- Generate form is rendered: wait for ['Generate user config', 'All fields are optional. Values are passed as args to generate config.', 'Initial peers (one per line)', 'Net port', 'Blend port']\n- Set the HTTP address: set placeholderText='HTTP address (e.g. 0.0.0.0:8080)' to '0.0.0.0:18080'\n- Generate the config: click objectName='generateSubmitButton'\n- Generate succeeded and routed to the set-path view: wait for ['Select your config files, then continue to the node.']\n- Continue to the dashboard: click objectName='continueToNodeButton'\n- Dashboard shows the config, node not started: wait for ['Not started']\n- Most sections are gated on a running node: wait for ['Dashboard', 'Blocks', 'Accounts', 'Rewards', 'Explorer', 'Settings']", "kind": "ui_test", "note": "UI tests failed", "output": "\nRunning 1 test(s)...\n\n  \u001b[31m\u2717\u001b[0m Driving the Blockchain UI App Headlessly: Launch and drive the app\n    click_object: element not found\n\n0 passed, 1 failed\n\n\n\n--- app log ---\n RemoteLogosObject wrapping QRemoteObjectReplica 501839536\n[LogosObject] LogosAPIConsumer: calling LogosObject::informModuleToken for \"blockchain_ui\"\nLogosAPIConsumer: informModuleToken completed with result: true\n[LogosObject] Destroying RemoteLogosObject 0\nfile:///nix/store/221zng1awm2zc1l0n74dalby37nvp8n3-logos-blockchain_ui-plugin-dir/qml/BlockchainView.qml:492:17: Type NodeDashboardView unavailable \n                     NodeDashboardView { \n                     ^\nfile:///nix/store/221zng1awm2zc1l0n74dalby37nvp8n3-logos-blockchain_ui-plugin-dir/qml/views/NodeDashboardView.qml:519:29: Cannot assign to non-existent property \"dialogContentItem\" \n                                 dialogContentItem: InfoSections { info: InfoContent.status } \n                                 ^\nFailed to load QML: \"/nix/store/221zng1awm2zc1l0n74dalby37nvp8n3-logos-blockchain_ui-plugin-dir/qml/BlockchainView.qml\"\n\"file:///nix/store/221zng1awm2zc1l0n74dalby37nvp8n3-logos-blockchain_ui-plugin-dir/qml/BlockchainView.qml:492:17: Type NodeDashboardView unavailable\"\n\"file:///nix/store/221zng1awm2zc1l0n74dalby37nvp8n3-logos-blockchain_ui-plugin-dir/qml/views/NodeDashboardView.qml:519:29: Cannot assign to non-existent property \\\"dialogContentItem\\\"\"\nThis plugin does not support propagateSizeHints()\n[QmlInspector] Inspector server listening on port 3768\n[QmlInspector] Client connected from \"::1\"\n[QmlInspector] Client disconnected\n[QmlInspector] Client connected from \"::1\"\n[QmlInspector] Client disconnected", "status": "fail"}], "md": "### 2.1 Launch and drive the app\n\n```bash\nnix run github:logos-blockchain/logos-blockchain-ui/90f3c4be6441e231ab1f47de209e3239805a741a --no-write-lock-file -- --height 1000\n```\n\nThe chooser is where a node config is generated or selected. On a\nfirst run the app lands here by itself; once a config has been\nsaved it opens on the node view instead, and this is the route\nback \u2014 the same one the node view's **Change** button takes.\n\n![Chooser is shown](images/blockchain-ui-chooser.png)\n\nEvery field here maps to an argument of the module's\n`generate_user_config` call. Leaving the output path empty is the\nsafe default \u2014 the module then writes the config, and the node's\nstate, database and log directories, under its own per-instance\ndirectory, which is always writable.\n\n![Generate form is rendered](images/blockchain-ui-generate.png)\n\nReaching this view *is* the assertion: the UI only calls\n`showSetConfigPath()` when `generate_user_config` returns\nsuccess, so arriving here proves the round-trip into\n`blockchain_module` worked and a real config was written.\n\nThe resolved path is displayed here, but it is machine-specific\nand text matching is exact, so it is not asserted directly.\n\nIt is rendered as selectable text so a failure here \u2014 a parse\nerror, or a path that is not writable \u2014 can be copied out of the\nUI rather than retyped from a screenshot.\n\n![Generate succeeded and routed to the set-path view](images/blockchain-ui-generated.png)\n\nThe dashboard opens on a full-width status hero whose headline\n*is* the state: it reads **Not started** \u2014 the operator starts\nthe node explicitly; generating or selecting a config never\nstarts one.\n\nThe line beside the headline carries the node's own explanation\nwhen something goes wrong, so a failed start shows a real cause\nrather than a generic error. Underneath it runs the lifecycle\nlane (**Started \u2192 Online**), which lights up one stage at a time\nas the node comes up.\n\n![Dashboard shows the config, node not started](images/blockchain-ui-node.png)\n\nNavigation is a tab bar under the node header, one tab per\nsection. Every tab is rendered, but only **Dashboard**,\n**Blocks** and **Settings** are usable before the node is up:\nthe rest are disabled until it runs. That is why this doc-test\nstops here \u2014 the accounts, transfer, rewards and channel-deposit\nsections cannot be reached without first bootstrapping a node\nagainst a live network.\n\nEverything up to this point \u2014 the chooser, the generate form, the\nround-trip into `blockchain_module`, and the dashboard \u2014 needs no\nnetwork at all, which is what makes it reproducible.\n\n![Most sections are gated on a running node](images/blockchain-ui-nav.png)"}, {"execs": [], "md": "## What this does not cover\n\nThis doc-test stops at the node view, because everything past it is gated\non a running node:\n\n- **Most sections are disabled until a node is up**: the Accounts,\n  Transfer, Rewards, Channel Deposit and Explorer tabs are gated on a\n  running node and cannot be opened. Dashboard, Blocks and Settings stay\n  reachable throughout.\n- **Bootstrapping and syncing** need reachable peers speaking a matching\n  chainsync protocol version. When they do not match the node fails Initial\n  Block Download with `AllPeersFailed` \u2014 a real failure, but driven by\n  network state rather than by this repository.\n- **Balances and transactions** need a chain that is progressing.\n\nNote the generate form has no `skip_ibd` control, so a config produced\nthrough the UI always carries bootstrap peers. That is the single change\nthat would unlock a UI end-to-end doc-test: expose `skip_ibd` in the form\n(the module already accepts it), and the UI could start a peerless node the\nsame way the module's\n[`blockchain-module-runtime`](https://github.com/logos-blockchain/logos-blockchain-module/blob/master/doctests/blockchain-module-runtime.test.yaml)\ndoc-test does \u2014 at which point the operation panels become reachable and\nassertable.\n\nNavigation here goes through `call_method` on `objectName` handles\n(`blockchainRoot`, `configChoiceView`, `generateConfigView`) rather than by\nclicking captions. That is deliberate: the chooser's \"Generate config\"\nbutton and the form's submit button share a caption, so click-by-text\ncannot address them unambiguously."}]}], "version": 1}</script>
+<script>
+  const DATA = JSON.parse(document.getElementById("report-data").textContent);
+  if (window.marked) { marked.setOptions({ gfm: true, breaks: false }); }
+  const mdToHtml = (s) => window.marked ? marked.parse(s || "") : ("<pre>" + (s || "") + "</pre>");
+
+  const sum = DATA.summary;
+  document.getElementById("summary").innerHTML =
+    `<span class="pill pass">${sum.passed} passed</span> ` +
+    (sum.failed ? `<span class="pill fail">${sum.failed} failed</span> ` : "") +
+    (sum.skipped ? `<span class="pill skip">${sum.skipped} skipped</span>` : "");
+
+  const picker = document.getElementById("picker");
+  DATA.tutorials.forEach((t, i) => {
+    const o = document.createElement("option");
+    o.value = i; o.textContent = t.meta.name; picker.appendChild(o);
+  });
+
+  function execHtml(e) {
+    const badge = `<span class="badge ${e.status}">${e.status.toUpperCase()}</span>`;
+    const kind = `<span class="kind">${e.kind}${e.platform ? " · " + e.platform : ""}${e.exit_code !== undefined ? " · exit " + e.exit_code : ""}</span>`;
+    let h = `<div class="exec"><div class="exec-head">${badge}${kind}</div>`;
+    if (e.note) h += `<div class="note">${escapeHtml(e.note)}</div>`;
+    if (e.cmd) h += `<pre class="cmd">${escapeHtml(e.cmd)}</pre>`;
+    const out = (e.output || "").trim();
+    if (out) {
+      const long = out.split("\n").length > 12;
+      if (long) {
+        h += `<details><summary>output (${out.split("\n").length} lines)</summary><pre class="output">${escapeHtml(out)}</pre></details>`;
+      } else {
+        h += `<pre class="output">${escapeHtml(out)}</pre>`;
+      }
+    }
+    h += `</div>`;
+    return h;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  }
+
+  function render(idx) {
+    const t = DATA.tutorials[idx];
+    const main = document.getElementById("main");
+    main.innerHTML = "";
+    const h = document.createElement("div");
+    h.className = "tutorial-title";
+    h.textContent = t.meta.name + "  —  " + t.meta.platform;
+    main.appendChild(h);
+
+    t.rows.forEach(row => {
+      const isStructural = row.execs.length === 0 &&
+        (/^#\s|^##\s/.test(row.md.trim()));
+      const div = document.createElement("div");
+      const hasExec = row.execs.length > 0;
+      const hasFail = row.execs.some(e => e.status === "fail");
+      div.className = "row" + (hasExec ? "" : (isStructural ? " section" : " preamble")) +
+        (hasFail ? " has-fail" : "");
+
+      const left = document.createElement("div");
+      left.className = "col left";
+      left.innerHTML = `<div class="md">${mdToHtml(row.md)}</div>`;
+      div.appendChild(left);
+
+      if (hasExec || !isStructural) {
+        const right = document.createElement("div");
+        right.className = "col right";
+        if (hasExec) {
+          right.innerHTML = `<div class="col-label">Executed</div>` +
+            row.execs.map(execHtml).join("");
+        } else {
+          right.innerHTML = `<div class="col-label">Executed</div>` +
+            `<div class="empty">No commands run for this step.</div>`;
+        }
+        div.appendChild(right);
+      }
+      main.appendChild(div);
+    });
+
+    addAnchors(main, slug(t.meta.name));
+  }
+
+  function slug(s) {
+    return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  }
+
+  // Octicon "link" — the same glyph GitHub puts next to markdown headings.
+  const LINK_ICON =
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d=' +
+    '"M7.775 3.275a.75.75 0 0 0 1.06 1.06l1.25-1.25a2 2 0 1 1 2.83 2.83l-2.5 2.5a2 2 0 0 1-2.83 0 ' +
+    '.75.75 0 0 0-1.06 1.06 3.5 3.5 0 0 0 4.95 0l2.5-2.5a3.5 3.5 0 0 0-4.95-4.95l-1.25 1.25Zm-4.69 ' +
+    '9.64a2 2 0 0 1 0-2.83l2.5-2.5a2 2 0 0 1 2.83 0 .75.75 0 0 0 1.06-1.06 3.5 3.5 0 0 0-4.95 0l-2.5 ' +
+    '2.5a3.5 3.5 0 0 0 4.95 4.95l1.25-1.25a.75.75 0 0 0-1.06-1.06l-1.25 1.25a2 2 0 0 1-2.83 0Z"></path></svg>';
+
+  // Give every heading a stable slug id (deduplicated the way GitHub does, with
+  // -1/-2 suffixes) and a permalink whose href is "#<tutorial>/<heading>".
+  function addAnchors(container, tutSlug) {
+    const used = new Map();
+    const nodes = container.querySelectorAll(
+      ".tutorial-title, .md h1, .md h2, .md h3, .md h4, .md h5, .md h6"
+    );
+    nodes.forEach(node => {
+      const text = node.textContent.trim();
+      const isTitle = node.classList.contains("tutorial-title");
+      let href = "#" + tutSlug;
+      if (!isTitle) {
+        const base = slug(text) || "section";
+        const n = (used.get(base) || 0) + 1;
+        used.set(base, n);
+        node.id = n > 1 ? base + "-" + n : base;
+        href += "/" + node.id;
+      }
+      node.classList.add("heading-anchored");
+      const a = document.createElement("a");
+      a.className = "anchor";
+      a.href = href;
+      a.title = "Copy link to this section";
+      a.setAttribute("aria-label", "Permalink: " + text);
+      a.innerHTML = LINK_ICON;
+      node.insertBefore(a, node.firstChild);
+    });
+  }
+
+  let toastTimer = null;
+  function toast(msg) {
+    const el = document.getElementById("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("show"), 1600);
+  }
+
+  // navigator.clipboard needs a secure context; reports are often opened over
+  // file://, so fall back to the old execCommand path there.
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(
+        () => toast("Link copied"),
+        () => toast(text)
+      );
+      return;
+    }
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    toast(ok ? "Link copied" : text);
+  }
+
+  function scrollToId(id) {
+    if (!id) { window.scrollTo(0, 0); return; }
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ block: "start" });
+    el.classList.remove("flash");
+    void el.offsetWidth;  // restart the animation on a repeat click
+    el.classList.add("flash");
+  }
+
+  document.addEventListener("click", ev => {
+    const a = ev.target.closest && ev.target.closest("a.anchor");
+    if (!a) return;
+    ev.preventDefault();
+    const href = a.getAttribute("href");
+    copyText(location.href.split("#")[0] + href);
+    if (location.hash === href) scrollToId(a.parentNode.id);
+    else location.hash = href;  // hashchange scrolls
+  });
+
+  // "#<tutorial>" (name, slug, or index) optionally followed by "/<heading>".
+  function parseHash() {
+    const raw = decodeURIComponent(location.hash.replace(/^#/, ""));
+    if (!raw) return { idx: 0, frag: "" };
+    const cut = raw.indexOf("/");
+    const tut = cut >= 0 ? raw.slice(0, cut) : raw;
+    const frag = cut >= 0 ? raw.slice(cut + 1) : "";
+    if (/^\d+$/.test(tut) && +tut < DATA.tutorials.length) return { idx: +tut, frag };
+    const i = DATA.tutorials.findIndex(
+      t => slug(t.meta.name) === tut || t.meta.name === tut
+    );
+    if (i >= 0) return { idx: i, frag };
+    // No tutorial matched: treat a bare hash as a heading in the current one.
+    return { idx: currentIdx >= 0 ? currentIdx : 0, frag: cut >= 0 ? frag : raw };
+  }
+
+  let currentIdx = -1;
+  function show(idx, frag) {
+    if (idx !== currentIdx) {
+      picker.value = idx;
+      render(idx);
+      currentIdx = idx;
+    }
+    if (frag) requestAnimationFrame(() => scrollToId(frag));
+  }
+  picker.addEventListener("change", () => {
+    location.hash = slug(DATA.tutorials[+picker.value].meta.name);
+    show(+picker.value);
+  });
+  window.addEventListener("hashchange", () => {
+    const h = parseHash();
+    show(h.idx, h.frag);
+  });
+  const initial = parseHash();
+  show(initial.idx, initial.frag);
+  // Inlined screenshots have no intrinsic size until decoded, so the first
+  // scroll can land short; re-anchor once everything has loaded.
+  if (initial.frag) {
+    window.addEventListener("load", () => scrollToId(initial.frag), { once: true });
+  }
+</script>
+</body>
+</html>
