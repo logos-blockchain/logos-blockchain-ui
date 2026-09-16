@@ -48,6 +48,9 @@ Item {
     // The node's genesis time hasn't arrived, so it can never reach Online.
     property bool genesisPending: false
     property double genesisUnixMs: 0
+    // Seconds since the node entered Running, ticked by the backend. "Up for",
+    // not "online for" — see the .rep.
+    property int uptimeSeconds: 0
 
     QtObject {
         id: d
@@ -168,6 +171,21 @@ Item {
         // A balance stays empty when its lookup failed, so a total built from a
         // subset would read as the whole holding. Say so rather than imply it.
         readonly property bool partialTotal: totals.known > 0 && totals.known < accountCount
+
+        // ---- Uptime --------------------------------------------------------
+        function uptimeText(s) {
+            if (s < 60)
+                return qsTr("%1s").arg(s)
+            const m = Math.floor(s / 60)
+            if (m < 60)
+                return qsTr("%1m %2s").arg(m).arg(s % 60)
+            const h = Math.floor(m / 60)
+            if (h < 24)
+                return qsTr("%1h %2m").arg(h).arg(m % 60)
+            return qsTr("%1d %2h").arg(Math.floor(h / 24)).arg(h % 24)
+        }
+        readonly property bool showUptime:
+            root.connected && !root.statusStale && root.uptimeSeconds > 0
 
         // Groups a long figure so it can be read at a glance
         function groupDigits(s) {
@@ -426,20 +444,34 @@ Item {
 
                         Item { Layout.fillWidth: true }
 
-                        LogosText {
+                        ColumnLayout {
                             Layout.alignment: Qt.AlignTop
                             Layout.maximumWidth: root.width * 0.45
-                            visible: d.display.sub.length > 0
-                            text: d.display.sub
-                            // Red is the state's call, not the string's. Keying
-                            // this off "is statusMessage non-empty" reddened the
-                            // sub-line of every healthy state that happened to
-                            // have a stale poll error sitting behind it.
-                            color: d.display.isError ? Theme.palette.error
-                                                     : Theme.palette.textTertiary
-                            font.pixelSize: Theme.typography.secondaryText
-                            wrapMode: Text.WordWrap
-                            horizontalAlignment: Text.AlignRight
+                            spacing: Theme.spacing.tiny
+
+                            LogosText {
+                                Layout.alignment: Qt.AlignRight
+                                visible: d.showUptime
+                                text: qsTr("Uptime: %1").arg(d.uptimeText(root.uptimeSeconds))
+                                color: Theme.palette.textSecondary
+                                font.pixelSize: Theme.typography.secondaryText
+                            }
+
+                            LogosText {
+                                Layout.fillWidth: true
+                                visible: d.display.sub.length > 0
+                                text: d.display.sub
+                                // Red is the state's call, not the string's.
+                                // Keying this off "is statusMessage non-empty"
+                                // reddened the sub-line of every healthy state
+                                // that happened to have a stale poll error
+                                // sitting behind it.
+                                color: d.display.isError ? Theme.palette.error
+                                                         : Theme.palette.textTertiary
+                                font.pixelSize: Theme.typography.secondaryText
+                                wrapMode: Text.WordWrap
+                                horizontalAlignment: Text.AlignRight
+                            }
                         }
                     }
 

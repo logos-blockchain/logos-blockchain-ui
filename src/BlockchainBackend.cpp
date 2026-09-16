@@ -335,6 +335,31 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     if (!restoredDeploymentConfig.isEmpty())
         setDeploymentConfig(restoredDeploymentConfig);
 
+    // Uptime. Driven off the status transition rather than each setStatus call
+    // site, so a path that reaches Running without going through start() — a
+    // reconnect, a recovery — is counted too.
+    m_uptimeTimer = new QTimer(this);
+    m_uptimeTimer->setInterval(1000);
+    connect(m_uptimeTimer, &QTimer::timeout, this, [this]() {
+        setUptimeSeconds(static_cast<int>(m_uptime.elapsed() / 1000));
+    });
+    connect(this, &BlockchainBackendSimpleSource::statusChanged, this, [this]() {
+        if (status() == Running) {
+            // Guard the restart: Running can be re-announced without the node
+            // having stopped, and re-arming the clock there would sit the
+            // counter at 0 forever.
+            if (!m_uptime.isValid()) {
+                m_uptime.start();
+                setUptimeSeconds(0);
+            }
+            m_uptimeTimer->start();
+        } else {
+            m_uptimeTimer->stop();
+            m_uptime.invalidate();
+            setUptimeSeconds(0);
+        }
+    });
+
     // Re-apply pre-.rep behavior: normalize file URLs, then persist (as master did in setters).
     connect(this, &BlockchainBackendSimpleSource::userConfigChanged, this, [this]() {
         const QString p = userConfig();

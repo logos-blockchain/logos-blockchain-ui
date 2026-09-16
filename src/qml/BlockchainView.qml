@@ -488,6 +488,8 @@ Rectangle {
                     blockStreamEnded: monitor.streamEnded
                     genesisPending: monitor.genesisPending
                     genesisUnixMs: monitor.genesisUnixMs
+                    uptimeSeconds: (root.backend && root.backend.uptimeSeconds !== undefined)
+                                   ? root.backend.uptimeSeconds : 0
                 }
 
                 // ---- Section 1: Blocks ----

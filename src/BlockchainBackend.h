@@ -15,6 +15,7 @@
 
 class LogosAPI;
 class LogosAPIClient;
+class QTimer;
 
 // Source-side implementation of the BlockchainBackend .rep interface.
 //
@@ -98,6 +99,11 @@ private:
 
     mutable QElapsedTimer m_diagnosisAge;
     mutable const Rule* m_lastDiagnosis = nullptr;
+
+    // Monotonic on purpose: an NTP step or a manual clock change must not make
+    // the node look like it has been up for a day, or for negative time.
+    QElapsedTimer m_uptime;
+    QTimer* m_uptimeTimer = nullptr;
 
     LogosAPI* m_logosAPI = nullptr;
     LogosAPIClient* m_blockchainClient = nullptr;

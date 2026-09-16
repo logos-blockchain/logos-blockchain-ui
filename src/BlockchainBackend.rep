@@ -20,6 +20,12 @@ class BlockchainBackend
     // The processed-block stream delivered its end sentinel. Resubscribing needs
     // a node stop/start, so the silence after this is permanent, not slowness.
     PROP(bool blockStreamEnded READONLY)
+    // Whole seconds since the node entered Running, 0 whenever it is not. Counts
+    // from Running rather than from the node reporting itself caught up, because
+    // the caught-up verdict is debounced up in NodeStatusMonitor and the backend
+    // has no view of it — so this is "up for", not "online for", and the UI must
+    // word it that way.
+    PROP(int uptimeSeconds READONLY)
 
     SLOT(void startBlockchain())
     SLOT(void stopBlockchain())
