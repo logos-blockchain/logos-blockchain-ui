@@ -530,7 +530,12 @@ Item {
                     Layout.minimumWidth: d.minTileWidth
                     label: qsTr("Blend")
                     value: d.blendKnown ? d.blendLabel : qsTr("—")
-                    severity: d.blendKnown ? LogosStatCard.Info : LogosStatCard.None
+                    // A role is a fact, not a verdict, so tint it rather than
+                    // flag it. `severity: Info` also plants an ⓘ beside the
+                    // label, which is indistinguishable from the info button
+                    // already sitting there.
+                    valueColor: d.blendKnown ? Theme.palette.info
+                                             : Theme.palette.text
                     labelTrailing: [
                         LogosInfoButton {
                             title: qsTr("Blend")
