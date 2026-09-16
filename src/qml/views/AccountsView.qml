@@ -64,7 +64,8 @@ ColumnLayout {
                     padding: Theme.spacing.small
                     onClicked: root.refreshAccountsRequested()
                 }
-                InfoButton {
+                LogosInfoButton {
+                    title: qsTr("Accounts")
                     Layout.alignment: Qt.AlignVCenter
                     text: qsTr("Your wallet addresses and balances. Press Refresh to fetch the latest known addresses and their balances from the running node.")
                 }

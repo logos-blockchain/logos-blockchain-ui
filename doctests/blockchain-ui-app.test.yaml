@@ -75,7 +75,14 @@ sections:
             # The view routes straight to the node page when a config is already
             # saved in QSettings (see _applyInitialRoute), so on a machine that
             # has run the app before, the chooser is not what opens. "Change" is
-            # the real route back, and clicking it works from either state.
+            # the real route back; it lives on the Settings tab, so open that
+            # first. Both steps are harmless on a first run, where the chooser
+            # is already showing and neither object is hit.
+            - name: "Open the Settings tab"
+              action: click_object
+              find_by: "objectName"
+              find_value: "tabSettings"
+
             - name: "Go to the config chooser"
               action: click_object
               find_by: "objectName"
@@ -156,28 +163,32 @@ sections:
 
             - name: "Dashboard shows the config, node not started"
               action: wait_for
-              texts: ["Not Started"]
+              texts: ["Not started"]
               timeout: 8000
               screenshot: "blockchain-ui-node.png"
               text: |
-                The status reads **Not Started** — the operator starts the node
-                explicitly; generating or selecting a config never starts one.
+                The dashboard opens on a full-width status hero whose headline
+                *is* the state: it reads **Not started** — the operator starts
+                the node explicitly; generating or selecting a config never
+                starts one.
 
-                The line under the status carries the node's own explanation when
-                something goes wrong, so a failed start shows a real cause rather
-                than a generic error.
+                The line beside the headline carries the node's own explanation
+                when something goes wrong, so a failed start shows a real cause
+                rather than a generic error. Underneath it runs the lifecycle
+                lane (**Started → Online**), which lights up one stage at a time
+                as the node comes up.
 
             - name: "Most sections are gated on a running node"
               action: wait_for
-              texts: ["Dashboard", "Accounts", "Leader Rewards", "Explorer"]
+              texts: ["Dashboard", "Blocks", "Accounts", "Rewards", "Explorer", "Settings"]
               timeout: 6000
               screenshot: "blockchain-ui-nav.png"
               text: |
-                Navigation is a left-hand menu, one entry per section. Every
-                entry is rendered, but only **Dashboard** is usable before the
-                node is up: the rest carry `needsNode` in the nav model and are
-                disabled until it runs. That is why this doc-test stops here —
-                the accounts, transfer, leader-rewards and channel-deposit
+                Navigation is a tab bar under the node header, one tab per
+                section. Every tab is rendered, but only **Dashboard**,
+                **Blocks** and **Settings** are usable before the node is up:
+                the rest are disabled until it runs. That is why this doc-test
+                stops here — the accounts, transfer, rewards and channel-deposit
                 sections cannot be reached without first bootstrapping a node
                 against a live network.
 
@@ -190,9 +201,10 @@ sections:
       This doc-test stops at the node view, because everything past it is gated
       on a running node:
 
-      - **Every section except Dashboard** is disabled until a node is up: the
-        nav model marks them `needsNode`, so the Accounts, Transfer, Leader
-        Rewards, Channel Deposit and Explorer sections cannot be opened.
+      - **Most sections are disabled until a node is up**: the Accounts,
+        Transfer, Rewards, Channel Deposit and Explorer tabs are gated on a
+        running node and cannot be opened. Dashboard, Blocks and Settings stay
+        reachable throughout.
       - **Bootstrapping and syncing** need reachable peers speaking a matching
         chainsync protocol version. When they do not match the node fails Initial
         Block Download with `AllPeersFailed` — a real failure, but driven by

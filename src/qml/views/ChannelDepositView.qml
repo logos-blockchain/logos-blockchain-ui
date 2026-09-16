@@ -208,7 +208,8 @@ ColumnLayout {
             font.pixelSize: Theme.typography.secondaryText
             color: Theme.palette.textSecondary
         }
-        InfoButton {
+        LogosInfoButton {
+            title: qsTr("Channel Deposit")
             Layout.alignment: Qt.AlignVCenter
             text: qsTr("Deposit wallet notes (UTXOs) into a channel. Pick an address to load its notes, select the notes to consume, fill in the channel id, change/funding keys and max fee, then confirm to submit.")
         }

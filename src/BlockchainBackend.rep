@@ -13,6 +13,13 @@ class BlockchainBackend
     PROP(QString lastErrorMessage READONLY)
     // lastErrorMessage is progress (replaying blocks), not a failure.
     PROP(bool nodeRecovering READONLY)
+    // Ticks once per block the node processes. The value is meaningless; the
+    // *change* is the signal — proof the node is making progress, arriving on a
+    // push channel that keeps working when the status RPC is too busy to answer.
+    PROP(int processedBlockCount READONLY)
+    // The processed-block stream delivered its end sentinel. Resubscribing needs
+    // a node stop/start, so the silence after this is permanent, not slowness.
+    PROP(bool blockStreamEnded READONLY)
 
     SLOT(void startBlockchain())
     SLOT(void stopBlockchain())

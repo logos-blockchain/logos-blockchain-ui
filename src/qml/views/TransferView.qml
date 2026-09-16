@@ -57,7 +57,8 @@ ColumnLayout {
                     font.bold: true
                 }
                 Item { Layout.fillWidth: true }
-                InfoButton {
+                LogosInfoButton {
+                    title: qsTr("Transfer")
                     Layout.alignment: Qt.AlignVCenter
                     text: qsTr("Send funds between addresses. Choose a source address (its balance is shown), enter the recipient key and amount, then press Send.")
                 }

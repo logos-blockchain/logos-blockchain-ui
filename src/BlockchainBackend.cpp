@@ -66,26 +66,37 @@ QString cryptarchiaMode(const QVariant& payload)
 
 // Recovery rules come first so they win within a line: they mean progress, and
 // the node logs them at INFO, below the severity gate the failure rules need.
-const BlockchainBackend::Rule kRules[] = {
-    {"blocks to replay",       QT_TR_NOOP("Catching up — replaying stored blocks."),      true},
-    {"Chain recovery",         QT_TR_NOOP("Catching up — replaying stored blocks."),      true},
-    {"recovering chain state", QT_TR_NOOP("Catching up — replaying stored blocks."),      true},
+using P = BlockchainBackend::RulePriority;
 
-    {"crashed (signal",        QT_TR_NOOP("Node crashed. Reset chain state to recover."), false},
-    {"panicked",               QT_TR_NOOP("Node crashed. Reset chain state to recover."), false},
-    {"SIGABRT",                QT_TR_NOOP("Node crashed. Reset chain state to recover."), false},
-    {"SIGSEGV",                QT_TR_NOOP("Node crashed. Reset chain state to recover."), false},
-    {"Storage backend error",  QT_TR_NOOP("Chain database corrupted. Reset chain state."), false},
-    {"Storage request failed", QT_TR_NOOP("Chain database corrupted. Reset chain state."), false},
-    {"AddrInUse",              QT_TR_NOOP("Port already in use."),                        false},
-    {"address already in use", QT_TR_NOOP("Port already in use."),                        false},
-    {"failed to bind",         QT_TR_NOOP("Port already in use."),                        false},
-    {"AllPeersFailed",         QT_TR_NOOP("Can't reach the configured peers."),           false},
-    {"No space left",          QT_TR_NOOP("Disk full."),                                  false},
-    {"ENOSPC",                 QT_TR_NOOP("Disk full."),                                  false},
-    {"missing field",          QT_TR_NOOP("Config couldn't be parsed. Regenerate it."),   false},
-    {"failed to parse",        QT_TR_NOOP("Config couldn't be parsed. Regenerate it."),   false},
-    {"deserialize",            QT_TR_NOOP("Config couldn't be parsed. Regenerate it."),   false},
+const BlockchainBackend::Rule kRules[] = {
+    {"blocks to replay",       QT_TR_NOOP("Catching up — replaying stored blocks."),      true,  P::RootCause},
+    {"Chain recovery",         QT_TR_NOOP("Catching up — replaying stored blocks."),      true,  P::RootCause},
+    {"recovering chain state", QT_TR_NOOP("Catching up — replaying stored blocks."),      true,  P::RootCause},
+
+    // Peers were reachable and dialled fine; they refused the protocol version.
+    // "Can't reach the configured peers" would be flatly wrong here, and a dev
+    // build whose version is still the literal placeholder hits this every time.
+    {"does not support /logos-blockchain/chainsync",
+                               QT_TR_NOOP("Peers rejected this node's chain-sync protocol version — the node build doesn't match the network."),
+                                                                                          false, P::RootCause},
+    {"Storage backend error",  QT_TR_NOOP("Chain database corrupted. Reset chain state."), false, P::RootCause},
+    {"Storage request failed", QT_TR_NOOP("Chain database corrupted. Reset chain state."), false, P::RootCause},
+    {"AddrInUse",              QT_TR_NOOP("Port already in use."),                        false, P::RootCause},
+    {"address already in use", QT_TR_NOOP("Port already in use."),                        false, P::RootCause},
+    {"failed to bind",         QT_TR_NOOP("Port already in use."),                        false, P::RootCause},
+    {"No space left",          QT_TR_NOOP("Disk full."),                                  false, P::RootCause},
+    {"ENOSPC",                 QT_TR_NOOP("Disk full."),                                  false, P::RootCause},
+    {"missing field",          QT_TR_NOOP("Config couldn't be parsed. Regenerate it."),   false, P::RootCause},
+    {"failed to parse",        QT_TR_NOOP("Config couldn't be parsed. Regenerate it."),   false, P::RootCause},
+    {"deserialize",            QT_TR_NOOP("Config couldn't be parsed. Regenerate it."),   false, P::RootCause},
+
+    // A roll-up: it says every peer failed, not why. Beaten by any root cause.
+    {"AllPeersFailed",         QT_TR_NOOP("Can't reach the configured peers."),           false, P::Summary},
+
+    {"crashed (signal",        QT_TR_NOOP("Node crashed. Reset chain state to recover."), false, P::Consequence},
+    {"panicked",               QT_TR_NOOP("Node crashed. Reset chain state to recover."), false, P::Consequence},
+    {"SIGABRT",                QT_TR_NOOP("Node crashed. Reset chain state to recover."), false, P::Consequence},
+    {"SIGSEGV",                QT_TR_NOOP("Node crashed. Reset chain state to recover."), false, P::Consequence},
 };
 
 // `tracing` writes the level as a bare uppercase token ("...Z ERROR target: ...").
@@ -148,18 +159,41 @@ const BlockchainBackend::Rule* BlockchainBackend::scanNodeLog() const
     if (tail < size)
         buf = buf.mid(buf.indexOf('\n') + 1);
 
+    // Once something matches, keep looking back this far for a more specific
+    // verdict — the reason a node died is logged just before the crash. Bounded
+    // so a stale cause from an earlier run in the same tail can't win.
+    constexpr int kLookbackLines = 300;
+
     const QStringList lines = QString::fromUtf8(buf).split(QLatin1Char('\n'));
+    const Rule* best = nullptr;
+    int bestLine = -1;
+
     for (int i = lines.size() - 1; i >= 0; --i) {
+        if (best && bestLine - i > kLookbackLines)
+            break;
         const QString& line = lines.at(i);
         const bool failureLine = isFailureLine(line);
         for (const Rule& rule : kRules) {
             if (!rule.recovering && !failureLine)
                 continue;
-            if (line.contains(QLatin1String(rule.needle)))
+            if (!line.contains(QLatin1String(rule.needle)))
+                continue;
+            // Recovery means the node is coming up, not failing — nothing
+            // outranks it, and it is the newest word on the matter.
+            if (rule.recovering)
                 return &rule;
+            // Lower priority wins outright; newest wins within a priority,
+            // which the newest-first walk already gives us.
+            if (!best || rule.priority < best->priority) {
+                best = &rule;
+                bestLine = i;
+            }
+            break;
         }
+        if (best && best->priority == RootCause)
+            break;
     }
-    return nullptr;
+    return best;
 }
 
 // The node view polls getCryptarchiaInfo on a timer; without this cache every
@@ -349,6 +383,26 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
                 const QString raw = data.isEmpty() ? QString() : data.first().toString();
                 m_blockModel->appendRaw(timestamp, raw);
             });
+
+        // Fires per block the node *processes*, which includes the blocks it
+        // applies while catching up — the phase where get_cryptarchia_info is
+        // most likely to be too busy to answer. Only the arrival is consumed
+        // here; the event's chain-state payload is left unparsed until its
+        // schema is confirmed against the node's /cryptarchia/blocks/stream.
+        m_blockchainClient->onEvent(
+            replica, "processedBlock",
+            [this](const QString&, const QVariantList& data) {
+                const QString raw = data.isEmpty() ? QString() : data.first().toString();
+                // The stream reports its own end exactly once, as the JSON
+                // literal `null`. It cannot be resubscribed without restarting
+                // the node, so the silence that follows is terminal — say so
+                // rather than letting it read as a slow node.
+                if (raw.trimmed() == QLatin1String("null")) {
+                    setBlockStreamEnded(true);
+                    return;
+                }
+                setProcessedBlockCount(processedBlockCount() + 1);
+            });
     } else {
         setError(QStringLiteral("Failed to subscribe to events"));
     }
@@ -495,6 +549,10 @@ void BlockchainBackend::startBlockchain()
     // Starting now renders lastErrorMessage, so clear the previous run's.
     setLastErrorMessage(QString());
     setNodeRecovering(false);
+    // The streams are resubscribed below, so last run's progress and end-of-
+    // stream verdict must not carry over into this one.
+    setProcessedBlockCount(0);
+    setBlockStreamEnded(false);
     m_diagnosisAge.invalidate();
     setStatus(Starting);
 
