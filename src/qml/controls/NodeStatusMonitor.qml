@@ -45,6 +45,15 @@ Item {
     // Seconds until the next retry. Display only.
     readonly property alias nextPollSeconds: d.nextPollSeconds
 
+    // The node's own genesis time has not arrived yet, so it cannot reach
+    // Online no matter how long it runs or how many blocks it takes. The module
+    // flattens every non-Online state into "Bootstrapping", so without this a
+    // misconfigured node is indistinguishable from one that is merely slow —
+    // and it would sit there claiming to sync, forever. Re-evaluated each time
+    // the clock is polled, which is often enough for a date.
+    readonly property bool genesisPending: d.genesisUnixMs > 0 && d.genesisUnixMs > Date.now()
+    readonly property alias genesisUnixMs: d.genesisUnixMs
+
     // Catching up, we can see the node perfectly well, and nothing has moved for
     // ten minutes. Unlike `stale` this is substantiated, and the user has to act.
     readonly property bool stalled:
@@ -79,6 +88,10 @@ Item {
         property string infoJson: ""
         property string error: ""
         property string timeInfoJson: ""
+        // 0 = not reported yet. Set from each clock poll rather than bound, so
+        // a malformed payload leaves the last good value instead of claiming
+        // genesis is unknown.
+        property double genesisUnixMs: 0
 
         property bool synced: false
         property bool hasBeenOnline: false
@@ -165,6 +178,7 @@ Item {
             d.heightSeen = ""
             d.progressFresh = false
             d.progressStalled = false
+            d.genesisUnixMs = 0
         }
 
         function onPollSuccess(value) {
@@ -223,9 +237,24 @@ Item {
                 return
             logos.watch(
                 root.backend.getTimeInfo(),
-                function(result) { d.timeInfoJson = result.success ? result.value : "" },
+                function(result) {
+                    d.timeInfoJson = result.success ? result.value : ""
+                    d.readGenesis(d.timeInfoJson)
+                },
                 function(error) { d.timeInfoJson = "" }
             )
+        }
+
+        function readGenesis(json) {
+            if (!json || json.length === 0)
+                return
+            try {
+                const g = JSON.parse(json).genesis_time_unix_ms
+                if (g !== undefined && g !== null)
+                    d.genesisUnixMs = Number(g)
+            } catch (e) {
+                // Leave the last good value; a bad payload isn't evidence.
+            }
         }
     }
 

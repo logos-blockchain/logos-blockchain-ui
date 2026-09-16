@@ -23,6 +23,13 @@ Rectangle {
     // viewModuleReadyChanged signal instead.
     property bool ready: false
 
+    // Whether the link has ever been up this session. Losing it and never
+    // having had it look identical in `backend`/`status`, but mean opposite
+    // things to the user: one is a fresh launch, the other is a dead node
+    // process whose last reported status is now frozen and untrustworthy.
+    property bool everReady: false
+    onReadyChanged: if (root.ready) root.everReady = true
+
     Connections {
         target: logos
         function onViewModuleReadyChanged(moduleName, isReady) {
@@ -340,9 +347,19 @@ Rectangle {
                 && !!root.backend.userConfig
                 && (root.backend.status === BlockchainBackend.NotStarted
                     || root.backend.status === BlockchainBackend.Stopped)
+            // Starting is included deliberately: the start RPC outlives replay
+            // and IBD, so a node can sit in Starting for many minutes. Without
+            // this there is no way to abort a sync short of killing the app.
+            // The backend already permits it (stopBlockchain guards on
+            // Running/Starting/Error).
             readonly property bool canStop: root.backend
                 && (root.backend.status === BlockchainBackend.Running
+                    || root.backend.status === BlockchainBackend.Starting
                     || root.backend.status === BlockchainBackend.Error)
+            // The one genuinely transient state: the stop is already in flight,
+            // so there is nothing to offer until it lands.
+            readonly property bool stopping: root.backend
+                && root.backend.status === BlockchainBackend.Stopping
 
             // ---- Header: identity + node control ----
             RowLayout {
@@ -374,8 +391,10 @@ Rectangle {
                 LogosButton {
                     objectName: "nodeRunButton"
                     variant: LogosButton.Variant.Primary
-                    text: opPage.canStop ? qsTr("Stop Node") : qsTr("Start Node")
-                    enabled: opPage.canStop ? opPage.canStop : opPage.canStart
+                    text: opPage.stopping ? qsTr("Stopping…")
+                          : opPage.canStop ? qsTr("Stop Node")
+                          : qsTr("Start Node")
+                    enabled: !opPage.stopping && (opPage.canStop || opPage.canStart)
                     onClicked: {
                         if (!root.backend)
                             return
@@ -450,6 +469,8 @@ Rectangle {
                 NodeDashboardView {
                     accountsModel: root.accountsModel
                     status: root.backend ? root.backend.status : -1
+                    connected: root.ready && root.backend !== null
+                    everConnected: root.everReady
                     statusMessage: monitor.error
                                    || (root.backend ? root.backend.lastErrorMessage : "")
                     nodeRecovering: !!root.backend && root.backend.nodeRecovering
@@ -465,6 +486,8 @@ Rectangle {
                     statusNextPollSeconds: monitor.nextPollSeconds
                     syncStalled: monitor.stalled
                     blockStreamEnded: monitor.streamEnded
+                    genesisPending: monitor.genesisPending
+                    genesisUnixMs: monitor.genesisUnixMs
                 }
 
                 // ---- Section 1: Blocks ----

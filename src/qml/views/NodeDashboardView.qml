@@ -17,6 +17,11 @@ Item {
     // --- Public API ---
     required property var accountsModel
     property int status: -1                 // backend.status; -1 = not connected
+    // Whether we currently have a live link to the backend, and whether we ever
+    // had one. `status` freezes at its last value when the link drops, so
+    // without these a dead node process reads as a confident "Online".
+    property bool connected: false
+    property bool everConnected: false
     property string statusMessage: ""
     property bool nodeRecovering: false
     // get_cryptarchia_info payload, polled by BlockchainView.
@@ -40,6 +45,9 @@ Item {
     // Unlike statusStale these are substantiated, and the user has to act.
     property bool syncStalled: false
     property bool blockStreamEnded: false
+    // The node's genesis time hasn't arrived, so it can never reach Online.
+    property bool genesisPending: false
+    property double genesisUnixMs: 0
 
     QtObject {
         id: d
@@ -93,6 +101,13 @@ Item {
         readonly property bool synced: root.synced
 
         // ---- Consensus clock -----------------------------------------------
+        // Date only: the exact second of a genesis years away is noise, and the
+        // point of showing it at all is "that is not now".
+        readonly property string genesisText:
+            root.genesisUnixMs > 0
+            ? new Date(root.genesisUnixMs).toLocaleDateString(Qt.locale(), Locale.ShortFormat)
+            : qsTr("in the future")
+
         readonly property var timeInfo: parseJson(root.timeInfoJson)
         readonly property string epoch: {
             const v = timeInfo ? timeInfo.current_epoch : undefined
@@ -199,6 +214,17 @@ Item {
         // Losing contact with the node is deliberately NOT a state here — see
         // `display` below.
         readonly property var state: {
+            // First, because every branch below reads `status`, and `status`
+            // freezes at whatever it was when the link dropped. Reporting a
+            // frozen "Online" — or falling through to "Not started" as though
+            // the node was never launched — are both inventions.
+            if (!root.connected)
+                return root.everConnected
+                    ? { label: qsTr("Disconnected"),
+                        sub: qsTr("Lost contact with the node module — restart the app to reconnect."),
+                        color: Theme.palette.error, dots: false, isError: true }
+                    : { label: qsTr("Not started"), sub: "",
+                        color: Theme.palette.textSecondary, dots: false, isError: false }
             if (root.status === BlockchainBackend.Error)
                 return { label: qsTr("Error"),
                          sub: root.statusMessage || qsTr("Node error."),
@@ -220,6 +246,17 @@ Item {
                 // change is the *colour* — a sub-line edit under an amber card
                 // still reads "working, wait", which is the opposite of what
                 // the user should do. So the headline stays and goes red.
+                // Genesis first: it is the one case that can never resolve on
+                // its own, so it outranks "not progressing" and "stream died".
+                // Without it the module's flattening of every non-Online state
+                // into "Bootstrapping" leaves a misconfigured node claiming to
+                // sync forever — and if blocks keep arriving, the stall
+                // detector never fires either.
+                if (running && root.genesisPending)
+                    return { label: qsTr("Bootstrapping"),
+                             sub: qsTr("Genesis is %1 — the node can't finish syncing until then. Its config likely points at the wrong network.")
+                                      .arg(d.genesisText),
+                             color: Theme.palette.error, dots: false, isError: true }
                 if (running && (root.blockStreamEnded || root.syncStalled))
                     return { label: qsTr("Bootstrapping"),
                              sub: root.blockStreamEnded
@@ -315,6 +352,13 @@ Item {
             default:                     return qsTr("—")
             }
         }
+
+        // Tiles fed by the status poll go dim when it stops answering. Without
+        // this the hero says "I can't see the node" while four tiles carry on
+        // presenting frozen numbers as though they were live. Only the
+        // poll-derived ones: Balance, Vouchers, Blend, Peer ID and Epoch come
+        // from elsewhere and are not stale just because this poll is.
+        readonly property real infoOpacity: root.statusStale ? 0.45 : 1.0
 
         // The longest value a tile has to hold decides the column count: below
         // this the grid drops a column instead of squeezing the number.
@@ -522,6 +566,7 @@ Item {
                     Layout.preferredWidth: 1
                     Layout.minimumWidth: d.minTileWidth
                     label: qsTr("Slot")
+                    opacity: d.infoOpacity
                     value: d.num("slot")
                     flashOnChange: true
                     flashColor: Theme.palette.success
@@ -538,6 +583,7 @@ Item {
                     Layout.preferredWidth: 1
                     Layout.minimumWidth: d.minTileWidth
                     label: qsTr("Height")
+                    opacity: d.infoOpacity
                     value: d.num("height")
                     flashOnChange: true
                     flashColor: Theme.palette.success
@@ -554,6 +600,7 @@ Item {
                     Layout.preferredWidth: 1
                     Layout.minimumWidth: d.minTileWidth
                     label: qsTr("LiB")
+                    opacity: d.infoOpacity
                     value: d.shorten(d.hash("lib"))
                     // lib_slot rides along with the hash it belongs to: both
                     // describe the last irreversible block.
@@ -575,6 +622,7 @@ Item {
                     Layout.preferredWidth: 1
                     Layout.minimumWidth: d.minTileWidth
                     label: qsTr("TiP")
+                    opacity: d.infoOpacity
                     value: d.shorten(d.hash("tip"))
                     labelTrailing: [
                         LogosInfoButton {

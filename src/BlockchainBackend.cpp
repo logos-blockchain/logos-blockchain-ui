@@ -178,10 +178,14 @@ const BlockchainBackend::Rule* BlockchainBackend::scanNodeLog() const
                 continue;
             if (!line.contains(QLatin1String(rule.needle)))
                 continue;
-            // Recovery means the node is coming up, not failing — nothing
-            // outranks it, and it is the newest word on the matter.
+            // Recovery means the node is coming up — but only if it is still
+            // the newest word. A failure logged *after* a replay line means the
+            // replay is over, and returning "catching up" for a node that has
+            // since crashed turns a hard failure into a reassuring progress
+            // message. A replay line is also a boundary: anything older than it
+            // belongs to a previous phase, so stop rather than keep looking.
             if (rule.recovering)
-                return &rule;
+                return best ? best : &rule;
             // Lower priority wins outright; newest wins within a priority,
             // which the newest-first walk already gives us.
             if (!best || rule.priority < best->priority) {
