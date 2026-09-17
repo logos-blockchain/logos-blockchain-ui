@@ -20,6 +20,22 @@ class BlockchainBackend
     // The processed-block stream delivered its end sentinel. Resubscribing needs
     // a node stop/start, so the silence after this is permanent, not slowness.
     PROP(bool blockStreamEnded READONLY)
+    // Whole seconds the node has been *online*, 0 whenever it is not. Both the
+    // clock and the online edge live here: getCryptarchiaInfo already reads the
+    // node's `mode`, so the backend has the verdict in hand and only needed the
+    // same debounce the view applies. Keeping it here makes the clock monotonic,
+    // survive view reloads, and cost no round trip per edge.
+    // Falling out of Online resets it — time online is not cumulative, and a
+    // counter that survived a resync would be claiming continuity it never had.
+    // Pushed at the granularity the view renders, not once a second; see
+    // uptimeTickMs in BlockchainBackend.cpp.
+    PROP(int uptimeSeconds READONLY)
+    // Whether the NODE module is reachable — as opposed to this backend, which
+    // is what the view could see before and which stays healthy when the node
+    // module dies. False means its process is gone, not that it is busy. This is
+    // NOT the view's `connected`: that one means "the app lost the backend" and
+    // asks for an app restart, which is the wrong remedy for a dead node module.
+    PROP(bool nodeModuleReachable READONLY)
 
     SLOT(void startBlockchain())
     SLOT(void stopBlockchain())
@@ -37,6 +53,12 @@ class BlockchainBackend
     SLOT(QVariantMap generateConfig(QString outputPath, QStringList initialPeers, int netPort, int blendPort, QString httpAddr, QString externalAddress, bool noPublicIpCheck, int deploymentMode, QString deploymentConfigPath, QString statePath))
     SLOT(QVariantMap getNotes(QString walletAddressHex, QString optionalTipHex))
     SLOT(QVariantMap channelDepositWithNotes(QString channelIdHex, QStringList inputNoteIdHexes, QString metadataBase58, QString changePublicKeyHex, QStringList fundingPublicKeyHexes, QString maxTxFee, QString optionalTipHex))
+    // A stop the user asked for was refused. Deliberately a signal, not a state:
+    // the node is still running and still catching up, so the status must keep
+    // saying so — this is a one-off "that didn't work, try again", not a mode
+    // the UI should sit in.
+    SIGNAL(stopFailed(QString reason))
+
     SLOT(void clearBlocks())
     SLOT(void copyToClipboard(QString text))
 }

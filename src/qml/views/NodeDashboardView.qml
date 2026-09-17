@@ -9,6 +9,8 @@ import Logos.Controls
 
 import Logos.BlockchainBackend 1.0
 
+import "infoContent.js" as InfoContent
+
 // The node dashboard: a full-width status hero carrying the lifecycle lane,
 // over a responsive grid of metric tiles.
 Item {
@@ -21,6 +23,7 @@ Item {
     // had one. `status` freezes at its last value when the link drops, so
     // without these a dead node process reads as a confident "Online".
     property bool connected: false
+    property bool moduleReachable: true
     property bool everConnected: false
     property string statusMessage: ""
     property bool nodeRecovering: false
@@ -48,6 +51,9 @@ Item {
     // The node's genesis time hasn't arrived, so it can never reach Online.
     property bool genesisPending: false
     property double genesisUnixMs: 0
+    // Seconds the node has been online, ticked by the backend and reset by it
+    // whenever the view stops reporting Online — see the .rep.
+    property int uptimeSeconds: 0
 
     QtObject {
         id: d
@@ -169,36 +175,68 @@ Item {
         // subset would read as the whole holding. Say so rather than imply it.
         readonly property bool partialTotal: totals.known > 0 && totals.known < accountCount
 
-        // Shortens a long figure to K/M/B/T so it fits a tile instead of
-        // eliding to a meaningless prefix. Done here rather than in
-        // LogosStatCard because the suffixes are English — a design system
-        // cannot pick them for every locale. The exact figure stays one click
-        // away on the tile's copy button.
-        readonly property int balanceMaxChars: 9
+        // ---- Stopping ------------------------------------------------------
+        // A stop is outstanding for long enough that silence reads as a dead
+        // button rather than as work in progress.
+        property bool stopSlow: false
+        // What the node was doing when the stop was asked for. Captured on the
+        // way in, because the stop clears the backend flags that describe it.
+        // Read off `synced` rather than nodeRecovering for exactly that reason:
+        // it belongs to the monitor, so the stop cannot race it.
+        property bool stopBehindCatchUp: false
 
-        function tierNum(v) {
-            return v >= 100 ? String(Math.round(v))
-                 : v >= 10 ? v.toFixed(0)
-                 : v.toFixed(1)
+        // ---- Uptime --------------------------------------------------------
+        // The units here are the contract the backend ticks against: it widens
+        // uptimeSeconds' push interval to match the smallest unit shown, so
+        // adding seconds back at an hour would show a frozen seconds field.
+        // See uptimeTickMs in BlockchainBackend.cpp.
+        function uptimeText(s) {
+            if (s < 60)
+                return qsTr("%1s").arg(s)
+            const m = Math.floor(s / 60)
+            if (m < 60)
+                return qsTr("%1m %2s").arg(m).arg(s % 60)
+            const h = Math.floor(m / 60)
+            if (h < 24)
+                return qsTr("%1h %2m").arg(h).arg(m % 60)
+            return qsTr("%1d %2h").arg(Math.floor(h / 24)).arg(h % 24)
         }
+        readonly property bool showUptime: root.connected && root.uptimeSeconds > 0
 
-        function abbreviate(s) {
-            if (!s || s.length <= balanceMaxChars)
+        function groupSizesFor(locale) {
+            const sep = locale.groupSeparator
+            if (!sep)
+                return [0, 0]
+            const parts = (1234567890).toLocaleString(locale, 'f', 0).split(sep)
+            if (parts.length < 2)
+                return [3, 3]
+            const primary = parts[parts.length - 1].length
+            return [primary, parts.length > 2 ? parts[parts.length - 2].length : primary]
+        }
+        readonly property var groupSizes: groupSizesFor(Qt.locale())
+
+        // Groups a long figure so it can be read at a glance. Walks the string
+        // rather than the number: these are u64s, and Number() loses them.
+        // `sizes` defaults to this locale's; pass another locale's to format for
+        // it (which is also what makes this checkable against toLocaleString).
+        function groupDigits(s, sizes) {
+            const g = sizes || groupSizes
+            if (!s || g[0] <= 0)
                 return s
-            const n = parseFloat(s)
-            if (!isFinite(n))
-                return s
-            const tiers = [[1, ""], [1e3, "K"], [1e6, "M"], [1e9, "B"], [1e12, "T"]]
-            const candidates = []
-            for (let i = 0; i < tiers.length; i++) {
-                const v = n / tiers[i][0]
-                if (i === 0 || v >= 1)
-                    candidates.push(tierNum(v) + tiers[i][1])
+            const sep = Qt.locale().groupSeparator
+            let out = ""
+            let sinceSep = 0
+            let width = g[0]
+            for (let i = s.length - 1; i >= 0; i--) {
+                if (sinceSep === width) {
+                    out = sep + out
+                    sinceSep = 0
+                    width = g[1]
+                }
+                out = s.charAt(i) + out
+                sinceSep += 1
             }
-            for (let j = 0; j < candidates.length; j++)
-                if (candidates[j].length <= balanceMaxChars)
-                    return candidates[j]
-            return candidates[candidates.length - 1]
+            return out
         }
 
         // ---- Vouchers ------------------------------------------------------
@@ -221,10 +259,18 @@ Item {
             if (!root.connected)
                 return root.everConnected
                     ? { label: qsTr("Disconnected"),
-                        sub: qsTr("Lost contact with the node module — restart the app to reconnect."),
+                        sub: qsTr("Lost contact with the backend — restart the app to reconnect."),
                         color: Theme.palette.error, dots: false, isError: true }
                     : { label: qsTr("Not started"), sub: "",
                         color: Theme.palette.textSecondary, dots: false, isError: false }
+            if (!root.moduleReachable)
+                return { label: qsTr("Node stopped"),
+                         // The backend diagnoses the cause from the node's log
+                         // where it can; the generic line is the fallback for
+                         // when it knows nothing.
+                         sub: root.statusMessage
+                              || qsTr("The node process stopped unexpectedly. Start it again."),
+                         color: Theme.palette.error, dots: false, isError: true }
             if (root.status === BlockchainBackend.Error)
                 return { label: qsTr("Error"),
                          sub: root.statusMessage || qsTr("Node error."),
@@ -233,7 +279,11 @@ Item {
             // nodeRecovering set when you stop a replaying node, so testing it
             // first would swallow the Stop and leave the click without feedback.
             if (root.status === BlockchainBackend.Stopping)
-                return { label: qsTr("Stopping"), sub: "",
+                return { label: qsTr("Stopping"),
+                         sub: !d.stopSlow ? ""
+                              : d.stopBehindCatchUp
+                                ? qsTr("The node is busy catching up — stopping can take a while.")
+                                : qsTr("Still waiting on the node to shut down."),
                          color: Theme.palette.warning, dots: true, isError: false }
             // Replay (from disk) and bootstrap (from peers) are one wait to the
             // user: catching up. The sub-line names the source, because that is
@@ -320,10 +370,15 @@ Item {
                 return -1
             if (root.status === BlockchainBackend.Error)
                 return 0                        // failed while starting
-            if (root.status === BlockchainBackend.Starting)
-                return 0                        // Started, itself in progress
+            // Recovery outranks Starting, exactly as it does in the hero above.
+            // The backend leaves status at Starting while it replays, so
+            // testing Starting first pinned the lane on "Started" while the
+            // headline already said Bootstrapping — the two reading the same
+            // two facts in opposite orders and disagreeing on screen.
             if (root.nodeRecovering)
                 return 1                        // Started done, working toward Online
+            if (root.status === BlockchainBackend.Starting)
+                return 0                        // Started, itself in progress
             if (running)
                 return 1                        // Online — busy while it syncs
             return -1
@@ -365,6 +420,22 @@ Item {
         readonly property int minTileWidth: 210
     }
 
+    onStatusChanged: {
+        d.stopSlow = false
+        if (root.status === BlockchainBackend.Stopping) {
+            d.stopBehindCatchUp = !root.synced
+            stopSlowTimer.restart()
+        } else {
+            stopSlowTimer.stop()
+        }
+    }
+
+    Timer {
+        id: stopSlowTimer
+        interval: 4000
+        onTriggered: d.stopSlow = true
+    }
+
     Instantiator {
         id: accounts
         model: root.accountsModel
@@ -402,62 +473,89 @@ Item {
                         Layout.fillWidth: true
                         spacing: 0
 
-                        LogosText {
-                            text: d.display.label
-                            color: d.display.color
-                            font.pixelSize: 32
-                            font.weight: Theme.typography.weightBold
-                            elide: Text.ElideRight
-                        }
-
-                        // Reserved-width ellipsis for the transitional states:
-                        // only opacity animates, so the headline never shifts.
-                        Row {
-                            visible: d.display.dots
+                        RowLayout {
+                            Layout.fillWidth: false
+                            Layout.alignment: Qt.AlignVCenter
                             spacing: 0
 
-                            Repeater {
-                                model: 3
+                            LogosText {
+                                text: d.display.label
+                                color: d.display.color
+                                font.pixelSize: 32
+                                font.weight: Theme.typography.weightBold
+                                elide: Text.ElideRight
+                            }
 
-                                LogosText {
-                                    id: dot
+                            Row {
+                                visible: d.display.dots
+                                spacing: 0
 
-                                    required property int index
+                                Repeater {
+                                    model: 3
 
-                                    text: "."
-                                    color: d.display.color
-                                    font.pixelSize: 32
-                                    font.weight: Theme.typography.weightBold
+                                    LogosText {
+                                        id: dot
 
-                                    SequentialAnimation on opacity {
-                                        running: d.display.dots
-                                        loops: Animation.Infinite
-                                        NumberAnimation { to: 0.25; duration: 0 }
-                                        PauseAnimation { duration: dot.index * 260 }
-                                        NumberAnimation { to: 1.0; duration: 180 }
-                                        NumberAnimation { to: 0.25; duration: 180 }
-                                        PauseAnimation { duration: (2 - dot.index) * 260 + 520 }
+                                        required property int index
+
+                                        text: "."
+                                        color: d.display.color
+                                        font.pixelSize: 32
+                                        font.weight: Theme.typography.weightBold
+
+                                        SequentialAnimation on opacity {
+                                            running: d.display.dots
+                                            loops: Animation.Infinite
+                                            NumberAnimation { to: 0.25; duration: 0 }
+                                            PauseAnimation { duration: dot.index * 260 }
+                                            NumberAnimation { to: 1.0; duration: 180 }
+                                            NumberAnimation { to: 0.25; duration: 180 }
+                                            PauseAnimation { duration: (2 - dot.index) * 260 + 520 }
+                                        }
                                     }
                                 }
                             }
+
                         }
 
                         Item { Layout.fillWidth: true }
 
-                        LogosText {
+                        ColumnLayout {
                             Layout.alignment: Qt.AlignTop
                             Layout.maximumWidth: root.width * 0.45
-                            visible: d.display.sub.length > 0
-                            text: d.display.sub
-                            // Red is the state's call, not the string's. Keying
-                            // this off "is statusMessage non-empty" reddened the
-                            // sub-line of every healthy state that happened to
-                            // have a stale poll error sitting behind it.
-                            color: d.display.isError ? Theme.palette.error
-                                                     : Theme.palette.textTertiary
-                            font.pixelSize: Theme.typography.secondaryText
-                            wrapMode: Text.WordWrap
-                            horizontalAlignment: Text.AlignRight
+                            spacing: Theme.spacing.tiny
+
+                            LogosText {
+                                Layout.alignment: Qt.AlignRight
+                                visible: d.showUptime
+                                text: qsTr("Uptime: %1").arg(d.uptimeText(root.uptimeSeconds))
+                                color: Theme.palette.textSecondary
+                                font.pixelSize: Theme.typography.secondaryText    
+                                opacity: d.infoOpacity
+                            }
+
+                            LogosText {
+                                Layout.fillWidth: true
+                                visible: d.display.sub.length > 0
+                                text: d.display.sub
+                                // Red is the state's call, not the string's.
+                                // Keying this off "is statusMessage non-empty"
+                                // reddened the sub-line of every healthy state
+                                // that happened to have a stale poll error
+                                // sitting behind it.
+                                color: d.display.isError ? Theme.palette.error
+                                                         : Theme.palette.textTertiary
+                                font.pixelSize: Theme.typography.secondaryText
+                                wrapMode: Text.WordWrap
+                                horizontalAlignment: Text.AlignRight
+                            }
+                        }
+
+                        LogosInfoButton {
+                            Layout.alignment: Qt.AlignTop
+                            Layout.leftMargin: Theme.spacing.small
+                            title: qsTr("Status")
+                            dialogContentItem: InfoSections { info: InfoContent.status }
                         }
                     }
 
@@ -468,7 +566,10 @@ Item {
                         busy: d.lifeBusy
                         failed: d.lifeFailed
                         stages: [
-                            LogosStage { label: qsTr("Started") },
+                            LogosStage {
+                                label: qsTr("Started")
+                                busyLabel: qsTr("Starting")
+                            },
                             LogosStage {
                                 label: qsTr("Online")
                                 busyLabel: qsTr("Syncing…")
@@ -491,7 +592,8 @@ Item {
                     Layout.minimumWidth: d.minTileWidth
                     label: qsTr("Total Balance")
                     value: d.totals.text.length > 0
-                           ? d.abbreviate(d.totals.text) : qsTr("—")
+                           ? d.groupDigits(d.totals.text) : qsTr("—")
+                    valueFontSizeMode: Text.HorizontalFit
                     // A total built from a subset would read as the whole
                     // holding, so the figure itself is flagged, not just noted.
                     severity: d.partialTotal ? LogosStatCard.Warning
@@ -502,10 +604,10 @@ Item {
                     labelTrailing: [
                         LogosInfoButton {
                             title: qsTr("Total Balance")
-                            text: qsTr("Sum of the balances of every known wallet account, in base units. The node does not publish a token denomination, so this is not converted to LGO. Long figures are shortened — copy for the exact value.")
+                            text: qsTr("Sum of the balances of every known wallet account. The node reports each balance as a plain count and publishes no denomination for the token, so there is nothing to convert to and no decimal point implied — this is the figure itself, grouped for reading. Copy for the ungrouped value.")
                         }
                     ]
-                    captionTrailing: [
+                    valueTrailing: [
                         LogosCopyButton { value: d.totals.text }
                     ]
                 }
@@ -617,7 +719,7 @@ Item {
                             text: qsTr("Header id of the last irreversible block — the point the chain can no longer reorganise past.")
                         }
                     ]
-                    captionTrailing: [
+                    valueTrailing: [
                         LogosCopyButton { value: d.hash("lib") }
                     ]
                 }
@@ -635,7 +737,7 @@ Item {
                             text: qsTr("Header id of the current chain tip — the most recent block this node has applied.")
                         }
                     ]
-                    captionTrailing: [
+                    valueTrailing: [
                         LogosCopyButton { value: d.hash("tip") }
                     ]
                 }
@@ -652,7 +754,7 @@ Item {
                             text: qsTr("This node's libp2p identity, derived from the selected user config. It does not need a running node.")
                         }
                     ]
-                    captionTrailing: [
+                    valueTrailing: [
                         LogosCopyButton { value: root.peerId }
                     ]
                 }

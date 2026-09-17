@@ -15,6 +15,7 @@
 
 class LogosAPI;
 class LogosAPIClient;
+class QTimer;
 
 // Source-side implementation of the BlockchainBackend .rep interface.
 //
@@ -93,11 +94,35 @@ private:
     void setError(const QString& message);
     void refreshBlendRole();
     const Rule* diagnoseNode() const; // cached; call this
+    bool moduleIsAlive();
+    // Record that the module's process is gone: one place, so the poll path and
+    // the liveness timer cannot drift into telling different stories.
+    void declareModuleGone();
     const Rule* scanNodeLog() const;
     QString newestNodeLogPath() const;
 
+    // One reading of the node's `mode`, debounced. Rising is immediate — good
+    // news needs no confirming — while a fall needs three consecutive readings,
+    // so one blip cannot reset a clock that has been running for hours.
+    void applyOnlineReading(bool modeOnline);
+    void startUptime();
+    void stopUptime();
+
     mutable QElapsedTimer m_diagnosisAge;
     mutable const Rule* m_lastDiagnosis = nullptr;
+
+    // Monotonic on purpose: an NTP step or a manual clock change must not make
+    // the node look like it has been up for a day, or for negative time.
+    // Validity IS the online state: there is no separate flag to disagree with.
+    QElapsedTimer m_uptime;
+    QTimer* m_uptimeTimer = nullptr;
+    int m_offlineReadings = 0;
+    int m_consecutivePollFailures = 0;
+
+    // Asks whether the module is still there while the node is meant to be up.
+    // The status poll only runs once the node reaches Running, so without this
+    // a module that dies mid-start is never contradicted by anything.
+    QTimer* m_livenessTimer = nullptr;
 
     LogosAPI* m_logosAPI = nullptr;
     LogosAPIClient* m_blockchainClient = nullptr;

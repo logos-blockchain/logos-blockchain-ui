@@ -110,6 +110,14 @@ Rectangle {
         visible: false
     }
 
+    LogosToast {
+        id: stopFailedToast
+        z: 1
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Theme.spacing.large
+    }
+
     // Self libp2p peer id, derived from the selected user config (no running
     // node required). Refreshed when ready and whenever the config changes.
     property string peerId: ""
@@ -146,6 +154,13 @@ Rectangle {
         enabled: root.backend !== null
         ignoreUnknownSignals: true
         function onUserConfigChanged() { root.refreshPeerId() }
+        function onStopFailed(reason) {
+            if (root.quitting && root.Window.window) {
+                root.Window.window.close()
+                return
+            }
+            stopFailedToast.show(qsTr("Couldn't stop the node"), reason)
+        }
         // Ticks per block the node processes, including while it catches up.
         // The count itself is meaningless; the change is the proof of life.
         function onProcessedBlockCountChanged() { monitor.nodeProvedAlive() }
@@ -163,6 +178,10 @@ Rectangle {
     readonly property bool nodeRunning:
         root.ready && root.backend
         && root.backend.status === BlockchainBackend.Running
+
+    readonly property bool moduleReachable:
+        !root.backend || root.backend.nodeModuleReachable === undefined
+        || root.backend.nodeModuleReachable
 
     // Wallet's claimable ("pending") vouchers. Auto-refreshed on every incoming
     // block, and once when the node starts running.
@@ -343,16 +362,24 @@ Rectangle {
                     sectionTabs.currentIndex = 0
             }
 
+            // A node module whose process is gone leaves status frozen at Error,
+            // and the only honest offer there is Start: it re-probes, and either
+            // the module came back and starts, or it says so again. Stop is the
+            // one thing that cannot help, and offering it under a message that
+            // reads "start it again" is how the two ended up disagreeing.
             readonly property bool canStart: root.backend
                 && !!root.backend.userConfig
                 && (root.backend.status === BlockchainBackend.NotStarted
-                    || root.backend.status === BlockchainBackend.Stopped)
+                    || root.backend.status === BlockchainBackend.Stopped
+                    || (root.backend.status === BlockchainBackend.Error
+                        && !root.moduleReachable))
             // Starting is included deliberately: the start RPC outlives replay
             // and IBD, so a node can sit in Starting for many minutes. Without
             // this there is no way to abort a sync short of killing the app.
             // The backend already permits it (stopBlockchain guards on
             // Running/Starting/Error).
             readonly property bool canStop: root.backend
+                && root.moduleReachable
                 && (root.backend.status === BlockchainBackend.Running
                     || root.backend.status === BlockchainBackend.Starting
                     || root.backend.status === BlockchainBackend.Error)
@@ -470,6 +497,7 @@ Rectangle {
                     accountsModel: root.accountsModel
                     status: root.backend ? root.backend.status : -1
                     connected: root.ready && root.backend !== null
+                    moduleReachable: root.moduleReachable
                     everConnected: root.everReady
                     statusMessage: monitor.error
                                    || (root.backend ? root.backend.lastErrorMessage : "")
@@ -488,6 +516,8 @@ Rectangle {
                     blockStreamEnded: monitor.streamEnded
                     genesisPending: monitor.genesisPending
                     genesisUnixMs: monitor.genesisUnixMs
+                    uptimeSeconds: (root.backend && root.backend.uptimeSeconds !== undefined)
+                                   ? root.backend.uptimeSeconds : 0
                 }
 
                 // ---- Section 1: Blocks ----
