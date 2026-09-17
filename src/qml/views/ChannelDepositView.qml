@@ -5,6 +5,7 @@ import Logos.Theme
 import Logos.Controls
 
 import "../controls"
+import "../Units.js" as Units
 
 // Multi-step wizard for channel_deposit_with_notes:
 //   1. Select notes  → wallet_get_notes, pick UTXOs to consume
@@ -155,7 +156,7 @@ ColumnLayout {
                 metadataField.text.trim(),
                 changeKeyField.text.trim(),
                 fundingKeyList(),
-                maxFeeField.text.trim(),
+                Units.normalizeInput(maxFeeField.text.trim()),
                 tipField.text.trim())
         }
 
@@ -182,10 +183,11 @@ ColumnLayout {
             return [
                 { k: qsTr("Channel ID"), v: channelIdField.text.trim() },
                 { k: qsTr("Notes to consume (%1)").arg(ids.length), v: ids.join("\n") },
-                { k: qsTr("Total amount"), v: String(noteSelector.selectedTotal) },
+                { k: qsTr("Total amount"), v: Units.format(noteSelector.selectedTotal) },
                 { k: qsTr("Change public key"), v: changeKeyField.text.trim() },
                 { k: qsTr("Funding public keys"), v: fundingKeyList().join("\n") },
-                { k: qsTr("Max tx fee"), v: maxFeeField.text.trim() },
+                { k: qsTr("Max tx fee"), v: maxFeeField.text.trim().length > 0
+                                            ? maxFeeField.text.trim() + " " + Units.SYMBOL : "" },
                 { k: qsTr("Metadata (base58)"), v: metadataField.text.trim() || qsTr("(none)") },
                 { k: qsTr("Optional tip hex"), v: tipField.text.trim() || qsTr("(current tip)") }
             ]
@@ -357,7 +359,10 @@ ColumnLayout {
                 LogosTextField {
                     id: maxFeeField
                     Layout.fillWidth: true
-                    placeholderText: qsTr("Maximum transaction fee")
+                    placeholderText: qsTr("Maximum transaction fee (LGO)")
+                    validator: RegularExpressionValidator {
+                        regularExpression: Units.inputRegExp(Qt.locale())
+                    }
                 }
 
                 LogosText {

@@ -6,6 +6,7 @@ import Logos.Theme
 import Logos.Controls
 
 import "../controls"
+import "../Units.js" as Units
 
 // Transfer funds panel. Extracted from the former WalletView.
 ColumnLayout {
@@ -81,7 +82,10 @@ ColumnLayout {
                 id: transferAmountField
                 Layout.fillWidth: true
                 Layout.preferredHeight: 30
-                placeholderText: qsTr("Amount")
+                placeholderText: qsTr("Amount (LGO)")
+                validator: RegularExpressionValidator {
+                    regularExpression: Units.inputRegExp(Qt.locale())
+                }
             }
 
             RowLayout {
@@ -92,7 +96,11 @@ ColumnLayout {
                     id: transferButton
                     Layout.alignment: Qt.AlignTop
                     text: qsTr("Send")
-                    onClicked: root.transferRequested(transferFromCombo.currentText.trim(), transferToField.text.trim(), transferAmountField.text)
+                    // Canonical LOGOS; the backend scales it to lepta.
+                    onClicked: root.transferRequested(
+                        transferFromCombo.currentText.trim(),
+                        transferToField.text.trim(),
+                        Units.normalizeInput(transferAmountField.text))
                 }
 
                 LogosSelectableText {
@@ -168,7 +176,7 @@ ColumnLayout {
                                      + Theme.spacing.small
                 anchors.verticalCenter: parent.verticalCenter
                 visible: comboControl.currentIndex >= 0 && text.length > 0
-                text: comboControl.currentValue || ""
+                text: Units.format(comboControl.currentValue || "")
                 font.pixelSize: Theme.typography.secondaryText
                 color: Theme.palette.textSecondary
             }
@@ -198,7 +206,7 @@ ColumnLayout {
                 }
                 LogosText {
                     visible: (typeof model.balance !== "undefined") && (model.balance || "").length > 0
-                    text: model.balance || ""
+                    text: Units.format(model.balance || "")
                     font.pixelSize: Theme.typography.secondaryText
                     color: Theme.palette.textSecondary
                     horizontalAlignment: Text.AlignRight
