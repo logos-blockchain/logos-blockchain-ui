@@ -17,7 +17,6 @@ Item {
     id: root
 
     // --- Public API ---
-    required property var accountsModel
     property int status: -1                 // backend.status; -1 = not connected
     // Whether we currently have a live link to the backend, and whether we ever
     // had one. `status` freezes at its last value when the link drops, so
@@ -34,6 +33,11 @@ Item {
     property string timeInfoJson: ""
     // wallet_get_claimable_vouchers payload: { tip, vouchers: [...] }.
     property string vouchersJson: ""
+    // Stake, already shaped by the backend from wallet_get_leader_aged_notes.
+    // Empty total means "not reported"; a reported "0" means nothing has aged.
+    property string stakeTotal: ""
+    property int stakeNoteCount: 0
+    property var stakeAddresses: []
     property string peerId: ""
     property int blendRole: BlockchainBackend.Unknown
     // Debounced in BlockchainView — a single blip in `mode` must not repaint
@@ -120,60 +124,20 @@ Item {
             return (v === undefined || v === null) ? qsTr("—") : String(v)
         }
 
-        // ---- Accounts ------------------------------------------------------
-        readonly property int accountCount: accounts.count
-
-        function balanceAt(i) {
-            const row = (i >= 0 && i < accountCount) ? accounts.objectAt(i) : null
-            // objectAt() is typed QObject, so qmllint cannot see the delegate's
-            // required properties; `balance` is declared on it just below.
-            // qmllint disable missing-property
-            return row ? String(row.balance || "").trim() : ""
-            // qmllint enable missing-property
+        // ---- Stake ---------------------------------------------------------
+        readonly property string stakeCaption: {
+            if (root.stakeTotal.length === 0)
+                return ""
+            if (root.stakeNoteCount === 0)
+                return qsTr("Nothing has aged in yet")
+            const parts = []
+            if (root.stakeAddresses.length === 1)
+                parts.push(shorten(root.stakeAddresses[0]))
+            parts.push(qsTr("%n note(s)", "", root.stakeNoteCount))
+            if (root.stakeAddresses.length > 1)
+                parts.push(qsTr("%n key(s)", "", root.stakeAddresses.length))
+            return parts.join(" · ")
         }
-
-        // Balances are u64 rendered as decimal strings, and a u64 runs past
-        // 2^53 where Number() silently loses precision. BigInt literals don't
-        // parse in QML, so add the decimal strings directly — schoolbook
-        // addition, right to left, exact at any width.
-        function addDecimal(a, b) {
-            let out = ""
-            let carry = 0
-            let i = a.length - 1
-            let j = b.length - 1
-            while (i >= 0 || j >= 0 || carry > 0) {
-                const digit = (i >= 0 ? a.charCodeAt(i) - 48 : 0)
-                            + (j >= 0 ? b.charCodeAt(j) - 48 : 0)
-                            + carry
-                out = String(digit % 10) + out
-                carry = digit >= 10 ? 1 : 0
-                i -= 1
-                j -= 1
-            }
-            return out.length > 0 ? out : "0"
-        }
-
-        function stripLeadingZeros(v) {
-            const trimmed = v.replace(/^0+/, "")
-            return trimmed.length > 0 ? trimmed : "0"
-        }
-
-        readonly property var totals: {
-            let sum = "0"
-            let known = 0
-            for (let i = 0; i < accountCount; i++) {
-                const b = balanceAt(i)
-                if (!/^[0-9]+$/.test(b))
-                    continue
-                sum = addDecimal(sum, b)
-                known += 1
-            }
-            return { text: known > 0 ? stripLeadingZeros(sum) : "", known: known }
-        }
-
-        // A balance stays empty when its lookup failed, so a total built from a
-        // subset would read as the whole holding. Say so rather than imply it.
-        readonly property bool partialTotal: totals.known > 0 && totals.known < accountCount
 
         // ---- Stopping ------------------------------------------------------
         // A stop is outstanding for long enough that silence reads as a dead
@@ -436,15 +400,6 @@ Item {
         onTriggered: d.stopSlow = true
     }
 
-    Instantiator {
-        id: accounts
-        model: root.accountsModel
-        delegate: QtObject {
-            required property string address
-            required property string balance
-        }
-    }
-
     LogosScrollView {
         id: scrollView
         anchors.fill: parent
@@ -590,25 +545,25 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Layout.minimumWidth: d.minTileWidth
-                    label: qsTr("Total Balance")
-                    value: d.totals.text.length > 0
-                           ? d.groupDigits(d.totals.text) : qsTr("—")
+                    label: qsTr("Stake")
+                    value: root.stakeTotal.length > 0
+                           ? d.groupDigits(root.stakeTotal) : qsTr("—")
                     valueFontSizeMode: Text.HorizontalFit
-                    // A total built from a subset would read as the whole
-                    // holding, so the figure itself is flagged, not just noted.
-                    severity: d.partialTotal ? LogosStatCard.Warning
-                                             : LogosStatCard.None
-                    caption: d.partialTotal
-                             ? qsTr("%1 of %2 accounts reported").arg(d.totals.known).arg(d.accountCount)
-                             : ""
+                    caption: d.stakeCaption
                     labelTrailing: [
                         LogosInfoButton {
-                            title: qsTr("Total Balance")
-                            text: qsTr("Sum of the balances of every known wallet account. The node reports each balance as a plain count and publishes no denomination for the token, so there is nothing to convert to and no decimal point implied — this is the figure itself, grouped for reading. Copy for the ungrouped value.")
+                            title: qsTr("Stake")
+                            dialogContentItem: InfoSections { info: InfoContent.stake }
                         }
                     ]
-                    valueTrailing: [
-                        LogosCopyButton { value: d.totals.text }
+                    // Only while the caption IS an address — the figure is
+                    // already shown in full, and counts have nothing to copy.
+                    captionTrailing: [
+                        LogosCopyButton {
+                            visible: root.stakeAddresses.length === 1
+                            value: root.stakeAddresses.length === 1
+                                   ? root.stakeAddresses[0] : ""
+                        }
                     ]
                 }
 

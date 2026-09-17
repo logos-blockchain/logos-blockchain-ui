@@ -20,6 +20,10 @@ class BlockchainBackend
     // The processed-block stream delivered its end sentinel. Resubscribing needs
     // a node stop/start, so the silence after this is permanent, not slowness.
     PROP(bool blockStreamEnded READONLY)
+    // The notes this node can lead with, from wallet_get_leader_aged_notes
+    PROP(QString stakeTotal READONLY)
+    PROP(int stakeNoteCount READONLY)
+    PROP(QStringList stakeAddresses READONLY)
     // Whole seconds the node has been *online*, 0 whenever it is not. Both the
     // clock and the online edge live here: getCryptarchiaInfo already reads the
     // node's `mode`, so the backend has the verdict in hand and only needed the

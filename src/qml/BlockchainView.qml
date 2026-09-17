@@ -494,7 +494,6 @@ Rectangle {
 
                 // ---- Section 0: Dashboard ----
                 NodeDashboardView {
-                    accountsModel: root.accountsModel
                     status: root.backend ? root.backend.status : -1
                     connected: root.ready && root.backend !== null
                     moduleReachable: root.moduleReachable
@@ -505,6 +504,9 @@ Rectangle {
                     infoJson: monitor.infoJson
                     timeInfoJson: monitor.timeInfoJson
                     vouchersJson: root.claimableVouchersJson
+                    stakeTotal: root.backend ? root.backend.stakeTotal : ""
+                    stakeNoteCount: root.backend ? root.backend.stakeNoteCount : 0
+                    stakeAddresses: root.backend ? root.backend.stakeAddresses : []
                     peerId: root.peerId
                     blendRole: root.backend ? root.backend.blendRole
                                             : BlockchainBackend.Unknown

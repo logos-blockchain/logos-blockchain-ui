@@ -55,3 +55,51 @@ var status = {
     ],
     docs: "https://docs.logos.co/blockchain/get-started/run-a-logos-blockchain-node-from-basecamp"
 }
+
+// Checked against the node source rather than the docs site: stake is the aged
+// note set the leader service plays the lottery with (the wallet service's
+// get_leader_aged_notes), which is not the wallet balance.
+var stake = {
+    title: "Stake",
+    what: "The value of this node's notes that are old enough to enter the "
+        + "leadership lottery — the weight it plays with. Any note counts; "
+        + "Cryptarchia sets no minimum stake.",
+    calc: "The node reports the notes it can lead with, and this is their "
+        + "total value. A note counts once it is in the epoch's stake "
+        + "snapshot, which is taken at the start of the epoch — so tokens that "
+        + "arrive after a snapshot wait for the next one, up to two epochs, "
+        + "before they add to stake. That is why this can read lower than the "
+        + "wallet balance, and why a freshly funded node stakes nothing for a "
+        + "while. Each claimed leader reward arrives as its own note and ages "
+        + "on its own clock, so the stake climbs in steps at epoch boundaries "
+        + "rather than at the moment a reward is claimed. The lottery counts "
+        + "notes on ANY key the keystore holds, not one designated key. Today "
+        + "that is a single key — rewards are minted to the same leader "
+        + "funding key the notes already sit on — so the address is shown "
+        + "beneath the figure. Leader keys are expected to rotate, and once "
+        + "notes span several keys no single address describes the stake: the "
+        + "line beneath then reports how many notes and keys it is spread "
+        + "across instead.",
+    states: [
+        { label: "Amount",
+          meaning: "The staked value, grouped for reading. The node publishes "
+                 + "no denomination for the token, so this is a plain count "
+                 + "with no decimal point implied." },
+        { label: "Address · N notes",
+          meaning: "Beneath the figure while all the staked notes sit on one "
+                 + "key: the address holding them, copyable in full, and how "
+                 + "many notes make up the total. The address is where the "
+                 + "stake is, not a permanent account identity — expect it to "
+                 + "change as keys rotate." },
+        { label: "N notes · M keys",
+          meaning: "The address drops off once the notes span more than one "
+                 + "key, because no single one of them describes the stake." },
+        { label: "0",
+          meaning: "Nothing has aged in. The wallet may well hold tokens — "
+                 + "they just are not in an epoch snapshot yet, so the node "
+                 + "cannot win a slot with them." },
+        { label: "—",
+          meaning: "The node is not running, or has not reported yet." }
+    ],
+    docs: "https://docs.logos.co/blockchain/concepts/about-cryptarchia#leadership-election"
+}
