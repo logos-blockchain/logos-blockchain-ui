@@ -20,17 +20,21 @@ class BlockchainBackend
     // The processed-block stream delivered its end sentinel. Resubscribing needs
     // a node stop/start, so the silence after this is permanent, not slowness.
     PROP(bool blockStreamEnded READONLY)
-    // Whole seconds the node has been *online*, 0 whenever it is not. The clock
-    // lives here so it is monotonic and survives view reloads, but the online
-    // edge cannot: the caught-up verdict is a debounced reading of the status
-    // poll owned by NodeStatusMonitor, and the backend never sees it. So the
-    // view reports the edge through noteOnline() and this counts from it.
+    // Whole seconds the node has been *online*, 0 whenever it is not. Both the
+    // clock and the online edge live here: getCryptarchiaInfo already reads the
+    // node's `mode`, so the backend has the verdict in hand and only needed the
+    // same debounce the view applies. Keeping it here makes the clock monotonic,
+    // survive view reloads, and cost no round trip per edge.
     // Falling out of Online resets it — time online is not cumulative, and a
     // counter that survived a resync would be claiming continuity it never had.
+    // Pushed at the granularity the view renders, not once a second; see
+    // uptimeTickMs in BlockchainBackend.cpp.
     PROP(int uptimeSeconds READONLY)
     // Whether the NODE module is reachable — as opposed to this backend, which
     // is what the view could see before and which stays healthy when the node
-    // module dies. False means its process is gone, not that it is busy.
+    // module dies. False means its process is gone, not that it is busy. This is
+    // NOT the view's `connected`: that one means "the app lost the backend" and
+    // asks for an app restart, which is the wrong remedy for a dead node module.
     PROP(bool nodeModuleReachable READONLY)
 
     SLOT(void startBlockchain())
@@ -55,9 +59,6 @@ class BlockchainBackend
     // the UI should sit in.
     SIGNAL(stopFailed(QString reason))
 
-    // The view's verdict on whether the node is caught up, which is what starts
-    // and stops the uptime clock above.
-    SLOT(void noteOnline(bool online))
     SLOT(void clearBlocks())
     SLOT(void copyToClipboard(QString text))
 }

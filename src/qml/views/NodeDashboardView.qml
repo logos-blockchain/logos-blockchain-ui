@@ -23,6 +23,7 @@ Item {
     // had one. `status` freezes at its last value when the link drops, so
     // without these a dead node process reads as a confident "Online".
     property bool connected: false
+    property bool moduleReachable: true
     property bool everConnected: false
     property string statusMessage: ""
     property bool nodeRecovering: false
@@ -178,8 +179,17 @@ Item {
         // A stop is outstanding for long enough that silence reads as a dead
         // button rather than as work in progress.
         property bool stopSlow: false
+        // What the node was doing when the stop was asked for. Captured on the
+        // way in, because the stop clears the backend flags that describe it.
+        // Read off `synced` rather than nodeRecovering for exactly that reason:
+        // it belongs to the monitor, so the stop cannot race it.
+        property bool stopBehindCatchUp: false
 
         // ---- Uptime --------------------------------------------------------
+        // The units here are the contract the backend ticks against: it widens
+        // uptimeSeconds' push interval to match the smallest unit shown, so
+        // adding seconds back at an hour would show a frozen seconds field.
+        // See uptimeTickMs in BlockchainBackend.cpp.
         function uptimeText(s) {
             if (s < 60)
                 return qsTr("%1s").arg(s)
@@ -191,19 +201,40 @@ Item {
                 return qsTr("%1h %2m").arg(h).arg(m % 60)
             return qsTr("%1d %2h").arg(Math.floor(h / 24)).arg(h % 24)
         }
-        readonly property bool showUptime:
-            root.connected && !root.statusStale && root.uptimeSeconds > 0
+        readonly property bool showUptime: root.connected && root.uptimeSeconds > 0
 
-        // Groups a long figure so it can be read at a glance
-        function groupDigits(s) {
-            if (!s)
+        function groupSizesFor(locale) {
+            const sep = locale.groupSeparator
+            if (!sep)
+                return [0, 0]
+            const parts = (1234567890).toLocaleString(locale, 'f', 0).split(sep)
+            if (parts.length < 2)
+                return [3, 3]
+            const primary = parts[parts.length - 1].length
+            return [primary, parts.length > 2 ? parts[parts.length - 2].length : primary]
+        }
+        readonly property var groupSizes: groupSizesFor(Qt.locale())
+
+        // Groups a long figure so it can be read at a glance. Walks the string
+        // rather than the number: these are u64s, and Number() loses them.
+        // `sizes` defaults to this locale's; pass another locale's to format for
+        // it (which is also what makes this checkable against toLocaleString).
+        function groupDigits(s, sizes) {
+            const g = sizes || groupSizes
+            if (!s || g[0] <= 0)
                 return s
             const sep = Qt.locale().groupSeparator
             let out = ""
-            for (let i = 0; i < s.length; i++) {
-                if (i > 0 && (s.length - i) % 3 === 0)
-                    out += sep
-                out += s.charAt(i)
+            let sinceSep = 0
+            let width = g[0]
+            for (let i = s.length - 1; i >= 0; i--) {
+                if (sinceSep === width) {
+                    out = sep + out
+                    sinceSep = 0
+                    width = g[1]
+                }
+                out = s.charAt(i) + out
+                sinceSep += 1
             }
             return out
         }
@@ -228,14 +259,18 @@ Item {
             if (!root.connected)
                 return root.everConnected
                     ? { label: qsTr("Disconnected"),
-                        // Prefer whatever the backend worked out about the
-                        // disappearance; the generic line is the fallback for
-                        // when it knows nothing.
-                        sub: root.statusMessage
-                             || qsTr("Lost contact with the node module — restart the app to reconnect."),
+                        sub: qsTr("Lost contact with the backend — restart the app to reconnect."),
                         color: Theme.palette.error, dots: false, isError: true }
                     : { label: qsTr("Not started"), sub: "",
                         color: Theme.palette.textSecondary, dots: false, isError: false }
+            if (!root.moduleReachable)
+                return { label: qsTr("Node stopped"),
+                         // The backend diagnoses the cause from the node's log
+                         // where it can; the generic line is the fallback for
+                         // when it knows nothing.
+                         sub: root.statusMessage
+                              || qsTr("The node process stopped unexpectedly. Start it again."),
+                         color: Theme.palette.error, dots: false, isError: true }
             if (root.status === BlockchainBackend.Error)
                 return { label: qsTr("Error"),
                          sub: root.statusMessage || qsTr("Node error."),
@@ -245,9 +280,10 @@ Item {
             // first would swallow the Stop and leave the click without feedback.
             if (root.status === BlockchainBackend.Stopping)
                 return { label: qsTr("Stopping"),
-                         sub: d.stopSlow
-                              ? qsTr("The node is busy catching up — stopping can take a while.")
-                              : "",
+                         sub: !d.stopSlow ? ""
+                              : d.stopBehindCatchUp
+                                ? qsTr("The node is busy catching up — stopping can take a while.")
+                                : qsTr("Still waiting on the node to shut down."),
                          color: Theme.palette.warning, dots: true, isError: false }
             // Replay (from disk) and bootstrap (from peers) are one wait to the
             // user: catching up. The sub-line names the source, because that is
@@ -386,10 +422,12 @@ Item {
 
     onStatusChanged: {
         d.stopSlow = false
-        if (root.status === BlockchainBackend.Stopping)
+        if (root.status === BlockchainBackend.Stopping) {
+            d.stopBehindCatchUp = !root.synced
             stopSlowTimer.restart()
-        else
+        } else {
             stopSlowTimer.stop()
+        }
     }
 
     Timer {
@@ -492,7 +530,8 @@ Item {
                                 visible: d.showUptime
                                 text: qsTr("Uptime: %1").arg(d.uptimeText(root.uptimeSeconds))
                                 color: Theme.palette.textSecondary
-                                font.pixelSize: Theme.typography.secondaryText
+                                font.pixelSize: Theme.typography.secondaryText    
+                                opacity: d.infoOpacity
                             }
 
                             LogosText {
@@ -568,7 +607,7 @@ Item {
                             text: qsTr("Sum of the balances of every known wallet account. The node reports each balance as a plain count and publishes no denomination for the token, so there is nothing to convert to and no decimal point implied — this is the figure itself, grouped for reading. Copy for the ungrouped value.")
                         }
                     ]
-                    captionTrailing: [
+                    valueTrailing: [
                         LogosCopyButton { value: d.totals.text }
                     ]
                 }
@@ -680,7 +719,7 @@ Item {
                             text: qsTr("Header id of the last irreversible block — the point the chain can no longer reorganise past.")
                         }
                     ]
-                    captionTrailing: [
+                    valueTrailing: [
                         LogosCopyButton { value: d.hash("lib") }
                     ]
                 }
@@ -698,7 +737,7 @@ Item {
                             text: qsTr("Header id of the current chain tip — the most recent block this node has applied.")
                         }
                     ]
-                    captionTrailing: [
+                    valueTrailing: [
                         LogosCopyButton { value: d.hash("tip") }
                     ]
                 }
@@ -715,7 +754,7 @@ Item {
                             text: qsTr("This node's libp2p identity, derived from the selected user config. It does not need a running node.")
                         }
                     ]
-                    captionTrailing: [
+                    valueTrailing: [
                         LogosCopyButton { value: root.peerId }
                     ]
                 }

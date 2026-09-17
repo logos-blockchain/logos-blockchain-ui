@@ -86,7 +86,6 @@ public slots:
                                     QStringList fundingPublicKeyHexes,
                                     QString maxTxFee,
                                     QString optionalTipHex) override;
-    void noteOnline(bool online) override;
     void clearBlocks() override;
     void copyToClipboard(QString text) override;
 
@@ -102,13 +101,22 @@ private:
     const Rule* scanNodeLog() const;
     QString newestNodeLogPath() const;
 
+    // One reading of the node's `mode`, debounced. Rising is immediate — good
+    // news needs no confirming — while a fall needs three consecutive readings,
+    // so one blip cannot reset a clock that has been running for hours.
+    void applyOnlineReading(bool modeOnline);
+    void startUptime();
+    void stopUptime();
+
     mutable QElapsedTimer m_diagnosisAge;
     mutable const Rule* m_lastDiagnosis = nullptr;
 
     // Monotonic on purpose: an NTP step or a manual clock change must not make
     // the node look like it has been up for a day, or for negative time.
+    // Validity IS the online state: there is no separate flag to disagree with.
     QElapsedTimer m_uptime;
     QTimer* m_uptimeTimer = nullptr;
+    int m_offlineReadings = 0;
     int m_consecutivePollFailures = 0;
 
     // Asks whether the module is still there while the node is meant to be up.
