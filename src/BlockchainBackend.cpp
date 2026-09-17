@@ -16,6 +16,7 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QRegularExpression>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSettings>
@@ -537,8 +538,10 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     // A node that isn't running has no blend role. Acquiring one is driven from
     // getCryptarchiaInfo, which is where the readiness edge is visible.
     connect(this, &BlockchainBackendSimpleSource::statusChanged, this, [this]() {
-        if (status() != Running)
+        if (status() != Running) {
             setBlendRole(Unknown);
+            clearStake();
+        }
     });
 
     if (!m_logosAPI) {
@@ -657,6 +660,45 @@ void BlockchainBackend::refreshBlendRole()
     setBlendRole(doc.object().value(QStringLiteral("core_info")).isObject() ? Core : Edge);
 }
 
+void BlockchainBackend::clearStake()
+{
+    setStakeTotal(QString());
+    setStakeNoteCount(0);
+    setStakeAddresses({});
+}
+
+// Shaped here rather than in the view, where a renamed field would arrive as
+// `undefined` instead of as a compile error. Driven from the status poll like
+// refreshBlendRole — never from the processed-block callback, which would issue
+// a blocking module call from inside the module's own delivery path.
+void BlockchainBackend::refreshStake()
+{
+    if (!m_blockchainClient || status() != Running)
+        return;
+
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("wallet_get_leader_aged_notes"), QString()));
+    // Keep the last known stake on a transient failure; it is still true.
+    if (!r.success)
+        return;
+
+    const QJsonObject payload =
+        QJsonDocument::fromJson(r.value.toString().toUtf8()).object();
+    const QJsonArray notes = payload.value(QStringLiteral("notes")).toArray();
+
+    QStringList addresses;
+    for (const QJsonValue& note : notes) {
+        const QString pk =
+            note.toObject().value(QStringLiteral("public_key")).toString();
+        if (!pk.isEmpty() && !addresses.contains(pk))
+            addresses.append(pk);
+    }
+
+    setStakeTotal(payload.value(QStringLiteral("total_value")).toString());
+    setStakeNoteCount(notes.size());
+    setStakeAddresses(addresses);
+}
+
 QVariantMap BlockchainBackend::getCryptarchiaInfo()
 {
     if (!m_blockchainClient)
@@ -679,8 +721,15 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
         if (modeOnline) {
             if (blendRole() == Unknown)
                 refreshBlendRole();
-        } else if (blendRole() != Unknown) {
-            setBlendRole(Unknown);
+            // Unlike the blend role, stake is not acquired once: it moves with
+            // every epoch.
+            refreshStake();
+        } else {
+            if (blendRole() != Unknown)
+                setBlendRole(Unknown);
+            // Not online means no stake: leaving the last figure up would
+            // credit the node with weight it no longer has.
+            clearStake();
         }
     } else if (r.error.toString().contains(QStringLiteral("Call failed"), Qt::CaseInsensitive)) {
         const Rule* cause = diagnoseNode();

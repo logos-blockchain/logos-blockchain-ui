@@ -93,6 +93,8 @@ private:
     void fetchBalancesForAccounts(const QStringList& list);
     void setError(const QString& message);
     void refreshBlendRole();
+    void refreshStake();
+    void clearStake();
     const Rule* diagnoseNode() const; // cached; call this
     bool moduleIsAlive();
     // Record that the module's process is gone: one place, so the poll path and
