@@ -3,6 +3,12 @@
 // Per-tile (i) content: { title, what, calc, states: [{label, meaning}], docs }.
 // Shape and section order follow the dashboard prototype's infoContent.js.
 //
+// The prototype is the design handoff at
+// https://github.com/xAlisher/logos-blockchain-ui/blob/feat/dashboard-redesign/prototype/HANDOFF.md
+// which names THIS file as the authoritative per-tile content ("15 tiles") and
+// specifies the modal as four sections plus a copyable docs link. Every comment
+// in this repo that says "the prototype" means that document.
+//
 // `calc` and `states` describe THIS implementation, not the prototype's. The
 // prototype documents a slot-gap check and a ~60:00 bootstrapping countdown;
 // neither exists here — the headline trusts the node's own `mode` — and its
@@ -124,6 +130,44 @@ var peers = {
 // in flight. The payload has no such field — it carries { tip, vouchers[],
 // reward_amount, total_claimable } — so the line beneath reports the value of
 // the vouchers instead, which is the unused half of what the node does send.
+// The 15th tile the prototype names, which this file was missing. Note the
+// prototype draws this one as a percentage climbing to 100% and then stopping
+// ("mining climbs to 100% then stops (wallet Funded)") against a target set in
+// the Fund modal. The node has no such target and never stops mining on its
+// own, so this tile reports what mining has actually PAID instead — see `calc`
+// for why that is a session figure rather than a total.
+var mining = {
+    title: "Mining Rewards",
+    what: "What proof-of-work claims have paid this wallet, after fees. Mining "
+        + "searches for tickets; a ticket pays nothing until it is claimed, and "
+        + "expires if it never is. So this is the value that actually arrived, "
+        + "not what was mined — the tickets still waiting are the line beneath.",
+    calc: "Summed from the claim transactions in blocks seen since the node "
+        + "started, taking the transfer outputs that pay a key this wallet "
+        + "tracks. The reward per ticket is the node's and is not published, so "
+        + "nothing here multiplies a count by an assumed rate.\n\n"
+        + "It is a session figure, not a lifetime total, and nothing on the "
+        + "node keeps one: claims settled before this session are not counted, "
+        + "a reorganisation can unwind one that is, and blocks missed while the "
+        + "node was catching up are lost to it. The wallet balance is the "
+        + "authoritative figure — this one only describes what this session "
+        + "watched arrive.",
+    states: [
+        { label: "Value",
+          meaning: "What claims have paid this session, with the tickets "
+                 + "claimed and still waiting beneath it." },
+        { label: "0 LGO with tickets waiting",
+          meaning: "Tickets are being mined but nothing is being redeemed. "
+                 + "Auto-claim may have stopped — it does that on its own once "
+                 + "every claim target reaches its threshold. The Mining tab "
+                 + "says more." },
+        { label: "0 LGO",
+          meaning: "Nothing claimed this session. Normal on a node that has "
+                 + "not mined, or has only just started." }
+    ],
+    docs: "https://docs.logos.co/get-started/glossary"
+}
+
 var readyToClaim = {
     title: "Ready to Claim",
     what: "Leader reward vouchers this wallet can claim right now. Every block "

@@ -1,0 +1,326 @@
+pragma ComponentBehavior: Bound
+
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+
+import Logos.Theme
+import Logos.Controls
+
+import "../Units.js" as Units
+
+// Proof-of-Work mining and claiming.
+//
+// The counts here are the only place an operator can see that claiming is not
+// working. Auto-claim runs unattended and reports failures to the node log,
+// which the app does not surface — so a claimable count that climbs while
+// nothing is ever claimed is the symptom, and this view is where it shows.
+ColumnLayout {
+    id: root
+
+    // --- Public API ---
+
+    property bool nodeRunning: false
+    property bool autoClaimRunning: false
+    property int rewardsClaimed: 0
+    property string rewardsLepta: ""
+    property int claimableTickets: 0
+    property int soonestExpirySlots: -1
+    property int soonestExpiryCount: 0
+    property bool claimableLoaded: false
+    property string claimableError: ""
+    property var accounts: []
+
+    property bool claimBusy: false
+    property bool claimSuccess: false
+    property string claimMessage: ""
+
+    signal autoClaimToggled(bool enabled)
+    signal claimRequested(string addressHex)
+
+    // From the backend, which watches the claimable count fall.
+    property bool claimsStalled: false
+    // The window that flag is measured over. Read rather than restated: a number
+    // in this message that disagreed with the rule would be worse than no number.
+    property int claimStallSeconds: 0
+
+    spacing: Theme.spacing.medium
+
+    QtObject {
+        id: d
+
+        property string selectedAddress: ""
+        readonly property string expiryCaption: {
+            if (!root.claimableLoaded || root.soonestExpirySlots < 0)
+                return ""
+            return qsTr("%1 expiring in %2 slots")
+                       .arg(root.soonestExpiryCount)
+                       .arg(root.soonestExpirySlots)
+        }
+
+        // How long a ticket lives is the node's `slot_window`, which nothing
+        // reports to us — so the deadline is stated only where the node gives us
+        // a real one, in slots, from slots_until_expiry. Everything else here is
+        // either counted or published by the backend; no interval is invented.
+        readonly property string stallMessage: {
+            const minutes = Math.max(1, Math.round(root.claimStallSeconds / 60))
+            let text = qsTr("%1 tickets are waiting and the count has not gone down in "
+                            + "%2 minutes. They are accumulating faster than they are "
+                            + "being claimed, and unclaimed tickets expire and cannot "
+                            + "be recovered.")
+                           .arg(root.claimableTickets)
+                           .arg(minutes)
+            if (root.soonestExpirySlots >= 0)
+                text += "\n\n" + qsTr("%1 of them expire in %2 slots.")
+                                     .arg(root.soonestExpiryCount)
+                                     .arg(root.soonestExpirySlots)
+            return text + "\n\n" + qsTr("Check that auto-claim is on and that your claim "
+                                        + "threshold is above the target's current balance. "
+                                        + "If it is, mining is simply producing tickets faster "
+                                        + "than they can be redeemed — stop mining to let the "
+                                        + "backlog clear.")
+        }
+    }
+
+    LogosText {
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
+        text: qsTr("Mining searches for tickets. A ticket is only worth something once it is "
+                   + "claimed, and unclaimed tickets expire — so what matters is not how many "
+                   + "are mined but how many get claimed.\n\n"
+                   + "Mining only stops when you stop it. Auto-claim stops itself, as soon as "
+                   + "every claim target has reached its threshold — after which tickets keep "
+                   + "accumulating and expiring, and the search keeps using every core, for "
+                   + "nothing.")
+        font.pixelSize: Theme.typography.secondaryText
+        color: Theme.palette.textSecondary
+    }
+
+    // ---- Counters ----
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.topMargin: Theme.spacing.small
+        spacing: Theme.spacing.medium
+
+        LogosStatCard {
+            Layout.fillWidth: true
+            Layout.preferredWidth: 1
+            objectName: "claimableTicketsCard"
+            label: qsTr("Claimable now")
+            value: root.claimableLoaded ? String(root.claimableTickets) : "—"
+            flashOnChange: root.visible
+            valueColor: root.claimsStalled ? Theme.palette.warning : Theme.palette.text
+            caption: d.expiryCaption
+            labelTrailing: [
+                LogosInfoButton {
+                    title: qsTr("Claimable now")
+                    text: qsTr("Mined tickets the node can still redeem. This is not a balance — "
+                               + "a ticket is anchored to a recent block and expires if it is not "
+                               + "claimed in time, so this number falls on its own as well as "
+                               + "when rewards are paid.")
+                }
+            ]
+        }
+
+        LogosStatCard {
+            Layout.fillWidth: true
+            Layout.preferredWidth: 1
+            objectName: "miningRewardsClaimedCard"
+            label: qsTr("Claimed this session")
+            value: root.rewardsLepta.length > 0 ? Units.format(root.rewardsLepta)
+                                                : Units.format("0")
+            caption: root.rewardsClaimed > 0
+                     ? qsTr("from %1 tickets").arg(root.rewardsClaimed)
+                     : qsTr("no tickets claimed")
+            flashOnChange: root.visible
+            flashColor: Theme.palette.success
+            labelTrailing: [
+                LogosInfoButton {
+                    title: qsTr("Claimed this session")
+                    text: qsTr("What proof-of-work claims have paid this wallet, after fees, "
+                               + "summed from the blocks seen since the node started.\n\n"
+                               + "It resets every time the node starts, and it is not a "
+                               + "lifetime total: nothing on the node keeps one. Claims "
+                               + "settled before this session began are not counted, a "
+                               + "reorganisation can unwind one that is, and blocks missed "
+                               + "while the node was catching up are lost to it. Your wallet "
+                               + "balance is the figure that is actually authoritative — this "
+                               + "one only describes what this session watched arrive.")
+                }
+            ]
+        }
+    }
+
+    // The whole point of the view, when it fires: tickets are being mined into
+    // nothing. Above the poll error because this is the one the user has to act
+    // on — a failed poll costs a reading, this costs the rewards.
+    LogosNotice {
+        Layout.fillWidth: true
+        objectName: "claimsStalledNotice"
+        shown: root.claimsStalled
+        severity: LogosNotice.Warning
+        title: qsTr("Tickets are outrunning claims")
+        message: d.stallMessage
+    }
+
+    // The poll's own failure, with room to be read.
+    LogosNotice {
+        Layout.fillWidth: true
+        objectName: "claimableErrorNotice"
+        shown: root.claimableError.length > 0
+        severity: LogosNotice.Warning
+        title: qsTr("Can't read claimable tickets")
+        message: root.claimableError
+    }
+
+    // ---- Auto-claim ----
+    Rectangle {
+        Layout.fillWidth: true
+        Layout.topMargin: Theme.spacing.small
+        implicitHeight: autoClaimColumn.implicitHeight + Theme.spacing.medium * 2
+        color: Theme.palette.backgroundSecondary
+        border.color: Theme.palette.border
+        border.width: 1
+        radius: Theme.spacing.radiusLarge
+
+        ColumnLayout {
+            id: autoClaimColumn
+            anchors.fill: parent
+            anchors.margins: Theme.spacing.medium
+            spacing: Theme.spacing.small
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spacing.small
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.spacing.small
+
+                        LogosText {
+                            text: qsTr("Auto-claim")
+                            font.pixelSize: Theme.typography.primaryText
+                        }
+                        LogosBadge {
+                            objectName: "autoClaimRecommendedBadge"
+                            text: qsTr("Recommended")
+                        }
+                        Item { Layout.fillWidth: true }
+                    }
+
+                    LogosText {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        text: root.autoClaimRunning
+                              ? qsTr("The node claims mined rewards on its own. It does not "
+                                     + "report this back — if nothing is being claimed, trust "
+                                     + "the ticket count over this switch.")
+                              : qsTr("Tickets accumulate until you claim them below, and expire "
+                                     + "if you do not.")
+                        font.pixelSize: Theme.typography.secondaryText
+                        color: Theme.palette.textSecondary
+                    }
+                }
+
+                LogosSwitch {
+                    objectName: "autoClaimSwitch"
+                    checked: root.autoClaimRunning
+                    enabled: root.nodeRunning && !root.claimBusy
+                    onToggled: root.autoClaimToggled(checked)
+                }
+            }
+
+            LogosText {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: qsTr("Unattended claiming only works if the config file lists claim "
+                           + "targets. Add one during onboarding or by editing the config "
+                           + "directly — without one the node has nowhere to pay, and tickets "
+                           + "expire however this switch is set.")
+                font.pixelSize: Theme.typography.secondaryText
+                color: Theme.palette.textTertiary
+            }
+        }
+    }
+
+    // ---- Manual claim ----
+    LogosText {
+        Layout.topMargin: Theme.spacing.small
+        text: qsTr("Claim now")
+        font.pixelSize: Theme.typography.primaryText
+    }
+
+    LogosText {
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
+        text: qsTr("Pays the tickets mined so far. Leave the account unset to let the node pay "
+                   + "whichever claim target is furthest below its threshold — the same choice "
+                   + "auto-claim makes.")
+        font.pixelSize: Theme.typography.secondaryText
+        color: Theme.palette.textSecondary
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.spacing.small
+
+        LogosComboBox {
+            id: accountCombo
+            objectName: "claimAccountCombo"
+            Layout.fillWidth: true
+            enabled: root.nodeRunning && !root.claimBusy
+            textRole: "label"
+            valueRole: "address"
+            model: root.accounts
+            currentIndex: -1
+            displayText: currentIndex < 0
+                         ? qsTr("Let the node choose")
+                         : currentText
+            onActivated: d.selectedAddress = accountCombo.currentValue
+        }
+
+        LogosButton {
+            objectName: "clearClaimAccountButton"
+            text: qsTr("Clear")
+            visible: accountCombo.currentIndex >= 0
+            enabled: !root.claimBusy
+            onClicked: {
+                accountCombo.currentIndex = -1
+                d.selectedAddress = ""
+            }
+        }
+
+        LogosButton {
+            objectName: "claimNowButton"
+            variant: LogosButton.Variant.Primary
+            text: root.claimBusy ? qsTr("Claiming…") : qsTr("Claim")
+            enabled: root.nodeRunning && !root.claimBusy && root.claimableTickets > 0
+            onClicked: root.claimRequested(d.selectedAddress)
+        }
+    }
+
+    LogosSelectableText {
+        Layout.fillWidth: true
+        objectName: "claimResultText"
+        wrapMode: TextEdit.Wrap
+        visible: root.claimMessage.length > 0
+        text: root.claimMessage
+        font.pixelSize: Theme.typography.secondaryText
+        color: root.claimSuccess ? Theme.palette.success : Theme.palette.error
+    }
+
+    LogosText {
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
+        visible: !root.nodeRunning
+        text: qsTr("Start the node to mine and claim.")
+        font.pixelSize: Theme.typography.secondaryText
+        color: Theme.palette.textSecondary
+    }
+
+    Item { Layout.fillHeight: true }
+}

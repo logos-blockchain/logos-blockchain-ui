@@ -16,6 +16,37 @@ class BlockchainBackend
     PROP(QString deploymentConfig READWRITE)
     PROP(bool useGeneratedConfig READWRITE)
     PROP(QString generatedUserConfigPath READONLY)
+    PROP(QVariantList accountRows)
+
+    // PoW tickets waiting to be claimed, and when the nearest of them lapses.
+    PROP(int claimableTickets)
+    PROP(int soonestExpirySlots)
+    // How many tickets share that soonest deadline
+    PROP(int soonestExpiryCount)
+    PROP(bool claimableLoaded)
+    PROP(QString claimableError)
+    PROP(bool claimablePollActive READWRITE)
+    // Tickets are accumulating faster than they are being claimed. Derived from
+    // the claimable count alone — the one PoW figure the node answers directly —
+    // because a claim is the only thing that makes it fall.
+    //
+    // It does NOT mean claiming has stopped: one claim transaction redeems a
+    // single capped batch while mining adds tickets far faster, so a count that
+    // only ever climbs is equally a node whose claiming works and cannot keep
+    // up. Both lose tickets to expiry, which is why one flag covers both, and
+    // why the wording has to stop short of blaming auto-claim.
+    PROP(bool claimsStalled READONLY)
+    // The claimable count moved on one of the last few readings, which is the
+    // only proof of PoW activity the app can actually stand behind: rising means
+    // tickets are being mined, falling means claims are landing. `mining` cannot
+    // do this job — it is what we last asked for, not what the node is doing,
+    // and there is no pow_is_mining() to correct it.
+    PROP(bool powActive READONLY)
+    // The window claimsStalled is measured over. Published rather than restated
+    // in the view, so the number the user reads and the number the rule uses
+    // cannot drift apart.
+    PROP(int claimStallSeconds READONLY)
+
     PROP(QString lastErrorMessage READONLY)
     // lastErrorMessage is progress (replaying blocks), not a failure.
     PROP(bool nodeRecovering READONLY)
@@ -72,6 +103,36 @@ class BlockchainBackend
     // NOT the view's `connected`: that one means "the app lost the backend" and
     // asks for an app restart, which is the wrong remedy for a dead node module.
     PROP(bool nodeModuleReachable READONLY)
+    // Whether PoW mining was last *asked for* from here — intent, not state.
+    // The node has no pow_is_mining() to read it back and does not persist
+    // mining across a restart, so this is cleared on every transition out of
+    // Running and can still be wrong in between: a node that stopped mining on
+    // its own leaves this standing.
+    //
+    // Named for what it actually is. Use it where intent is the right input —
+    // which way the button toggles, which call to send — and powActive where
+    // proof is, because that one is measured rather than assumed.
+    PROP(bool miningRequested READONLY)
+    // PoW reward claims paid to one of this wallet's keys, counted from the
+    // blocks seen since the node started. Lives here rather than in QML for the
+    // same reason processedBlockCount does: it has to survive a view reload.
+    PROP(int powRewardsClaimed READONLY)
+    // What those claims actually paid, in lepta, as a decimal string. The value
+    // is summed from the claim transactions' transfer outputs rather than from a
+    // ticket count times an assumed rate — the reward per ticket is the node's
+    // epoch_reward() and is not published anywhere the app can read it.
+    PROP(QString powRewardsLepta READONLY)
+    // Whether auto-claim was last started from here. Optimistic for the same
+    // reason `mining` is — there is no pow_is_auto_claim() to read it back.
+    //
+    // It follows the node's own default, which is OFF: unattended claiming is
+    // opt-in through pow.auto_claim.targets, and generate_user_config writes no
+    // pow section at all, so a freshly generated config has nothing to arm. This
+    // used to assert `true` on every transition into Running, which was wrong for
+    // every config nobody had been through the PoW settings for — and wrong
+    // again once the node disarms itself, which it does as soon as every target
+    // has reached its threshold.
+    PROP(bool autoClaimRunning READONLY)
 
     SLOT(void startBlockchain())
     SLOT(void stopBlockchain())
@@ -95,6 +156,30 @@ class BlockchainBackend
     // the UI should sit in.
     SIGNAL(stopFailed(QString reason))
 
+    SLOT(QVariantMap powStartMining())
+    SLOT(QVariantMap powStopMining())
+    // Tickets this node could claim right now, as the module's JSON:
+    // { claimable_tickets, slots_until_expiry: [ ... ] }. Polled rather than
+    // pushed, so the view owns the cadence.
+    SLOT(QVariantMap powClaimableRewards())
+    // claimAddressHex may be empty, which pays whichever auto-claim target is
+    // currently furthest below its threshold — the same choice auto-claim makes.
+    SLOT(QVariantMap powClaim(QString claimAddressHex))
+    // Runtime overrides on the node's own default. Neither is persisted, so both
+    // are undone by a node restart rather than by writing the config back.
+    SLOT(QVariantMap powStartAutoClaim())
+    SLOT(QVariantMap powStopAutoClaim())
+    // PoW config, edited into an already-generated user_config.yaml. The node
+    // reads it once when its PoW service starts, so the wizard offers it while
+    // the config is being written and before the node has ever run.
+    // getConfigWalletKeys reads the accounts out of that file rather than the
+    // wallet, which needs a running node the wizard does not have yet.
+    SLOT(QVariantMap getConfigWalletKeys(QString configPath))
+    // Every PoW setting in one call. Deliberately not one call per field: the
+    // module validates the whole object against the file before writing any of
+    // it, so a rejected target cannot leave the mining knobs applied and the
+    // config half-configured.
+    SLOT(QVariantMap powConfigure(QString configPath, QString configJson))
     SLOT(void clearBlocks())
     SLOT(void copyToClipboard(QString text))
 }

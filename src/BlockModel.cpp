@@ -17,6 +17,73 @@ QString prettify(const QJsonValue& value)
     return value.toVariant().toString();
 }
 
+// TRANSFER and CLAIM_POW_REWARD. Mantle ops share one `{ opcode, payload }`
+// wire shape, so the opcode is what identifies the operation.
+constexpr int kTransferOpcode = 0x00;
+constexpr int kClaimPowRewardOpcode = 0x40;
+
+// One claim transaction: the keys it pays, how many mined tickets it redeems,
+// and what it actually pays out.
+struct PowClaimBatch {
+    QStringList payoutKeys;
+    int claimCount = 0;
+    quint64 lepta = 0;
+};
+
+// Appends the claim batch a transaction carries, if any. Each transaction in a
+// `newBlock` payload is `{ id, mantle_tx: { ops: [...] }, ops_proofs }` — the id
+// is flattened in beside the signed transaction, which is why the ops sit one
+// level down under `mantle_tx`.
+//
+// The payee is not on the claim op. `ClaimPowRewardOp.public_key` is the
+// per-ticket key the puzzle was solved against — one per mined ticket, so it
+// never matches a wallet — and the note it mints is spent in the same
+// transaction by transfer ops paying the node's claim address. So the payee
+// comes from the transfer outputs, and every claim in the transaction is paid
+// to it.
+void collectPowClaims(const QJsonObject& transaction, QList<PowClaimBatch>& out)
+{
+    const QJsonArray ops = transaction.value(QStringLiteral("mantle_tx"))
+                               .toObject()
+                               .value(QStringLiteral("ops"))
+                               .toArray();
+    PowClaimBatch batch;
+    for (const QJsonValue op : ops) {
+        const QJsonObject fields = op.toObject();
+        switch (fields.value(QStringLiteral("opcode")).toInt(-1)) {
+        case kClaimPowRewardOpcode:
+            ++batch.claimCount;
+            break;
+        case kTransferOpcode: {
+            // Change is paid back to the claim address too, so every output is
+            // a candidate payee rather than just the first.
+            const QJsonArray outputs = fields.value(QStringLiteral("payload"))
+                                           .toObject()
+                                           .value(QStringLiteral("outputs"))
+                                           .toArray();
+            for (const QJsonValue output : outputs) {
+                const QJsonObject entry = output.toObject();
+                const QString pk = entry.value(QStringLiteral("pk")).toString();
+                if (pk.isEmpty())
+                    continue;
+                if (!batch.payoutKeys.contains(pk))
+                    batch.payoutKeys << pk;
+                const qint64 value = entry.value(QStringLiteral("value")).toInteger(0);
+                if (value > 0)
+                    batch.lepta += static_cast<quint64>(value);
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+    // A transfer with no claims is an ordinary payment, and a claim whose payee
+    // cannot be read is one we could not attribute either way.
+    if (batch.claimCount > 0 && !batch.payoutKeys.isEmpty())
+        out << batch;
+}
+
 } // namespace
 
 int BlockModel::rowCount(const QModelIndex& parent) const
@@ -74,13 +141,19 @@ QHash<int, QByteArray> BlockModel::roleNames() const
 void BlockModel::appendRaw(const QString& timestamp, const QString& rawJson)
 {
     Entry e;
+    QList<PowClaimBatch> powClaims;
     e.timestamp = timestamp;
 
-    // The payload is double-encoded JSON: an outer {"block":"<json string>"}
-    // whose value is itself a JSON-encoded block. Tolerate a few shapes:
-    //   { "block": "<stringified block>" }   (observed)
-    //   { "block": { ... } }                  (already an object)
-    //   { "header": ..., "transactions": ... }(block sent directly)
+    // Tolerated shapes:
+    //   { "block": {...}, "tip", "tip_slot", "lib", "lib_slot" }  processed-block
+    //   { "block": "<stringified block>" }                        legacy, stringified
+    //   { "block": { ... } }                                      legacy, object
+    //   { "header": ..., "transactions": ... }                    block sent directly
+    //
+    // The processed-block form is the one subscribed to: it survives a lagged
+    // item where the legacy new-block stream ends permanently, and it signals
+    // its own end. Its block sits under the same "block" key the legacy object
+    // form used, so the branch below covers both.
     QJsonObject block;
     bool ok = false;
 
@@ -133,14 +206,21 @@ void BlockModel::appendRaw(const QString& timestamp, const QString& rawJson)
 
         const QJsonArray txs = block.value(QStringLiteral("transactions")).toArray();
         e.txCount = txs.size();
-        for (const QJsonValue tx : txs)
+        for (const QJsonValue tx : txs) {
             e.transactions << prettify(tx);
+            collectPowClaims(tx.toObject(), powClaims);
+        }
 
         e.rawJson = QString::fromUtf8(QJsonDocument(block).toJson(QJsonDocument::Indented));
     } else {
         // Keep the raw text so an unexpected format is still inspectable.
         e.parsed = false;
         e.rawJson = rawJson;
+    }
+
+    if (!e.blockId.isEmpty() && !m_entries.isEmpty()
+        && m_entries.first().blockId == e.blockId) {
+        return;
     }
 
     beginInsertRows(QModelIndex(), 0, 0);
@@ -155,6 +235,11 @@ void BlockModel::appendRaw(const QString& timestamp, const QString& rawJson)
     }
 
     emit countChanged();
+
+    // After the insertion: a consumer reacting to this may want to look the
+    // block up, and eviction must not race the lookup.
+    for (const PowClaimBatch& batch : powClaims)
+        emit powClaimsFound(batch.payoutKeys, batch.claimCount, batch.lepta);
 }
 
 QVariantMap BlockModel::findTransaction(const QString& txId) const
@@ -177,7 +262,14 @@ QVariantMap BlockModel::findTransaction(const QString& txId) const
             const QJsonDocument doc = QJsonDocument::fromJson(txJson.toUtf8(), &err);
             if (err.error != QJsonParseError::NoError || !doc.isObject())
                 continue;
-            const QString id = doc.object().value(QStringLiteral("id")).toString();
+            // Flattened `id` on the legacy new-block payload; `mantle_tx.hash`
+            // on the processed-block one. Both shapes are accepted so a tx id
+            // copied from either still resolves.
+            const QJsonObject txObj = doc.object();
+            QString id = txObj.value(QStringLiteral("id")).toString();
+            if (id.isEmpty())
+                id = txObj.value(QStringLiteral("mantle_tx")).toObject()
+                          .value(QStringLiteral("hash")).toString();
             if (!id.isEmpty() && normalize(id) == needle) {
                 return QVariantMap{
                     {"found", true},

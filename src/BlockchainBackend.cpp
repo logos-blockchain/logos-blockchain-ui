@@ -143,7 +143,37 @@ constexpr int kDiskSampleIntervalMs = 20 * 1000;
 // two tiles must never cost the dashboard its responsiveness.
 constexpr int kPidLookupTimeoutMs = 1500;
 constexpr int kPidLookupAttempts = 3;
+// A stop pressed while the node is already Running has nothing queued ahead of
+// it — the start it would have waited for has already returned. Only a stop
+// pressed during Starting can be stuck behind a replay, and only that one needs
+// the long deadline. Giving both the 15-minute one left the button dead and
+// silent for a quarter of an hour on a node that was merely refusing.
+constexpr int kStopWhenRunningTimeoutMs = 60 * 1000;
+// How long the claimable count may climb without ever falling before we call
+// claiming stalled. The node's auto-claim ticker defaults to 300s and a ticket's
+// reward window is the same 300 slots, so one missed tick is already a
+// generation of tickets lost; this is that period plus a minute of slack, and
+// short enough to warn while the next generation can still be saved.
+//
+// Both numbers are the node's and neither is readable from here yet — see the
+// pow_status() request — so this is a floor, not a derivation.
+constexpr qint64 kClaimStallMs = 360 * 1000;
+// Floor between balance re-reads. One auto-claim drain settles many claims back
+// to back; re-reading every key for each would be dozens of blocking calls.
+constexpr qint64 kBalanceRefreshMinMs = 30 * 1000;
+// How long the claimable count may sit perfectly still before PoW is called
+// idle. Two background poll intervals: at any real mining rate the count moves
+// by hundreds between readings, so a genuinely unchanged figure means the search
+// is not running rather than that we looked at an unlucky moment.
+constexpr qint64 kPowIdleMs = 60 * 1000;
 constexpr int kLivenessProbeMs = 1500;
+// One missed probe means nothing. The probe is free while the shared replica
+// implementation is Valid, but when it is not it degrades into a real
+// acquisition against a module that may simply be busy — a node replaying tens
+// of thousands of blocks will not answer inside the probe timeout. Three misses
+// in a row is the same shape as kOfflineReadingsBeforeDrop below: believe good
+// news at once, make bad news prove itself.
+constexpr int kLivenessMissesBeforeGone = 3;
 // How often to ask, while the node is meant to be up.
 constexpr int kLivenessIntervalMs = 15 * 1000;
 // A fall out of Online has to be confirmed; a rise does not. Mirrors the
@@ -163,6 +193,18 @@ int uptimeTickMs(qint64 secondsUp)
         return 60 * 1000;
     return 60 * 60 * 1000;
 }
+
+// Hex as the node writes it: lower case, no 0x. Claim beneficiaries arrive from
+// block JSON and known addresses from the wallet, so both are normalised before
+// being compared.
+QString normalizeHex(const QString& hex)
+{
+    QString out = hex.trimmed();
+    if (out.startsWith(QStringLiteral("0x"), Qt::CaseInsensitive))
+        out = out.mid(2);
+    return out.toLower();
+}
+
 // The node reports Online / Bootstrapping / NotStarted in get_cryptarchia_info.
 QString cryptarchiaMode(const QVariant& payload)
 {
@@ -280,9 +322,33 @@ bool BlockchainBackend::moduleIsAlive()
     return true;
 }
 
+// The case moduleIsAlive() cannot settle: a module buried under a block replay
+// answers nothing — not the poll, not the probe — while its process is plainly
+// alive and writing hundreds of log lines a second. The transport says gone and
+// the filesystem says working, and the filesystem is right.
+//
+// Only a *fresh* write counts. A dead node leaves its last log file behind, so
+// the mtime has to have moved since we last looked; the reading is seeded when
+// the node starts so the first verdict has a baseline to compare against.
+bool BlockchainBackend::nodeLogAdvanced()
+{
+    const QString path = newestNodeLogPath();
+    if (path.isEmpty())
+        return false;
+
+    const QDateTime written = QFileInfo(path).lastModified();
+    if (!written.isValid())
+        return false;
+
+    const bool advanced = m_lastNodeLogWrite.isValid() && written > m_lastNodeLogWrite;
+    m_lastNodeLogWrite = written;
+    return advanced;
+}
+
 void BlockchainBackend::declareModuleGone()
 {
     m_consecutivePollFailures = 0;
+    m_livenessMisses = 0;
     m_livenessTimer->stop();
     setNodeModuleReachable(false);
     setNodeRecovering(false);
@@ -422,6 +488,36 @@ static QString toErrorMessage(const LogosResult& result)
 {
     return QStringLiteral("Error: %1").arg(result.error.toString());
 }
+
+} // namespace result
+
+// A failed call the transport could actually diagnose. The codes are the
+// canonical ones from logos_call_error.h; the message underneath them names the
+// module and the method, which is worth keeping because none of this reaches the
+// node — there is nothing in its log to cross-reference.
+static QString describeCallError(const logos::CallError& error)
+{
+    const QString detail = QString::fromStdString(error.message);
+    const QString code = QString::fromStdString(error.code);
+
+    if (code == QLatin1String("timeout"))
+        return QObject::tr("The node module did not answer in time. It is most likely busy "
+                           "replaying blocks — the reading will come back on its own.");
+    if (code == QLatin1String("object_unavailable"))
+        return QObject::tr("The node module is not reachable. Its process may have stopped.");
+    if (code == QLatin1String("transport_error"))
+        return QObject::tr("The connection to the node module failed: %1").arg(detail);
+    if (code == QLatin1String("unauthorized"))
+        return QObject::tr("The node module refused the call: %1").arg(detail);
+    if (code == QLatin1String("dispatch_failed"))
+        return QObject::tr("The node module could not dispatch the call: %1").arg(detail);
+    // call_failed, and anything added to the vocabulary later. The detail still
+    // names the module and method, which beats the bare code.
+    return detail.isEmpty() ? QObject::tr("The call failed for an unreported reason.")
+                            : QObject::tr("The call failed: %1").arg(detail);
+}
+
+namespace result {
 
 // Returns a stringified version of a `LogosResult`.
 //
@@ -570,17 +666,42 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     m_livenessTimer = new QTimer(this);
     m_livenessTimer->setInterval(kLivenessIntervalMs);
     connect(m_livenessTimer, &QTimer::timeout, this, [this]() {
-        if (!moduleIsAlive())
-            declareModuleGone();
+        if (moduleIsAlive()) {
+            m_livenessMisses = 0;
+            return;
+        }
+        // A missed probe is not a verdict. Only a run of them is, and even then
+        // only if no block has arrived to contradict it in the meantime — see
+        // countPowClaims' sibling below, where the block stream resets this.
+        if (++m_livenessMisses < kLivenessMissesBeforeGone) {
+            qWarning() << "liveness: probe missed" << m_livenessMisses << "of"
+                       << kLivenessMissesBeforeGone << "- the module may just be busy";
+            return;
+        }
+        // Last word before the verdict: a log that is still growing outranks a
+        // run of missed probes, because it is evidence about the process rather
+        // than about the transport. Start the run again so a node that really
+        // does die still has to be caught, just one more round later.
+        if (nodeLogAdvanced()) {
+            qWarning() << "liveness: probes missed but the node log is still growing"
+                       << "- treating the module as busy, not gone";
+            m_livenessMisses = 0;
+            return;
+        }
+        declareModuleGone();
     });
     connect(this, &BlockchainBackendSimpleSource::statusChanged, this, [this]() {
         // Starting counts: start does not return until the node is fully up, so
         // a module that dies mid-replay would otherwise sit unchallenged behind
         // a headline that is only true because nothing can correct it.
-        if (status() == Running || status() == Starting)
+        if (status() == Running || status() == Starting) {
+            // A fresh run of probes for a fresh run of the node: misses carried
+            // over from the last one would count towards this one's verdict.
+            m_livenessMisses = 0;
             m_livenessTimer->start();
-        else
+        } else {
             m_livenessTimer->stop();
+        }
     });
 
     // Re-apply pre-.rep behavior: normalize file URLs, then persist (as master did in setters).
@@ -593,6 +714,8 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         }
         QSettings("Logos", "BlockchainUI")
             .setValue("userConfigPath", userConfig());
+        // A different config means different keys and different jobs for them.
+        refreshAccountRoles();
     });
     connect(this, &BlockchainBackendSimpleSource::deploymentConfigChanged, this, [this]() {
         const QString p = deploymentConfig();
@@ -620,8 +743,18 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
             setNodeCpuPercent(-1.0);
             setNodeMemoryMb(-1.0);
             m_cpuSampledOnce = false;
+            // The node does not persist mining: stopping it, or losing it,
+            // leaves mining off
+            setMiningRequested(false);
+            // Auto-claim is not persisted either.
+            setAutoClaimRunning(false);
         }
     });
+
+    // The block model parses every incoming block already, so it reports the
+    // claims it sees rather than making us walk the same payload twice.
+    connect(m_blockModel, &BlockModel::powClaimsFound,
+            this, &BlockchainBackend::countPowClaims);
 
     if (!m_logosAPI) {
         qWarning() << "BlockchainBackend: constructed without LogosAPI";
@@ -629,6 +762,44 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     }
 
     m_blockchainClient = m_logosAPI->getClient(BLOCKCHAIN_MODULE_NAME);
+
+    // Fires as soon as it is switched on, not one interval later: opening the
+    // Mining tab used to show the previous visit's number for five seconds with
+    // nothing marking it as stale.
+    m_claimablePollTimer = new QTimer(this);
+    m_claimablePollTimer->setInterval(5000);
+    connect(m_claimablePollTimer, &QTimer::timeout, this,
+            &BlockchainBackend::pollClaimableRewards);
+    // Two reasons to poll, and they are not the same reason. Someone watching the
+    // Mining tab wants a live number; a mining node needs watching whether anyone
+    // is looking or not, because the stall this feeds is a thing you want to be
+    // told about, not a thing you have to go and check. The background cadence is
+    // slower because a stall is measured in minutes.
+    auto syncClaimablePolling = [this]() {
+        const bool watching = claimablePollActive();
+        const bool wanted = watching || miningRequested();
+        if (!wanted) {
+            m_claimablePollTimer->stop();
+            // Nothing is producing tickets, so a count that stopped falling says
+            // nothing. Leaving the flags up would strand them on screen.
+            setClaimsStalled(false);
+            setPowActive(false);
+            return;
+        }
+
+        m_claimablePollTimer->setInterval(watching ? 5000 : 30000);
+        if (!m_claimablePollTimer->isActive())
+            pollClaimableRewards();
+        m_claimablePollTimer->start();
+    };
+    connect(this, &BlockchainBackendSimpleSource::claimablePollActiveChanged, this,
+            syncClaimablePolling);
+    connect(this, &BlockchainBackendSimpleSource::miningRequestedChanged, this, syncClaimablePolling);
+
+    // The restored config was set before this client existed and before the
+    // handler above was connected, so neither fired for it. Everything needed
+    // is in place now.
+    refreshAccountRoles();
     if (!m_blockchainClient) {
         setError(QStringLiteral("Module not initialized"));
         qWarning() << "BlockchainBackend: failed to get blockchain module client";
@@ -646,14 +817,6 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     LogosObject* replica =
         m_blockchainClient->requestObject(BLOCKCHAIN_MODULE_NAME);
     if (replica) {
-        m_blockchainClient->onEvent(
-            replica, "newBlock",
-            [this](const QString&, const QVariantList& data) {
-                const QString timestamp =
-                    QDateTime::currentDateTime().toString("HH:mm:ss");
-                const QString raw = data.isEmpty() ? QString() : data.first().toString();
-                m_blockModel->appendRaw(timestamp, raw);
-            });
 
         // Fires per block the node *processes*, which includes the blocks it
         // applies while catching up — the phase where get_cryptarchia_info is
@@ -680,11 +843,34 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
                     setBlockStreamEnded(true);
                     return;
                 }
+                // A module pushing blocks is alive, whatever the liveness probe
+                // makes of it. The probe can only ask the transport; this is the
+                // module itself doing work, so it outranks a missed probe and
+                // clears the run before it can reach a verdict.
+                //
+                // Both runs, not just the timer's: the poll path reaches the
+                // same declareModuleGone() from its own counter, so leaving that
+                // one standing lets a busy node be condemned by the poll while
+                // the blocks that disprove it are still arriving.
+                m_livenessMisses = 0;
+                m_consecutivePollFailures = 0;
                 setProcessedBlockCount(processedBlockCount() + 1);
+
+                // The blocks themselves, from this stream rather than newBlock.
+                // Same underlying subscription and the same storage read, so
+                // nothing arrives later — but this one drops a lagged item and
+                // carries on where newBlock's reader exits its loop for good,
+                // which is why the Blocks view used to freeze partway through
+                // every initial sync and only a node restart brought it back.
+                // It also announces its own end, which newBlock never did.
+                m_blockModel->appendRaw(
+                    QDateTime::currentDateTime().toString("HH:mm:ss"), raw);
             });
     } else {
         setError(QStringLiteral("Failed to subscribe to events"));
     }
+
+    setClaimStallSeconds(static_cast<int>(kClaimStallMs / 1000));
 
     qDebug() << "BlockchainBackend: initialized";
 }
@@ -1033,6 +1219,7 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
             refreshResourceUsage();
             refreshDiskUsage();
             if (modeOnline) {
+                refreshBalancesIfStale();
                 if (blendRole() == Unknown)
                     refreshBlendRole();
                 // Unlike the blend role, stake is not acquired once: it moves with
@@ -1054,19 +1241,369 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
         }
 
         if (++m_consecutivePollFailures >= kFailuresBeforeProbe) {
-            if (!moduleIsAlive()) {
+            if (!moduleIsAlive() && !nodeLogAdvanced()) {
                 declareModuleGone();
                 r.error = lastErrorMessage();
             } else {
-                // The module answered, so the run of failures was a busy node,
-                // not a missing one. Start the count again: without this the
-                // gate only delays the first probe and then runs one on every
-                // subsequent failed poll, which is what it exists to avoid.
+                // Either the module answered or its log is still growing, so
+                // the run of failures was a busy node, not a missing one. Start
+                // the count again: without this the gate only delays the first
+                // probe and then runs one on every subsequent failed poll,
+                // which is what it exists to avoid.
                 m_consecutivePollFailures = 0;
             }
         }
     }
     return result::toVariantMap(r);
+}
+
+// Mining is a fire-and-forget toggle with no readback, so `mining` only moves
+// when the node accepts the call. A failed start therefore leaves the button
+// offering Fund again rather than lying about what the node is doing.
+QVariantMap BlockchainBackend::powStartMining()
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("pow_start_mining")));
+    if (r.success) {
+        setMiningRequested(true);
+        // The tickets this run mines are the ones the stall watch is about, and
+        // the previous run's backlog must not count against it.
+        restartClaimStallWatch();
+    }
+    return result::toVariantMap(r);
+}
+
+QVariantMap BlockchainBackend::powStopMining()
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("pow_stop_mining")));
+    if (r.success)
+        setMiningRequested(false);
+    return result::toVariantMap(r);
+}
+
+// Polled by the mining view. Left as a plain call rather than a pushed property
+// because the count moves thousands of times a second while mining, and the view
+// is the only thing that knows how often it can usefully redraw.
+QVariantMap BlockchainBackend::powClaimableRewards()
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("pow_claimable_rewards"))));
+}
+
+// An empty address pays whichever auto-claim target is furthest below its
+// threshold — the same choice auto-claim itself makes, and the right default
+// when the operator has not picked one.
+QVariantMap BlockchainBackend::powClaim(QString claimAddressHex)
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    const QVariantMap reply = result::toVariantMap(result::toLogosResult(
+        m_blockchainClient->invokeRemoteMethod(
+            BLOCKCHAIN_MODULE_NAME, QStringLiteral("pow_claim"), claimAddressHex.trimmed())));
+
+    // The count has moved either way — a claim can fail after consuming tickets
+    // — and waiting a full interval makes a successful claim look inert.
+    if (claimablePollActive())
+        pollClaimableRewards();
+
+    return reply;
+}
+
+// Like mining, these only move the flag when the node accepts the call, so a
+// refused toggle leaves the switch showing what the node is actually doing.
+QVariantMap BlockchainBackend::powStartAutoClaim()
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("pow_start_auto_claim")));
+    if (r.success)
+        setAutoClaimRunning(true);
+    return result::toVariantMap(r);
+}
+
+QVariantMap BlockchainBackend::powStopAutoClaim()
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("pow_stop_auto_claim")));
+    if (r.success)
+        setAutoClaimRunning(false);
+    return result::toVariantMap(r);
+}
+
+// Claims are counted from blocks, because a claim transaction is the only place
+// a settled PoW reward is visible: pow_claimable_rewards reports tickets waiting
+// to be claimed, not ones already paid. Blocks carry every node's claims, so
+// only transactions paying a key this wallet tracks are ours — and auto-claim
+// picks whichever of our keys is furthest below its threshold, so the payee is
+// not fixed and the whole known set has to be matched.
+//
+// A claim transaction pays one address, so matching any of its payout keys
+// makes the whole batch ours.
+void BlockchainBackend::countPowClaims(
+    const QStringList& payoutKeys, int claimCount, quint64 lepta)
+{
+    if (m_knownAddresses.isEmpty() || claimCount <= 0)
+        return;
+
+    for (const QString& payoutKey : payoutKeys) {
+        if (m_knownAddresses.contains(normalizeHex(payoutKey))) {
+            setPowRewardsClaimed(powRewardsClaimed() + claimCount);
+            m_powRewardsLepta += lepta;
+            setPowRewardsLepta(QString::number(m_powRewardsLepta));
+            // Tokens just landed on a key we track, so the cached balances — and
+            // walletFunded with them — are now wrong.
+            refreshBalancesIfStale();
+            return;
+        }
+    }
+}
+
+// Wallet keys from the config file, with the jobs that config gives each one.
+// From the file rather than the wallet because this also answers before a node
+// exists — wallet_get_known_addresses needs a live one. The module reports each
+// job as its own field and one key often holds several, so the cross-reference
+// is resolved here rather than by every view that wants it.
+//
+// Returns rows: { address, roles, roleLabel, label }.
+QVariantMap BlockchainBackend::readAccountRoles(const QString& configPath)
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("config_get_wallet_keys"),
+        toLocalPath(configPath.trimmed())));
+    if (!r.success)
+        return result::toVariantMap(r);
+
+    const QJsonDocument doc = QJsonDocument::fromJson(r.value.toString().toUtf8());
+    if (!doc.isObject())
+        return result::toVariantMap(
+            result::err(QStringLiteral("Could not read accounts from the config.")));
+    const QJsonObject obj = doc.object();
+
+    const QJsonArray knownKeys = obj.value(QStringLiteral("known_keys")).toArray();
+    QHash<QString, QStringList> rolesByAddress;
+    for (const QJsonValue& keyValue : knownKeys) {
+        const QString key = keyValue.toString();
+        if (key.isEmpty())
+            continue;
+        const QString normalized = normalizeHex(key);
+
+        QStringList roles;
+        for (auto field = obj.constBegin(); field != obj.constEnd(); ++field) {
+            if (field.key() == QLatin1String("known_keys") || !field.value().isString())
+                continue;
+            const QString holder = field.value().toString();
+            if (!holder.isEmpty() && normalizeHex(holder) == normalized)
+                roles << field.key();
+        }
+        roles.sort();
+        rolesByAddress.insert(key, roles);
+    }
+
+    // Both, from one composition. The model is what AccountsView renders and
+    // what a later node refresh keeps roles on; the returned rows are what a
+    // picker needs, because the model reaches QML as a QtRO replica that
+    // fetches row data in batches after reporting its count — a combo box asks
+    // once as it opens and draws whatever arrived, so it comes up empty the
+    // first time and corrects itself on the second.
+    m_accountsModel->setRoles(rolesByAddress);
+    publishAccountRows();
+
+    QVariantList accounts;
+    accounts.reserve(knownKeys.size());
+    for (const QJsonValue& keyValue : knownKeys) {
+        const QString key = keyValue.toString();
+        if (key.isEmpty())
+            continue;
+        accounts.append(AccountsModel::describe(key, rolesByAddress.value(key)));
+    }
+
+    return result::toVariantMap(LogosResult{true, accounts, QVariant()});
+}
+
+// The wizard's entry point: the same read, with the rows handed back.
+QVariantMap BlockchainBackend::getConfigWalletKeys(QString configPath)
+{
+    return readAccountRoles(configPath);
+}
+
+// Five seconds, and only while a view says someone is looking. The cadence is
+// the view's; the derivation is ours, because we hold the payload.
+void BlockchainBackend::pollClaimableRewards()
+{
+    if (!m_blockchainClient || status() != Running) {
+        setClaimableLoaded(false);
+        // A node that is not running is not failing to answer — it was not
+        // asked. Leaving the last failure up outlives whatever caused it and
+        // strands the notice on screen for the rest of the session.
+        setClaimableError(QString());
+        return;
+    }
+
+    logos::CallError callError;
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("pow_claimable_rewards"),
+        QVariantList(), Timeout(), &callError));
+    if (!r.success) {
+        // The last good count stays on screen behind the error: a failed poll
+        // says nothing about how many tickets exist, and blanking the figure
+        // would claim it had gone to zero.
+        setClaimableError(callError.ok() ? result::toErrorMessage(r)
+                                         : describeCallError(callError));
+        return;
+    }
+
+    const QJsonDocument doc = QJsonDocument::fromJson(r.value.toString().toUtf8());
+    if (!doc.isObject()) {
+        setClaimableError(tr("Could not read the claimable count."));
+        return;
+    }
+    const QJsonObject obj = doc.object();
+
+    // One pass for both: the soonest deadline, and how many tickets sit on it. A
+    // new minimum restarts the tally rather than adding to it — the count
+    // belongs to the deadline, not to the scan.
+    int soonest = -1;
+    int atSoonest = 0;
+    // Not `slots`: that is a Qt macro (qobjectdefs.h) and expands to nothing,
+    // which turns the declaration into a syntax error several lines later.
+    const QJsonArray expirySlots = obj.value(QStringLiteral("slots_until_expiry")).toArray();
+    for (const QJsonValue& slot : expirySlots) {
+        if (!slot.isDouble())
+            continue;
+        const int v = slot.toInt();
+        if (soonest < 0 || v < soonest) {
+            soonest = v;
+            atSoonest = 1;
+        } else if (v == soonest) {
+            ++atSoonest;
+        }
+    }
+
+    setClaimableError(QString());
+    const int tickets = obj.value(QStringLiteral("claimable_tickets")).toInt();
+    noteClaimableReading(tickets);
+    setClaimableTickets(tickets);
+    setSoonestExpirySlots(soonest);
+    setSoonestExpiryCount(atSoonest);
+    setClaimableLoaded(true);
+}
+
+// Opens a fresh stall window. Called when mining starts and when the poll is
+// armed, so the count has a full window to fall before anything is claimed about
+// it — the first auto-claim tick can be a whole period away.
+void BlockchainBackend::restartClaimStallWatch()
+{
+    m_lastClaimableTickets = -1;
+    m_sinceClaimableFell.restart();
+    m_sinceClaimableMoved.restart();
+    setClaimsStalled(false);
+    setPowActive(false);
+}
+
+// A claim is the only thing that takes tickets *out* of the claimable set while
+// mining continues, so a count that falls is proof claiming works and a count
+// that never falls is proof it does not. Expiry also removes tickets, which is
+// why a fall is treated as good news rather than counted: it makes this
+// forgiving in the one direction that matters, and it still cannot stay quiet
+// through a run where nothing is claimed at all.
+void BlockchainBackend::noteClaimableReading(int tickets)
+{
+    const bool fell = m_lastClaimableTickets >= 0 && tickets < m_lastClaimableTickets;
+    // Movement either way is the evidence: up means the search is finding
+    // tickets, down means a claim was paid. Only a count that does not budge at
+    // all says nothing is happening.
+    const bool moved = m_lastClaimableTickets >= 0 && tickets != m_lastClaimableTickets;
+    if (moved)
+        m_sinceClaimableMoved.restart();
+    setPowActive(m_sinceClaimableMoved.isValid()
+                 && m_sinceClaimableMoved.elapsed() <= kPowIdleMs);
+    m_lastClaimableTickets = tickets;
+
+    if (fell || tickets <= 0) {
+        m_sinceClaimableFell.restart();
+        setClaimsStalled(false);
+        // A falling count means tickets were redeemed, which the block stream
+        // may not tell us about — see the dead-feed problem. Balances are the
+        // one place the payout still shows up.
+        if (fell)
+            refreshBalancesIfStale();
+        return;
+    }
+
+    if (!m_sinceClaimableFell.isValid()) {
+        m_sinceClaimableFell.restart();
+        return;
+    }
+
+    setClaimsStalled(miningRequested() && m_sinceClaimableFell.elapsed() > kClaimStallMs);
+}
+
+// Flattens the model into the rows a picker binds to. Balances deliberately do
+// not trigger it: they change constantly, a picker only cares which accounts
+// exist, and republishing per tick would be a QtRO push per account for nothing.
+void BlockchainBackend::publishAccountRows()
+{
+    QVariantList rows;
+    const int count = m_accountsModel->rowCount();
+    rows.reserve(count);
+    for (int i = 0; i < count; ++i) {
+        const QModelIndex idx = m_accountsModel->index(i, 0);
+        rows.append(AccountsModel::describe(
+            m_accountsModel->data(idx, AccountsModel::AddressRole).toString(),
+            m_accountsModel->data(idx, AccountsModel::RolesRole).toStringList()));
+    }
+    setAccountRows(rows);
+}
+
+// The ambient one. The PoW wizard is the only other caller and an operator with
+// a working node never walks it again, so without this every picker shows bare
+// hex. Failure is logged, not surfaced: an address without a label still works.
+void BlockchainBackend::refreshAccountRoles()
+{
+    if (!m_blockchainClient || userConfig().isEmpty())
+        return;
+    const QVariantMap r = readAccountRoles(userConfig());
+    if (!r.value(QStringLiteral("success")).toBool()) {
+        qWarning() << "refreshAccountRoles: failed:"
+                   << r.value(QStringLiteral("error")).toString();
+    }
+}
+
+// Writes the whole PoW section in one module call. Failure is reported rather
+// than warned about and dropped: the operator chose these settings, and the
+// module validates everything before writing anything, so a rejection means the
+// config is untouched and saying so is the only honest answer.
+//
+// An empty auto_claim_targets array is meaningful rather than a no-op — the node
+// arms auto-claim exactly when the list is non-empty, so clearing it is how
+// auto-claim is turned off.
+QVariantMap BlockchainBackend::powConfigure(QString configPath, QString configJson)
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("pow_configure"),
+        toLocalPath(configPath.trimmed()), configJson)));
 }
 
 QVariantMap BlockchainBackend::getBlock(QString headerIdHex)
@@ -1148,10 +1685,19 @@ void BlockchainBackend::startBlockchain()
     setLastErrorMessage(QString());
     setNodeRecovering(false);
     // The streams are resubscribed below, so last run's progress and end-of-
-    // stream verdict must not carry over into this one.
+    // stream verdict must not carry over into this one. The reward count is
+    // session-scoped for the same reason: it is built from the blocks this
+    // subscription delivers, which start again from the current tip.
     setProcessedBlockCount(0);
     setBlockStreamEnded(false);
+    setPowRewardsClaimed(0);
+    m_powRewardsLepta = 0;
+    setPowRewardsLepta(QString());
     m_diagnosisAge.invalidate();
+    // Baseline for nodeLogAdvanced(), so the first verdict of this run has
+    // something to compare against instead of having to spend a round
+    // establishing one.
+    m_lastNodeLogWrite = QFileInfo(newestNodeLogPath()).lastModified();
     setStatus(Starting);
 
     // Asynchronous for the same reason stop is: this parks the whole source for
@@ -1213,6 +1759,11 @@ void BlockchainBackend::stopBlockchain()
     }
 
     const BlockchainStatus previous = status();
+    // Only a stop issued while the node is still Starting can be queued behind a
+    // replay; from Running there is nothing ahead of it, so it gets a deadline a
+    // person can wait out rather than the fifteen-minute one.
+    const int timeoutMs =
+        previous == Starting ? kNodeCallTimeoutMs : kStopWhenRunningTimeoutMs;
     setStatus(Stopping);
 
     QPointer<BlockchainBackend> self(this);
@@ -1236,7 +1787,7 @@ void BlockchainBackend::stopBlockchain()
                 self->setStatus(previous);
             }
         },
-        Timeout(kNodeCallTimeoutMs));
+        Timeout(timeoutMs));
 }
 
 void BlockchainBackend::refreshAccounts()
@@ -1270,9 +1821,53 @@ void BlockchainBackend::refreshAccounts()
     qDebug() << "refreshAccounts: loaded" << list.size() << "addresses";
 
     m_accountsModel->setAddresses(list);
+    publishAccountRows();
 
-    QTimer::singleShot(0, this,
-                       [this, list]() { fetchBalancesForAccounts(list); });
+    // Node truth about which keys are ours, which is what a claim in a block is
+    // matched against. It also covers manual claims to any tracked key, not just
+    // the configured auto-claim target.
+    m_knownAddresses.clear();
+    for (const QString& address : list)
+        m_knownAddresses.insert(normalizeHex(address));
+}
+
+// Balances were fetched exactly once, right after refreshAccounts, so
+// walletFunded described the wallet as it stood seconds after the node came up
+// and never moved again — a node that mined its first tokens an hour later still
+// showed "Fund your wallet".
+//
+// Driven by events that mean tokens actually arrived rather than by a timer:
+// wallet_get_balance is a synchronous remote call and there is one per key, so a
+// steady poll would put six blocking calls on the status path of a node that may
+// already be too busy to answer. Throttled because a single auto-claim drain
+// settles many claims in a row, and deferred because the caller is usually the
+// block stream, which should not wait on this.
+void BlockchainBackend::refreshBalancesIfStale()
+{
+    if (!m_blockchainClient || status() != Running)
+        return;
+    if (m_balancesSampled.isValid() && m_balancesSampled.elapsed() < kBalanceRefreshMinMs)
+        return;
+    m_balancesSampled.restart();
+
+    QStringList addresses;
+    const int count = m_accountsModel->rowCount();
+    addresses.reserve(count);
+    for (int i = 0; i < count; ++i) {
+        const QString address =
+            m_accountsModel->data(m_accountsModel->index(i, 0), AccountsModel::AddressRole)
+                .toString();
+        if (!address.isEmpty())
+            addresses << address;
+    }
+    if (addresses.isEmpty())
+        return;
+
+    QPointer<BlockchainBackend> self(this);
+    QTimer::singleShot(0, this, [self, addresses]() {
+        if (self)
+            self->fetchBalancesForAccounts(addresses);
+    });
 }
 
 void BlockchainBackend::fetchBalancesForAccounts(const QStringList& list)
@@ -1291,8 +1886,15 @@ QVariantMap BlockchainBackend::getBalance(QString addressHex)
               BLOCKCHAIN_MODULE_NAME, "wallet_get_balance", addressHex))
         : result::err(QStringLiteral("Module not initialized."));
 
-    m_accountsModel->setBalanceForAddress(
-        addressHex, lr.success ? lr.value.toString() : QString());
+    // Only a successful read writes. A failed one says nothing about the
+    // balance, and blanking the cached figure would make a busy module look like
+    // an empty wallet — which is exactly what it did once this started being
+    // re-read periodically: the lifecycle lane reached Aged and then fell back
+    // to "Fund your wallet" on the first refresh the node was too busy to
+    // answer. Same rule the claimable poll follows: keep the last good reading
+    // behind the failure.
+    if (lr.success)
+        m_accountsModel->setBalanceForAddress(addressHex, lr.value.toString());
     setWalletFunded(m_accountsModel->hasFunds());
     return result::toVariantMap(lr);
 }
@@ -1368,6 +1970,11 @@ QVariantMap BlockchainBackend::generateConfig(
     const QString jsonToSend =
         QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
 
+    // PoW is deliberately not set up here. The wizard's PoW step owns that
+    // section and writes it with one powConfigure call, so nothing arms
+    // auto-claim behind a user who has not reached — or has abandoned — that
+    // step. The result value is the absolute path the module wrote to, which is
+    // what that step edits.
     return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "generate_user_config", jsonToSend)));
 }
