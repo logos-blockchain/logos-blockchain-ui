@@ -5,6 +5,8 @@ import Logos.Theme
 import Logos.Controls
 import Logos.Icons
 
+import "../Units.js" as Units
+
 LogosItemDelegate {
     id: root
 
@@ -36,7 +38,7 @@ LogosItemDelegate {
                 Layout.preferredWidth: contentWidth
                 Layout.alignment: Qt.AlignRight
                 visible: (model.balance || "").length > 0
-                text: model.balance || ""
+                text: Units.format(model.balance || "")
                 font.pixelSize: Theme.typography.secondaryText
                 color: Theme.palette.textSecondary
                 elide: Text.ElideRight

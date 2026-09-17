@@ -10,6 +10,7 @@ import Logos.Controls
 import Logos.BlockchainBackend 1.0
 
 import "infoContent.js" as InfoContent
+import "../Units.js" as Units
 
 // The node dashboard: a full-width status hero carrying the lifecycle lane,
 // over a responsive grid of metric tiles.
@@ -166,42 +167,6 @@ Item {
             return qsTr("%1d %2h").arg(Math.floor(h / 24)).arg(h % 24)
         }
         readonly property bool showUptime: root.connected && root.uptimeSeconds > 0
-
-        function groupSizesFor(locale) {
-            const sep = locale.groupSeparator
-            if (!sep)
-                return [0, 0]
-            const parts = (1234567890).toLocaleString(locale, 'f', 0).split(sep)
-            if (parts.length < 2)
-                return [3, 3]
-            const primary = parts[parts.length - 1].length
-            return [primary, parts.length > 2 ? parts[parts.length - 2].length : primary]
-        }
-        readonly property var groupSizes: groupSizesFor(Qt.locale())
-
-        // Groups a long figure so it can be read at a glance. Walks the string
-        // rather than the number: these are u64s, and Number() loses them.
-        // `sizes` defaults to this locale's; pass another locale's to format for
-        // it (which is also what makes this checkable against toLocaleString).
-        function groupDigits(s, sizes) {
-            const g = sizes || groupSizes
-            if (!s || g[0] <= 0)
-                return s
-            const sep = Qt.locale().groupSeparator
-            let out = ""
-            let sinceSep = 0
-            let width = g[0]
-            for (let i = s.length - 1; i >= 0; i--) {
-                if (sinceSep === width) {
-                    out = sep + out
-                    sinceSep = 0
-                    width = g[1]
-                }
-                out = s.charAt(i) + out
-                sinceSep += 1
-            }
-            return out
-        }
 
         // ---- Vouchers ------------------------------------------------------
         readonly property var vouchers: parseJson(root.vouchersJson)
@@ -547,7 +512,7 @@ Item {
                     Layout.minimumWidth: d.minTileWidth
                     label: qsTr("Stake")
                     value: root.stakeTotal.length > 0
-                           ? d.groupDigits(root.stakeTotal) : qsTr("—")
+                           ? Units.format(root.stakeTotal) : qsTr("—")
                     valueFontSizeMode: Text.HorizontalFit
                     caption: d.stakeCaption
                     labelTrailing: [

@@ -4,6 +4,8 @@ import QtQuick.Layouts
 import Logos.Theme
 import Logos.Controls
 
+import "../Units.js" as Units
+
 // Widget for selecting spendable notes (UTXOs) to consume in a channel deposit.
 //
 // The owner sets `notes` (a JS array of { id, value } parsed from
@@ -20,7 +22,9 @@ ColumnLayout {
     // Observable selection summary — bindings can't track ListModel reads, so
     // these properties are recomputed explicitly on every selection change.
     property int selectedCount: 0
-    property double selectedTotal: 0
+    // lepta, as a decimal string: a note value can exceed what a double holds
+    // exactly — the faucet note is u64::MAX — so the total is never a number.
+    property string selectedTotal: "0"
 
     function selectedIds() {
         var ids = []
@@ -34,16 +38,16 @@ ColumnLayout {
 
     function recompute() {
         var c = 0
-        var total = 0
+        var values = []
         for (var i = 0; i < notesModel.count; ++i) {
             var n = notesModel.get(i)
             if (n.selected) {
                 c++
-                total += Number(n.value)
+                values.push(n.value)
             }
         }
         root.selectedCount = c
-        root.selectedTotal = total
+        root.selectedTotal = Units.sumLepta(values)
     }
 
     function clearSelection() {
@@ -128,7 +132,7 @@ ColumnLayout {
 
                 LogosText {
                     Layout.alignment: Qt.AlignRight
-                    text: model.value
+                    text: Units.format(model.value)
                     color: Theme.palette.textSecondary
                     font.pixelSize: Theme.typography.secondaryText
                 }
@@ -148,7 +152,7 @@ ColumnLayout {
         }
         Item { Layout.fillWidth: true }
         LogosText {
-            text: qsTr("Total: %1").arg(root.selectedTotal)
+            text: qsTr("Total: %1").arg(Units.format(root.selectedTotal))
             font.pixelSize: Theme.typography.secondaryText
             font.bold: true
         }

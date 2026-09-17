@@ -82,9 +82,10 @@ var stake = {
         + "across instead.",
     states: [
         { label: "Amount",
-          meaning: "The staked value, grouped for reading. The node publishes "
-                 + "no denomination for the token, so this is a plain count "
-                 + "with no decimal point implied." },
+          meaning: "The staked value in LGO, grouped for reading. The node "
+                 + "reports a plain count of base units (1 LOGOS = 10^9 "
+                 + "lepta) and publishes no denomination of its own, so the "
+                 + "9-decimal scale is the app's, not the chain's." },
         { label: "Address · N notes",
           meaning: "Beneath the figure while all the staked notes sit on one "
                  + "key: the address holding them, copyable in full, and how "
