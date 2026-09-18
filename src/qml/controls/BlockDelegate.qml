@@ -16,6 +16,12 @@ Rectangle {
 
     signal copyToClipboard(string text)
 
+    // Filtered out by a search: collapse to nothing rather than unload, so the
+    // row comes straight back when the filter clears.
+    property bool collapsed: false
+    // Opened by a search that matched this row, on top of the user's own toggle.
+    property bool forceExpanded: false
+
     // Column geometry, set by BlocksView so the row lines up with its header.
     property int timestampWidth: 180
     property int consensusWidth: 200
@@ -26,12 +32,17 @@ Rectangle {
     QtObject {
         id: d
 
-        // Expansion state.
-        property bool expanded: false
+        // Expansion state. A search match opens the row without disturbing what
+        // the user had toggled, so clearing the search puts it back as it was.
+        property bool userExpanded: false
+        readonly property bool expanded: userExpanded || del.forceExpanded
         property bool proofExpanded: false
 
-        // Design: Table Row Cell [1.0] is 64px tall.
-        readonly property int summaryHeight: 64
+        // Design's Table Row Cell [1.0] is 64px. Deliberately tightened: at 64
+        // a handful of blocks fill the whole section. The prototype's rows sit
+        // at ~40 (12px type, 12px padding); this splits the difference so the
+        // slot stays the one bold thing in the row.
+        readonly property int summaryHeight: 44
 
         // The transactions role is a QStringList; surface it for the Repeater.
         readonly property var transactionsList: model.transactions || []
@@ -45,6 +56,9 @@ Rectangle {
 
     width: ListView.view ? ListView.view.width : implicitWidth
     implicitHeight: col.implicitHeight
+    visible: !del.collapsed
+    height: del.collapsed ? 0 : implicitHeight
+    clip: del.collapsed
 
     // backgroundMuted is a 7% light overlay, so it lifts whatever surface the
     // card provides. (Not surfaceInteractiveHover: that token only exists in
@@ -74,7 +88,7 @@ Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: d.summaryHeight
 
-            TapHandler { onTapped: d.expanded = !d.expanded }
+            TapHandler { onTapped: d.userExpanded = !d.expanded }
 
             // Cells sit flush (design has no inter-column gap); each insets its
             // own content by `rowPadding`, matching the header.
@@ -82,7 +96,10 @@ Rectangle {
                 anchors.fill: parent
                 spacing: 0
 
-                // Timestamp — design: Paragraph/Small, Inter 400 14px/20, #FFFFFF.
+                // The row runs at one size throughout (secondaryText, 12px);
+                // weight and colour carry the hierarchy instead. Departs from
+                // the design's per-cell 14/16px scale, which read as loud here.
+                // Timestamp
                 Item {
                     Layout.preferredWidth: del.timestampWidth
                     Layout.fillHeight: true
@@ -93,14 +110,14 @@ Rectangle {
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
                         text: model.timestamp || ""
-                        color: Theme.palette.text
-                        font.pixelSize: Theme.typography.primaryText
+                        color: Theme.palette.textSecondary
+                        font.pixelSize: Theme.typography.secondaryText
                         font.weight: Theme.typography.weightRegular
                         elide: Text.ElideRight
                     }
                 }
 
-                // Block — design: Label/Medium, Inter 700 16px/24, #FFFFFF.
+                // Block — the row's anchor: same size, bold.
                 Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
@@ -113,8 +130,11 @@ Rectangle {
                         text: d.isUnparsed
                               ? qsTr("Unparsed block")
                               : qsTr("Slot %1").arg(model.slot || qsTr("?"))
-                        color: d.isUnparsed ? Theme.palette.warning : Theme.palette.text
-                        font.pixelSize: Theme.typography.subtitleText
+                        // One colour across the row as well as one size —
+                        // weight alone marks the slot out now.
+                        color: d.isUnparsed ? Theme.palette.warning
+                                            : Theme.palette.textSecondary
+                        font.pixelSize: Theme.typography.secondaryText
                         font.weight: Theme.typography.weightBold
                         elide: Text.ElideRight
                     }
@@ -135,13 +155,13 @@ Rectangle {
                         backgroundColor: Theme.palette.backgroundButton
                         borderColor: Theme.palette.borderHairline
                         labelItem.color: Theme.palette.text
-                        labelItem.font.pixelSize: Theme.typography.primaryText
+                        labelItem.font.pixelSize: Theme.typography.secondaryText
                     }
                 }
 
-                // TXs — design: Label/Medium, Inter 700 16px/24. Blanked rather
-                // than hidden: RowLayout collapses invisible items, which would
-                // pull this row's chevron out of line with the rest.
+                // TXs — blanked rather than hidden: RowLayout collapses
+                // invisible items, which would pull this row's chevron out of
+                // line with the rest.
                 Item {
                     Layout.preferredWidth: del.txsWidth
                     Layout.fillHeight: true
@@ -153,9 +173,9 @@ Rectangle {
                         text: d.isUnparsed
                               ? ""
                               : (model.txCount !== undefined ? String(model.txCount) : "0")
-                        color: Theme.palette.text
-                        font.pixelSize: Theme.typography.subtitleText
-                        font.weight: Theme.typography.weightBold
+                        color: Theme.palette.textSecondary
+                        font.pixelSize: Theme.typography.secondaryText
+                        font.weight: Theme.typography.weightRegular
                     }
                 }
 
@@ -170,12 +190,13 @@ Rectangle {
                         anchors.centerIn: parent
                         // triangle_down.svg's glyph fills only ~41.7% of its
                         // viewBox, so the image box must be ~2.4x the intended
-                        // glyph to land on the design's visible 14x7.
-                        width: 34
-                        height: 17
+                        // glyph — 24x12 here lands on a visible 10x5, in scale
+                        // with the row's 12px type.
+                        width: 24
+                        height: 12
                         source: LogosIcons.triangleDown
-                        sourceSize.width: 68
-                        sourceSize.height: 34
+                        sourceSize.width: 48
+                        sourceSize.height: 24
                         fillMode: Image.PreserveAspectFit
                         opacity: 0.55
                         rotation: d.expanded ? 180 : 0
@@ -209,7 +230,7 @@ Rectangle {
                 onCopyRequested: (t) => del.copyToClipboard(t)
             }
             HashRow {
-                label: qsTr("Block root"); value: model.blockRoot || ""; visible: !d.isUnparsed
+                label: qsTr("Body root"); value: model.blockRoot || ""; visible: !d.isUnparsed
                 onCopyRequested: (t) => del.copyToClipboard(t)
             }
             HashRow {

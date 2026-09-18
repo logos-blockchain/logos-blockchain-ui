@@ -18,7 +18,7 @@ RowLayout {
     LogosText {
         id: cellLabel
         color: Theme.palette.textTertiary
-        font.pixelSize: Theme.typography.primaryText
+        font.pixelSize: Theme.typography.secondaryText
         font.weight: Theme.typography.weightRegular
     }
     ColumnLayout {

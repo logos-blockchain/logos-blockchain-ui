@@ -180,17 +180,23 @@ sections:
 
             - name: "Most sections are gated on a running node"
               action: wait_for
-              texts: ["Dashboard", "Blocks", "Accounts", "Rewards", "Explorer", "Settings"]
+              texts: ["Dashboard", "Explorer", "Accounts", "Rewards", "Mining", "Settings"]
               timeout: 6000
               screenshot: "blockchain-ui-nav.png"
               text: |
                 Navigation is a tab bar under the node header, one tab per
                 section. Every tab is rendered, but only **Dashboard**,
-                **Blocks** and **Settings** are usable before the node is up:
+                **Explorer** and **Settings** are usable before the node is up:
                 the rest are disabled until it runs. That is why this doc-test
-                stops here — the accounts, transfer, rewards and channel-deposit
-                sections cannot be reached without first bootstrapping a node
-                against a live network.
+                stops here — the accounts, transfer, rewards, mining and
+                channel-deposit sections cannot be reached without first
+                bootstrapping a node against a live network.
+
+                **Explorer** is one section holding both halves of reading the
+                chain: a lookup by block id or transaction hash on top, and under
+                it the table of blocks this node has seen. A lookup replaces the
+                table until it is cleared. The table needs no node, which is why
+                the tab stays open here; the lookup does, and says so in place.
 
                 Everything up to this point — the chooser, the generate form, the
                 round-trip into `blockchain_module`, and the dashboard — needs no
@@ -202,9 +208,10 @@ sections:
       on a running node:
 
       - **Most sections are disabled until a node is up**: the Accounts,
-        Transfer, Rewards, Channel Deposit and Explorer tabs are gated on a
-        running node and cannot be opened. Dashboard, Blocks and Settings stay
-        reachable throughout.
+        Transfer, Rewards, Mining and Channel Deposit tabs are gated on a running
+        node and cannot be opened. Dashboard, Explorer and Settings stay
+        reachable throughout — though the Explorer's lookup itself needs a node,
+        so only its block table is exercised here.
       - **Bootstrapping and syncing** need reachable peers speaking a matching
         chainsync protocol version. When they do not match the node fails Initial
         Block Download with `AllPeersFailed` — a real failure, but driven by

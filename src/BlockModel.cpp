@@ -8,6 +8,18 @@
 
 namespace {
 
+// Consensus versions are a closed enum on the node side (core/src/header:
+// `BEDROCK_VERSION = 1`). An unknown discriminant is reported as its number
+// rather than guessed at or dropped — a block from a newer node should still
+// say something truthful.
+QString versionName(int discriminant)
+{
+    switch (discriminant) {
+    case 1:  return QStringLiteral("Bedrock");
+    default: return QString::number(discriminant);
+    }
+}
+
 QString prettify(const QJsonValue& value)
 {
     if (value.isObject())
@@ -184,7 +196,16 @@ void BlockModel::appendRaw(const QString& timestamp, const QString& rawJson)
         e.parsed = true;
 
         const QJsonObject header = block.value(QStringLiteral("header")).toObject();
-        e.version = header.value(QStringLiteral("version")).toString();
+
+        // `version` is the consensus version. The node serialises it as a name
+        // ("Bedrock") over JSON, but the wire carries the raw discriminant and
+        // not every build agrees — and QJsonValue::toString() returns an EMPTY
+        // string for a number rather than converting, which blanks the whole
+        // Consensus column silently. Parse both shapes, as `slot` does below.
+        const QJsonValue versionV = header.value(QStringLiteral("version"));
+        e.version = versionV.isDouble()
+            ? versionName(static_cast<int>(versionV.toDouble()))
+            : versionV.toString();
         e.blockId = header.value(QStringLiteral("id")).toString();
         e.parentBlock = header.value(QStringLiteral("parent_block")).toString();
 
@@ -193,7 +214,13 @@ void BlockModel::appendRaw(const QString& timestamp, const QString& rawJson)
             ? QString::number(static_cast<qlonglong>(slotV.toDouble()))
             : slotV.toString();
 
-        e.blockRoot = header.value(QStringLiteral("block_root")).toString();
+        // The node's field is `body_root` (core/src/header: it commits to the
+        // block body). `block_root` was never a header field, so this row read
+        // empty on every block; the old name is still accepted in case an
+        // older node is on the other end.
+        e.blockRoot = header.contains(QStringLiteral("body_root"))
+            ? header.value(QStringLiteral("body_root")).toString()
+            : header.value(QStringLiteral("block_root")).toString();
 
         const QJsonObject pol =
             header.value(QStringLiteral("proof_of_leadership")).toObject();

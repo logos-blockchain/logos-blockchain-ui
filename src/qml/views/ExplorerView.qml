@@ -5,11 +5,18 @@ import Logos.Theme
 import Logos.Controls
 
 import "../controls"
+import "infoContent.js" as InfoContent
 
-// Block/transaction explorer. The user pastes a block header id or a
-// transaction hash; the lookup is auto-detected (block first, then tx —
-// both are hex hashes and can't be told apart by shape) and the matching
-// entity is rendered with every field copyable.
+// The whole Explorer section: a lookup over the chain, and the table of blocks
+// this node has seen.
+//
+// The search card is always on top. Below it the block table is the resting
+// state — a lookup stands it down and shows the result in its place until the
+// search is cleared (the ✕ in the field).
+//
+// The user pastes a block header id or a transaction hash; the lookup is
+// auto-detected (block first, then tx — both are hex hashes and can't be told
+// apart by shape) and the matching entity is rendered with every field copyable.
 //
 // Orchestration lives in BlockchainView: `searchRequested` triggers a
 // get_block; on a miss it falls back to get_transaction. Results flow back
@@ -21,6 +28,10 @@ ColumnLayout {
     signal copyToClipboard(string text)
 
     property bool nodeRunning: false
+
+    // ---- Block table ----
+    required property var blockModel
+    property bool nodeReportedState: false
 
     // ---- Result state (driven by BlockchainView) ----
     //   kind: "" (none) | "block" | "transaction" | "notfound" | "error"
@@ -35,10 +46,21 @@ ColumnLayout {
     property string txSlot: ""
     property string txBlockId: ""
 
+    readonly property string resultSlot: kind === "block"
+        ? (block && block.slot ? block.slot : "")
+        : kind === "transaction" ? txSlot : ""
+    readonly property bool filteredToRow: resultSlot.length > 0
+                                          && blocksView.matchCount > 0
+    readonly property bool showingResult: (kind === "block" || kind === "transaction")
+                                          && !filteredToRow
+    readonly property bool hasResult: showingResult
+                                      || kind === "notfound" || kind === "error"
+
     // Parsed block fields (populated when kind === "block").
     property var block: null
 
     function _reset() {
+        root.busy = false
         root.kind = ""
         root.rawJson = ""
         root.errorText = ""
@@ -119,7 +141,7 @@ ColumnLayout {
             slot: header.slot !== undefined ? String(header.slot) : "",
             version: header.version !== undefined ? String(header.version) : "",
             parentBlock: header.parent_block || "",
-            blockRoot: header.block_root || "",
+            blockRoot: header.body_root || header.block_root || "",
             signature: b.signature || "",
             proof: pol.proof || "",
             entropy: pol.entropy_contribution || "",
@@ -133,87 +155,78 @@ ColumnLayout {
         try { return JSON.stringify(JSON.parse(s), null, 2) } catch (e) { return s }
     }
 
+    // The id currently in flight — `queriedId` isn't set until a result lands,
+    // so a lookup that never answers would have nothing to report against.
+    property string _pendingId: ""
+
     function doSearch() {
         var id = idField.text.trim()
         if (id.length === 0) return
+        if (!root.nodeRunning) {
+            root.setError(id, qsTr("Start the node to look up blocks and transactions."))
+            return
+        }
+        root._pendingId = id
         root.busy = true
         root.searchRequested(id)
     }
 
+    Timer {
+        running: root.busy
+        interval: 8000
+        onTriggered: root.setError(
+            root._pendingId,
+            qsTr("The node didn't answer within 8 seconds. It may be busy catching up — try again in a moment."))
+    }
+
     spacing: Theme.spacing.large
 
-    // ---- Search bar ----
-    LogosFrame {
+    // ---- Search ----
+    RowLayout {
         Layout.fillWidth: true
-        padding: Theme.spacing.large
-        backgroundColor: Theme.palette.backgroundTertiary
-        radius: Theme.spacing.radiusLarge
+        spacing: Theme.spacing.small
 
-        contentItem: ColumnLayout {
-            id: searchCol
-            spacing: Theme.spacing.small
-
-            RowLayout {
-                Layout.fillWidth: true
-                LogosText {
-                    text: qsTr("Explorer")
-                    font.pixelSize: Theme.typography.secondaryText
-                    font.bold: true
-                }
-                Item { Layout.fillWidth: true }
-                LogosInfoButton {
-                    title: qsTr("Explorer")
-                    Layout.alignment: Qt.AlignVCenter
-                    text: qsTr("Paste a block header id or a transaction hash, then press Search. The lookup is auto-detected: it tries a block first, then a transaction.")
-                }
+        Shortcut {
+            id: searchShortcut
+            sequence: "Ctrl+K"
+            context: Qt.WindowShortcut
+            enabled: root.visible
+            onActivated: {
+                idField.textInput.forceActiveFocus()
+                idField.textInput.selectAll()
             }
+        }
 
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: Theme.spacing.small
+        LogosSearchBar {
+            id: idField
+            Layout.fillWidth: true
+            placeholderText: qsTr("Search a block id or transaction hash")
+            shortcutHint: searchShortcut.nativeText
+            onSubmitted: root.doSearch()
+            onTextChanged: if (text.length === 0) root._reset()
+        }
 
-                LogosTextField {
-                    id: idField
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: searchButton.implicitHeight
-                    placeholderText: qsTr("Block id or transaction hash (hex)")
-                    enabled: root.nodeRunning && !root.busy
-
-                    // LogosTextField wraps a TextInput (no `accepted` signal of
-                    // its own); connect to the inner input to search on Enter.
-                    Connections {
-                        target: idField.textInput
-                        function onAccepted() { root.doSearch() }
-                    }
-                }
-
-                LogosButton {
-                    id: searchButton
-                    text: root.busy ? qsTr("…") : qsTr("Search")
-                    enabled: root.nodeRunning && !root.busy && idField.text.trim().length > 0
-                    onClicked: root.doSearch()
-                }
-            }
-
-            LogosText {
-                Layout.fillWidth: true
-                visible: !root.nodeRunning
-                text: qsTr("Start the node to look up blocks and transactions.")
-                color: Theme.palette.textSecondary
-                font.pixelSize: Theme.typography.secondaryText
-                wrapMode: Text.WordWrap
-            }
+        LogosInfoButton {
+            Layout.alignment: Qt.AlignVCenter
+            title: qsTr("Explorer")
+            dialogContentItem: InfoSections { info: InfoContent.explorer }
         }
     }
 
-    // ---- Status line (not found / error) ----
+    // ---- Status line (searching / not found / error) ----
     LogosText {
         Layout.fillWidth: true
-        visible: root.kind === "notfound" || root.kind === "error"
-        text: root.kind === "notfound"
-            ? qsTr("Nothing found for “%1”.\nBlocks are looked up by header id. Transactions resolve from the blocks currently loaded above, or from the node's mempool while still pending — mined transactions can't be fetched by hash, so open their block instead.").arg(root.queriedId)
-            : root.errorText
-        color: root.kind === "notfound" ? Theme.palette.textSecondary : Theme.palette.error
+        visible: root.busy || root.filteredToRow
+                 || root.kind === "notfound" || root.kind === "error"
+        text: root.busy
+            ? qsTr("Searching…")
+            : root.filteredToRow
+              ? qsTr("Showing slot %1.").arg(root.resultSlot)
+              : root.kind === "notfound"
+              ? qsTr("Nothing found for “%1”.\nThis searches blocks and transactions only.").arg(root.queriedId)
+              : root.errorText
+        color: (root.busy || root.filteredToRow || root.kind === "notfound")
+               ? Theme.palette.textSecondary : Theme.palette.error
         font.pixelSize: Theme.typography.secondaryText
         wrapMode: Text.WordWrap
     }
@@ -223,7 +236,7 @@ ColumnLayout {
         id: resultScroll
         Layout.fillWidth: true
         Layout.fillHeight: true
-        visible: root.kind === "block" || root.kind === "transaction"
+        visible: root.showingResult
 
         ColumnLayout {
             width: resultScroll.availableWidth
@@ -293,7 +306,7 @@ ColumnLayout {
                         onCopyRequested: (t) => root.copyToClipboard(t)
                     }
                     HashRow {
-                        label: qsTr("Block root"); value: root.block ? root.block.blockRoot : ""
+                        label: qsTr("Body root"); value: root.block ? root.block.blockRoot : ""
                         onCopyRequested: (t) => root.copyToClipboard(t)
                     }
                     HashRow {
@@ -421,8 +434,21 @@ ColumnLayout {
         }
     }
 
-    Item {
+    // ---- Block table: the resting state, stood down by a lookup ----
+    BlocksView {
+        id: blocksView
+        Layout.fillWidth: true
         Layout.fillHeight: true
-        visible: root.kind === "" || root.kind === "notfound" || root.kind === "error"
+        visible: !root.showingResult
+        filterSlot: root.resultSlot
+
+        blockModel: root.blockModel
+        emptyText: !root.nodeRunning
+                   ? qsTr("Start the node to see blocks arrive.")
+                   : !root.nodeReportedState
+                     ? qsTr("Waiting for the node to report its state...")
+                     : qsTr("Waiting for the next block. Only blocks produced from now on are listed.")
+
+        onCopyToClipboard: (text) => root.copyToClipboard(text)
     }
 }

@@ -177,7 +177,9 @@ Rectangle {
 
 
     // The backend polls and derives; this only says whether anyone is looking,
-    // which is the one half of it the backend cannot know.
+    // which is the one half of it the backend cannot know. Section 4 is Mining,
+    // the only place the claimable counts are shown — keep this in step with
+    // the tab bar.
     Binding {
         target: root.backend
         property: "claimablePollActive"
@@ -498,8 +500,8 @@ Rectangle {
             spacing: Theme.spacing.medium
 
             // Selected section. The tab bar and the StackLayout's children are
-            // index-for-index: 0 Dashboard · 1 Blocks · 2 Accounts · 3 Rewards ·
-            // 4 Explorer · 5 Transfer · 6 Channel Deposit · 7 Settings.
+            // index-for-index: 0 Dashboard · 1 Explorer · 2 Accounts ·
+            // 3 Rewards · 4 Mining · 5 Transfer · 6 Channel Deposit · 7 Settings.
             // Reorder one and you must reorder the other.
             //
             // The tab bar owns the selection. Binding its currentIndex to a
@@ -517,14 +519,16 @@ Rectangle {
                 : ""
             readonly property bool miningRequested: root.backend ? root.backend.miningRequested : false
 
-            // Wallet operations require a running node. If the node stops while
-            // Operations or Explorer is open, fall back to Dashboard so the
-            // user isn't stranded on a disabled section.
+            // Sections 2-6 (the wallet operations, Rewards and Mining) need a
+            // running node; if it stops while one is open, fall back to Dashboard
+            // so the user isn't stranded on a disabled section. Dashboard,
+            // Explorer and Settings stay reachable throughout — the Explorer's
+            // block table keeps the blocks this session already saw.
             onNodeRunningChanged: {
                 // Whichever way this went, the message belonged to the previous
                 // run of the node and no longer describes anything.
                 _d.miningError = ""
-                if (!nodeRunning)
+                if (!nodeRunning && sectionIndex >= 2 && sectionIndex <= 6)
                     sectionTabs.currentIndex = 0
             }
 
@@ -663,9 +667,11 @@ Rectangle {
                     text: qsTr("Dashboard")
                     font.pixelSize: Theme.typography.secondaryText
                 }
+                // Ungated: the lookup itself needs a node, but the block table
+                // under it does not, and the view says so in place.
                 LogosTabButton {
-                    objectName: "tabBlocks"
-                    text: qsTr("Blocks")
+                    objectName: "tabExplorer"
+                    text: qsTr("Explorer")
                     font.pixelSize: Theme.typography.secondaryText
                 }
                 LogosTabButton {
@@ -683,12 +689,6 @@ Rectangle {
                 LogosTabButton {
                     objectName: "tabMining"
                     text: qsTr("Mining")
-                    font.pixelSize: Theme.typography.secondaryText
-                    enabled: opPage.nodeRunning
-                }
-                LogosTabButton {
-                    objectName: "tabExplorer"
-                    text: qsTr("Explorer")
                     font.pixelSize: Theme.typography.secondaryText
                     enabled: opPage.nodeRunning
                 }
@@ -762,22 +762,56 @@ Rectangle {
                     powActive: root.backend ? root.backend.powActive : false
                 }
 
-                // ---- Section 1: Blocks ----
-                BlocksView {
-                    emptyText: !opPage.nodeRunning
-                               ? qsTr("Start the node to see blocks arrive.")
-                               : monitor.infoJson.length === 0
-                                 ? qsTr("Waiting for the node to report its state...")
-                                 : qsTr("Waiting for the next block. Only blocks produced from now on are listed.")
-
+                // ---- Section 1: Explorer (lookup + the blocks this node saw) ----
+                ExplorerView {
+                    id: explorerView
+                    nodeRunning: opPage.nodeRunning
+                    nodeReportedState: monitor.infoJson.length > 0
                     blockModel: root.blockModel
-                    onClearRequested: if (root.backend) root.backend.clearBlocks()
-                    onCopyToClipboard: (text) => {
-                        root.copyText(text)
+
+                    onSearchRequested: function(id) {
+                        const fail = function(why) { explorerView.setError(id, why) }
+                        if (!root.backend) {
+                            fail(qsTr("Not connected to the blockchain module."))
+                            return
+                        }
+
+                        function step(call, onValue) {
+                            try {
+                                logos.watch(call(), onValue,
+                                            function(e) { fail(_d.errorText(e)) })
+                            } catch (e) {
+                                fail(qsTr("Lookup failed: %1").arg(e.message || e))
+                            }
+                        }
+
+                        step(function() { return root.backend.findTransactionInBlocks(id) },
+                             function(local) {
+                            if (local.success) {
+                                explorerView.setTransactionResult(
+                                    id, local.value, local.slot, local.blockId)
+                                return
+                            }
+                            step(function() { return root.backend.getBlock(id) },
+                                 function(blockResult) {
+                                if (blockResult.success) {
+                                    explorerView.setBlockResult(id, blockResult.value)
+                                    return
+                                }
+                                step(function() { return root.backend.getTransaction(id) },
+                                     function(txResult) {
+                                    if (txResult.success)
+                                        explorerView.setTransactionResult(id, txResult.value)
+                                    else
+                                        explorerView.setNotFound(id)
+                                })
+                            })
+                        })
                     }
+                    onCopyToClipboard: (text) => root.copyText(text)
                 }
 
-                // ---- Sections 2-3: wallet operations, one per tab ----
+                // ---- Section 2: Accounts ----
                 AccountsView {
                     id: accountsView
                     accountsModel: root.accountsModel
@@ -807,6 +841,7 @@ Rectangle {
                     }
                 }
 
+                // ---- Section 3: Rewards ----
                 LeaderRewardsView {
                     id: leaderRewardsView
                     vouchersJson: root.claimableVouchersJson
@@ -856,61 +891,7 @@ Rectangle {
                     onClaimRequested: function(addressHex) { _d.claimPowRewards(addressHex) }
                 }
 
-                // ---- Section 5: Explorer (block / transaction lookup) ----
-                ExplorerView {
-                    id: explorerView
-                    nodeRunning: opPage.nodeRunning
-
-                    // Auto-detect the id kind. The node can't fetch a mined
-                    // transaction by hash (its tx store is mempool-only, pruned
-                    // ~10 min after inclusion), so resolve a tx in this order:
-                    //   1. loaded blocks — the blocks view already holds each
-                    //      tx and its id, so a copied tx id resolves locally;
-                    //   2. get_block — the id is a block header id;
-                    //   3. get_transaction — a still-pending mempool tx.
-                    onSearchRequested: function(id) {
-                        if (!root.backend) return
-
-                        // Every backend call is remoted through QtRO, so each
-                        // must be resolved via logos.watch (even the local scan,
-                        // whose search runs synchronously on the source side).
-
-                        // Step 1: scan the loaded blocks for the tx by its id.
-                        logos.watch(
-                            root.backend.findTransactionInBlocks(id),
-                            function(local) {
-                                if (local.success) {
-                                    explorerView.setTransactionResult(id, local.value, local.slot, local.blockId)
-                                    return
-                                }
-                                // Step 2: block by header id.
-                                logos.watch(
-                                    root.backend.getBlock(id),
-                                    function(blockResult) {
-                                        if (blockResult.success) {
-                                            explorerView.setBlockResult(id, blockResult.value)
-                                            return
-                                        }
-                                        // Step 3: pending transaction via the node.
-                                        logos.watch(
-                                            root.backend.getTransaction(id),
-                                            function(txResult) {
-                                                if (txResult.success)
-                                                    explorerView.setTransactionResult(id, txResult.value)
-                                                else
-                                                    explorerView.setNotFound(id)
-                                            },
-                                            function(error) { explorerView.setError(id, _d.errorText(error)) }
-                                        )
-                                    },
-                                    function(error) { explorerView.setError(id, _d.errorText(error)) }
-                                )
-                            },
-                            function(error) { explorerView.setError(id, _d.errorText(error)) }
-                        )
-                    }
-                    onCopyToClipboard: (text) => root.copyText(text)
-                }
+                // ---- Section 5: Transfer ----
                 TransferView {
                     id: transferView
                     accountsModel: root.accountsModel
@@ -934,6 +915,7 @@ Rectangle {
                     }
                 }
 
+                // ---- Section 6: Channel Deposit ----
                 ChannelDepositView {
                     id: channelDepositView
                     accountsModel: root.accountsModel
@@ -972,7 +954,7 @@ Rectangle {
                     }
                 }
 
-                // ---- Section 8: Settings ----
+                // ---- Section 7: Settings ----
                 NodeSettingsView {
                     userConfig: root.backend ? root.backend.userConfig : ""
                     deploymentConfig: root.backend ? root.backend.deploymentConfig : ""

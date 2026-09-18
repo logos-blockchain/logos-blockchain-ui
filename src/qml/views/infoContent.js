@@ -447,3 +447,39 @@ var disk = {
     ],
     docs: ""
 }
+
+var explorer = {
+    title: "Explorer",
+    what: "A lookup over the chain by block header id or transaction hash. "
+        + "Below it sits the list of blocks this node has seen — searching "
+        + "replaces that list with the result, and clearing the search brings "
+        + "it back.",
+    calc: "The kind of id is auto-detected, because a block id and a "
+        + "transaction hash are both hex hashes and cannot be told apart by "
+        + "shape. A transaction is resolved from the blocks already listed "
+        + "first, then the id is tried as a block header id, then as a "
+        + "still-pending transaction in the node's mempool. That order matters: "
+        + "the node cannot fetch a mined transaction by hash, because its "
+        + "transaction store is mempool-only and pruned shortly after "
+        + "inclusion — so a mined transaction is only findable through the "
+        + "block that carries it.",
+    states: [
+        { label: "Block",
+          meaning: "The id matched a block header. Its slot, parent, root, "
+                 + "signature, proof of leadership and transactions are all "
+                 + "shown, each field copyable." },
+        { label: "Transaction",
+          meaning: "The id matched a transaction — either inside a listed "
+                 + "block, which also reports the slot it settled in, or one "
+                 + "still pending in the mempool, which has no block yet." },
+        { label: "Nothing found",
+          meaning: "No block and no pending transaction carry that id. For a "
+                 + "mined transaction this is expected: open the block it was "
+                 + "included in instead." },
+        { label: "Disabled",
+          meaning: "The node is not running. The block list below still shows "
+                 + "whatever this session already collected, but a lookup needs "
+                 + "a node to ask." }
+    ],
+    docs: ""
+}
