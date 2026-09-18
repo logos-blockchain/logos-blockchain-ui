@@ -188,13 +188,16 @@ Rectangle {
         restoreMode: Binding.RestoreNone
     }
 
-    // Wallet's claimable ("pending") vouchers. Auto-refreshed on every incoming
-    // block, and once when the node starts running.
+    // Wallet's claimable ("pending") vouchers. Refreshed shortly after incoming
+    // blocks, and once when the node starts running.
     property string claimableVouchersJson: ""
+    // Set by an incoming block, cleared by the refresh it schedules.
+    property bool _vouchersDirty: false
 
     function refreshClaimableVouchers() {
         if (!root.backend || root.backend.status !== BlockchainBackend.Running)
             return
+        root._vouchersDirty = false
         logos.watch(
             root.backend.getClaimableVouchers(),
             function(result) { if (result.success) root.claimableVouchersJson = result.value },
@@ -211,8 +214,21 @@ Rectangle {
         ignoreUnknownSignals: true
         function onRowsInserted() {
             monitor.nodeProvedAlive()
-            root.refreshClaimableVouchers()
+            root._vouchersDirty = true
         }
+    }
+
+    // Coalesced, NOT called per row. A catching-up node inserts hundreds of rows
+    // a second, and each refresh is a blocking call into the same module — so
+    // doing it per block buries the module's event loop under the very calls
+    // that are meant to observe it, and the status poll queues behind them until
+    // it times out and the node reads as dead. The count only has to be right
+    // shortly after a burst, never during one.
+    Timer {
+        interval: 2000
+        repeat: true
+        running: root.nodeRunning
+        onTriggered: if (root._vouchersDirty) root.refreshClaimableVouchers()
     }
 
     // Initial load when the node reaches Running (before the next block).

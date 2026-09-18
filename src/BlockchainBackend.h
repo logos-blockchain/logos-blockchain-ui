@@ -62,6 +62,11 @@ public:
         int priority;
     };
 
+    // What the operating system says about the node module's process, which is
+    // the thing nodeModuleReachable actually claims to report. Three answers,
+    // not two: Unknown is not Gone, and must never be treated as one.
+    enum class ProcessEvidence { Alive, Gone, Unknown };
+
 public slots:
     // Overrides of the pure-virtual slots generated from the .rep.
     void startBlockchain() override;
@@ -140,6 +145,14 @@ private:
     // True when the node's log has been written to since the last look, which
     // proves the process is alive however unreachable it is over the transport.
     bool nodeLogAdvanced();
+    // Whether the module's PROCESS exists, asked of the OS rather than of the
+    // transport. This is the authority on "is the module gone": a module buried
+    // under a block backlog answers no call and passes no probe while its
+    // process is plainly there, and QtRO cannot tell that apart from a crash.
+    ProcessEvidence nodeProcessEvidence();
+    // The whole verdict, in one place: probe, then the OS, then the log. Every
+    // caller of declareModuleGone() goes through this.
+    bool moduleConfirmedGone();
     // Record that the module's process is gone: one place, so the poll path and
     // the liveness timer cannot drift into telling different stories.
     void declareModuleGone();

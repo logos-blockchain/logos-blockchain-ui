@@ -322,14 +322,18 @@ bool BlockchainBackend::moduleIsAlive()
     return true;
 }
 
-// The case moduleIsAlive() cannot settle: a module buried under a block replay
-// answers nothing — not the poll, not the probe — while its process is plainly
-// alive and writing hundreds of log lines a second. The transport says gone and
-// the filesystem says working, and the filesystem is right.
+// Fallback witness for the case moduleIsAlive() cannot settle, used only when
+// there is no PID to ask the OS about (see nodeProcessEvidence). A module buried
+// under a block replay answers nothing — not the poll, not the probe — while its
+// process is plainly alive and writing hundreds of log lines a second.
 //
 // Only a *fresh* write counts. A dead node leaves its last log file behind, so
 // the mtime has to have moved since we last looked; the reading is seeded when
 // the node starts so the first verdict has a baseline to compare against.
+//
+// Weak on purpose, and often blind: a node tracing to stdout writes no file at
+// all, and newestNodeLogPath only looks beside the config and one level up. It
+// is the last resort, never the first.
 bool BlockchainBackend::nodeLogAdvanced()
 {
     const QString path = newestNodeLogPath();
@@ -343,6 +347,75 @@ bool BlockchainBackend::nodeLogAdvanced()
     const bool advanced = m_lastNodeLogWrite.isValid() && written > m_lastNodeLogWrite;
     m_lastNodeLogWrite = written;
     return advanced;
+}
+
+// Whether the module's process exists, which is the question
+// nodeModuleReachable claims to answer and the only one that settles it.
+//
+// Neither of the other two witnesses can. The transport probe reports the
+// *connection*: a module whose event loop is buried under an initial block
+// download answers nothing for minutes, and "no reply" looks exactly like a
+// crash from here. The log check reports a *file*, and there is often no file
+// to report on — a node tracing to stdout writes none, and a user config kept
+// outside the persistence dir puts the log dir where newestNodeLogPath cannot
+// see it. Both then fall silent at once and a healthy node gets condemned.
+//
+// The PID is already resolved for the CPU and memory tiles, so this costs a
+// local syscall in the common case. Answers Unknown — never Gone — when the PID
+// cannot be established: an absence of evidence must not read as evidence of
+// absence when the verdict tells the user their node died.
+BlockchainBackend::ProcessEvidence BlockchainBackend::nodeProcessEvidence()
+{
+    const auto sampleIsAlive = [](qint64 pid) {
+        const ProcessStats::ProcessStatsData s = ProcessStats::getProcessStats(pid);
+        return s.memoryMB > 0.0 || s.cpuTimeSeconds > 0.0;
+    };
+
+    if (m_nodePid <= 0 && m_pidLookupFailures < kPidLookupAttempts)
+        resolveNodePid();
+    if (m_nodePid <= 0)
+        return ProcessEvidence::Unknown;
+
+    if (sampleIsAlive(m_nodePid))
+        return ProcessEvidence::Alive;
+
+    // Both figures read zero for a PID that is gone — and equally for a module
+    // that was reloaded under us and now runs under a different one. Re-resolve
+    // before condemning it, since the second reading is what tells those apart.
+    m_nodePid = 0;
+    m_pidLookupFailures = 0;
+    resolveNodePid();
+    if (m_nodePid <= 0)
+        return ProcessEvidence::Gone;
+    if (sampleIsAlive(m_nodePid))
+        return ProcessEvidence::Alive;
+
+    m_nodePid = 0;
+    return ProcessEvidence::Gone;
+}
+
+// The one place the "its process is gone" verdict is decided, so the poll path,
+// the liveness timer and the two buttons cannot drift into disagreeing about it.
+//
+// Ordered by cost and by strength. The transport probe is free while the shared
+// replica implementation is Valid, so it is asked first and settles the healthy
+// case outright. Everything after it exists because "no reply" is not a verdict:
+// the OS knows whether the process is there, and only when it cannot be asked
+// does the node's log get a say.
+bool BlockchainBackend::moduleConfirmedGone()
+{
+    if (moduleIsAlive())
+        return false;
+
+    switch (nodeProcessEvidence()) {
+    case ProcessEvidence::Alive:
+        return false;
+    case ProcessEvidence::Gone:
+        return true;
+    case ProcessEvidence::Unknown:
+        break;
+    }
+    return !nodeLogAdvanced();
 }
 
 void BlockchainBackend::declareModuleGone()
@@ -678,12 +751,12 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
                        << kLivenessMissesBeforeGone << "- the module may just be busy";
             return;
         }
-        // Last word before the verdict: a log that is still growing outranks a
-        // run of missed probes, because it is evidence about the process rather
-        // than about the transport. Start the run again so a node that really
-        // does die still has to be caught, just one more round later.
-        if (nodeLogAdvanced()) {
-            qWarning() << "liveness: probes missed but the node log is still growing"
+        // Last word before the verdict, and it belongs to the OS rather than to
+        // the transport: a process that exists is a module that is busy. Start
+        // the run again so a node that really does die still has to be caught,
+        // just one more round later.
+        if (!moduleConfirmedGone()) {
+            qWarning() << "liveness: probes missed but the module process is still there"
                        << "- treating the module as busy, not gone";
             m_livenessMisses = 0;
             return;
@@ -1241,12 +1314,12 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
         }
 
         if (++m_consecutivePollFailures >= kFailuresBeforeProbe) {
-            if (!moduleIsAlive() && !nodeLogAdvanced()) {
+            if (moduleConfirmedGone()) {
                 declareModuleGone();
                 r.error = lastErrorMessage();
             } else {
-                // Either the module answered or its log is still growing, so
-                // the run of failures was a busy node, not a missing one. Start
+                // The module answered, or its process is still there, so the run
+                // of failures was a busy node rather than a missing one. Start
                 // the count again: without this the gate only delays the first
                 // probe and then runs one on every subsequent failed poll,
                 // which is what it exists to avoid.
@@ -1709,7 +1782,7 @@ void BlockchainBackend::startBlockchain()
     // all. A gone module is reported as gone immediately rather than after a
     // quarter-hour of "Starting", and a module that came back re-arms the flag
     // that nothing else ever clears.
-    if (!moduleIsAlive()) {
+    if (moduleConfirmedGone()) {
         declareModuleGone();
         return;
     }
@@ -1787,7 +1860,7 @@ void BlockchainBackend::stopBlockchain()
     // Without this, stopping a node whose module has died parks this source in a
     // nested event loop for the whole deadline — from a button the crash path
     // itself puts in front of the user.
-    if (!moduleIsAlive()) {
+    if (moduleConfirmedGone()) {
         declareModuleGone();
         return;
     }
