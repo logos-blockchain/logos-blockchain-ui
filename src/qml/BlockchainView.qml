@@ -23,10 +23,8 @@ Rectangle {
     // viewModuleReadyChanged signal instead.
     property bool ready: false
 
-    // Whether the link has ever been up this session. Losing it and never
-    // having had it look identical in `backend`/`status`, but mean opposite
-    // things to the user: one is a fresh launch, the other is a dead node
-    // process whose last reported status is now frozen and untrustworthy.
+    // Never-connected and lost-the-connection look identical in `status`, but
+    // one is a fresh launch and the other is a node whose status is now stale.
     property bool everReady: false
     onReadyChanged: if (root.ready) root.everReady = true
 
@@ -77,7 +75,6 @@ Rectangle {
         }
     }
 
-    // Once the stop initiated above completes, finish closing the window.
     Connections {
         target: root.backend
         enabled: root.quitting && root.backend !== null
@@ -122,13 +119,8 @@ Rectangle {
     // node required). Refreshed when ready and whenever the config changes.
     property string peerId: ""
 
-    // Open directly on the node view when a config already exists, instead of
-    // re-walking the first-run chooser every launch (logos-blockchain-ui#36).
-    // The backend restores userConfig from QSettings at construction, so the
-    // path is populated by the time the module is ready. Routing only — the
-    // operator still starts the node from the node view; the "Change" button
-    // there is the path back to the chooser (page 0). One-shot, so it never
-    // overrides a manual return to the chooser.
+    // Skip the first-run chooser when a config already exists. One-shot, so it
+    // never overrides a later manual return to the chooser.
     function _applyInitialRoute() {
         if (_d.initialRouted || !root.ready || !root.backend)
             return
@@ -183,6 +175,17 @@ Rectangle {
         !root.backend || root.backend.nodeModuleReachable === undefined
         || root.backend.nodeModuleReachable
 
+
+    // The backend polls and derives; this only says whether anyone is looking,
+    // which is the one half of it the backend cannot know.
+    Binding {
+        target: root.backend
+        property: "claimablePollActive"
+        value: root.nodeRunning && _d.currentPage === 1 && opPage.sectionIndex === 4
+        when: root.backend !== null
+        restoreMode: Binding.RestoreNone
+    }
+
     // Wallet's claimable ("pending") vouchers. Auto-refreshed on every incoming
     // block, and once when the node starts running.
     property string claimableVouchersJson: ""
@@ -226,6 +229,15 @@ Rectangle {
 
     QtObject {
         id: _d
+
+        // Last failure from the Fund button, shown on the dashboard's Mining
+        // Rewards card — the header has nowhere to put a message.
+        property string miningError: ""
+
+        property bool claimBusy: false
+        property bool claimSuccess: false
+        property string claimMessage: ""
+
         // For one-shot results (a failed claim, an explorer lookup) that have no
         // surrounding state to frame them. Deliberately not used for the status
         // poll: its message lands in the hero's sub-line under a headline that
@@ -242,11 +254,144 @@ Rectangle {
         // fight the user's later navigation (e.g. the node view's "Change"
         // button, which deliberately returns to the chooser at page 0).
         property bool initialRouted: false
+
+        // The config the PoW step edits, captured when the step opens. Held here
+        // rather than read back from backend.userConfig at each use: that is a
+        // replica property, so it lags a write by a round trip.
+        property string powConfigPath: ""
+
+        // Show the PoW step and fill its account picker from the config that was
+        // just written. The accounts come from the file rather than the wallet:
+        // the node has not started yet, and wallet_get_known_addresses needs one
+        // that has. Failing to read them is not fatal — the step still offers
+        // "continue without auto-claim", which is a valid configuration.
+        function showPowStep(configPath) {
+            _d.powConfigPath = configPath || ""
+            console.log("[BlockchainView] showPowStep: configPath=", _d.powConfigPath)
+            // Cleared before the read, not after it: re-entering the wizard must
+            // not offer the previous config's accounts while this one loads.
+            configChoiceView.powAccounts = []
+            configChoiceView.powBusy = false
+            configChoiceView.powResultSuccess = false
+            configChoiceView.powResultMessage = ""
+            configChoiceView.showPowConfig()
+
+            if (!root.backend || _d.powConfigPath === "") {
+                // Say so rather than showing an empty picker: without a path
+                // there is nothing to read accounts from and nothing to write
+                // back to, and a silent return looks like a config with no keys.
+                configChoiceView.powResultMessage =
+                    qsTr("Could not tell which config file was written, so accounts cannot be "
+                         + "listed. Set the config path and configure PoW from there.")
+                return
+            }
+
+            logos.watch(
+                root.backend.getConfigWalletKeys(_d.powConfigPath),
+                function(result) {
+                    if (!result.success) {
+                        configChoiceView.powResultMessage =
+                            qsTr("Could not read accounts from the config: %1").arg(result.error)
+                        return
+                    }
+                    configChoiceView.powAccounts = result.value || []
+                    const configured = configChoiceView.powAccounts.length
+                    console.log("[BlockchainView] showPowStep: accounts=", configured)
+                    if (configured === 0) {
+                        configChoiceView.powResultMessage =
+                            qsTr("The config lists no wallet keys, so there is nothing to claim "
+                                 + "into. Continue without auto-claim, or check wallet.known_keys.")
+                    }
+                },
+                function(error) {
+                    configChoiceView.powResultMessage =
+                        qsTr("Could not read accounts from the config: %1").arg(error)
+                }
+            )
+        }
+
+        // Runtime override on the node's own default — nothing is written to the
+        // config, so this is undone by a node restart rather than by editing the
+        // targets back in.
+        function setAutoClaim(enabled) {
+            if (!root.backend)
+                return
+            _d.claimMessage = ""
+            logos.watch(
+                enabled ? root.backend.powStartAutoClaim() : root.backend.powStopAutoClaim(),
+                function(result) {
+                    if (!result.success) {
+                        _d.claimSuccess = false
+                        _d.claimMessage = enabled
+                            ? qsTr("Could not turn auto-claim on: %1").arg(_d.errorText(result.error))
+                            : qsTr("Could not turn auto-claim off: %1").arg(_d.errorText(result.error))
+                    }
+                },
+                function(error) {
+                    _d.claimSuccess = false
+                    _d.claimMessage = _d.errorText(error)
+                }
+            )
+        }
+
+        // An empty address lets the node pay whichever target is furthest below
+        // its threshold, which is the same choice auto-claim makes.
+        function claimPowRewards(addressHex) {
+            if (!root.backend)
+                return
+            _d.claimBusy = true
+            _d.claimSuccess = false
+            _d.claimMessage = ""
+            logos.watch(
+                root.backend.powClaim(addressHex),
+                function(result) {
+                    _d.claimBusy = false
+                    _d.claimSuccess = result.success
+                    _d.claimMessage = result.success
+                        ? qsTr("Claim submitted: %1").arg(result.value)
+                        : qsTr("Claim failed: %1").arg(_d.errorText(result.error))
+                },
+                function(error) {
+                    _d.claimBusy = false
+                    _d.claimSuccess = false
+                    _d.claimMessage = qsTr("Claim failed: %1").arg(_d.errorText(error))
+                }
+            )
+        }
+
+        // The whole PoW section goes in one call, so the wizard never leaves the
+        // file partly configured. The operator chose these, so a rejection stops
+        // the wizard here rather than being warned about and dropped — and since
+        // the module validates before writing, a failure means nothing changed.
+        function savePowConfig(configJson) {
+            if (!root.backend)
+                return
+            configChoiceView.powBusy = true
+            configChoiceView.powResultSuccess = false
+            configChoiceView.powResultMessage = ""
+            logos.watch(
+                root.backend.powConfigure(_d.powConfigPath, configJson),
+                function(result) {
+                    configChoiceView.powBusy = false
+                    configChoiceView.powResultSuccess = result.success
+                    if (result.success)
+                        configChoiceView.showSetConfigPath()
+                    else
+                        configChoiceView.powResultMessage =
+                            qsTr("Could not save the PoW settings: %1").arg(result.error)
+                },
+                function(error) {
+                    configChoiceView.powBusy = false
+                    configChoiceView.powResultSuccess = false
+                    configChoiceView.powResultMessage =
+                        qsTr("Could not save the PoW settings: %1").arg(error)
+                }
+            )
+        }
     }
 
     color: Theme.palette.background
 
-    // Loading state before backend connects
     ColumnLayout {
         anchors.centerIn: parent
         visible: !root.ready
@@ -286,6 +431,9 @@ Rectangle {
                     if (root.backend) root.backend.useGeneratedConfig = false
                     _d.currentPage = 1
                 }
+                onPowConfirmRequested: function(configJson) {
+                    _d.savePowConfig(configJson)
+                }
                 onGenerateRequested: function(outputPath, initialPeers, netPort, blendPort, httpAddr, externalAddress, noPublicIpCheck, deploymentMode, deploymentConfigPath, statePath) {
                     if (!root.backend) return
                     console.log("[BlockchainView] generateRequested: outputPath=", outputPath,
@@ -311,18 +459,24 @@ Rectangle {
                             if (result.success) {
                                 // The module writes the config and returns the
                                 // absolute path it used; use that for start().
-                                root.backend.userConfig =
+                                // Resolved once into a local because userConfig
+                                // is a replica property: the write below is a
+                                // round trip to the source, so reading it back
+                                // on this same tick still yields the old value.
+                                const resolvedConfigPath =
                                     (result.value !== undefined && result.value !== "")
                                         ? result.value
                                         : (outputPath !== "" ? outputPath : root.backend.generatedUserConfigPath)
+                                root.backend.userConfig = resolvedConfigPath
                                 root.backend.deploymentConfig =
                                     (deploymentMode === 1 && deploymentConfigPath !== "")
                                         ? deploymentConfigPath : ""
                                 root.backend.useGeneratedConfig = true
-                                // Finalize: move to the "set path" window, now
-                                // showing the resolved config path, ready for
-                                // the user to continue and start the node.
-                                configChoiceView.showSetConfigPath()
+                                // The config exists now, so PoW can be set up
+                                // against it. That step ends on the "set path"
+                                // window, which shows the resolved config path
+                                // and continues to starting the node.
+                                _d.showPowStep(resolvedConfigPath)
                             }
                         },
                         function(error) {
@@ -336,8 +490,9 @@ Rectangle {
             }
         }
 
-        // Page 2: the node itself — a persistent header (identity + the one
-        // start/stop control) over a tab bar, one tab per section.
+        // Page 2: the node itself — a persistent header (identity, the Fund
+        // mining toggle and the start/stop control) over a tab bar, one tab per
+        // section.
         ColumnLayout {
             id: opPage
             spacing: Theme.spacing.medium
@@ -360,11 +515,15 @@ Rectangle {
             readonly property string chainId: root.backend && root.backend.chainId
                 ? root.backend.chainId
                 : ""
+            readonly property bool miningRequested: root.backend ? root.backend.miningRequested : false
 
             // Wallet operations require a running node. If the node stops while
             // Operations or Explorer is open, fall back to Dashboard so the
             // user isn't stranded on a disabled section.
             onNodeRunningChanged: {
+                // Whichever way this went, the message belonged to the previous
+                // run of the node and no longer describes anything.
+                _d.miningError = ""
                 if (!nodeRunning)
                     sectionTabs.currentIndex = 0
             }
@@ -395,7 +554,18 @@ Rectangle {
             readonly property bool stopping: root.backend
                 && root.backend.status === BlockchainBackend.Stopping
 
-            // ---- Header: identity + node control ----
+            // A stop can legitimately take a while; with a fixed label and a
+            // disabled button, slow is indistinguishable from frozen.
+            property int stoppingSeconds: 0
+            onStoppingChanged: opPage.stoppingSeconds = 0
+            Timer {
+                interval: 1000
+                repeat: true
+                running: opPage.stopping
+                onTriggered: opPage.stoppingSeconds += 1
+            }
+
+            // ---- Header: identity + mining and node controls ----
             RowLayout {
                 Layout.fillWidth: true
                 spacing: Theme.spacing.medium
@@ -422,10 +592,52 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
+                // Mining pays PoW rewards into the leader's funding key, which
+                // is what PoS stakes from — so this is how a fresh node funds
+                // itself. Secondary next to the node control: starting the node
+                // is still the primary action on this header.
+                LogosButton {
+                    id: fundMiningButton
+                    objectName: "fundMiningButton"
+                    text: opPage.miningRequested ? qsTr("Stop Mining") : qsTr("Fund")
+                    // Mining against a chain we haven't caught up with burns CPU
+                    // for nothing: a ticket is anchored to a recent block hash
+                    // and expires outside the acceptance window. Stopping stays
+                    // available either way — a node that falls behind while
+                    // mining must not trap the user with the CPU still pinned.
+                    enabled: opPage.nodeRunning && (opPage.miningRequested || monitor.synced)
+                    // The one thing the button cannot say for itself. The
+                    // prototype assumed mining stopped at a funding target; this
+                    // build has no target and does not stop. What that costs is
+                    // spelled out on the Mining tab rather than crammed in here.
+                    LogosToolTip {
+                        text: qsTr("Mining runs until you stop it")
+                        placement: LogosToolTip.Placement.Bottom
+                        visible: fundMiningButton.hovered
+                    }
+                    onClicked: {
+                        if (!root.backend)
+                            return
+                        _d.miningError = ""
+                        logos.watch(
+                            opPage.miningRequested ? root.backend.powStopMining()
+                                          : root.backend.powStartMining(),
+                            function(result) {
+                                if (!result.success)
+                                    _d.miningError = _d.errorText(result.error)
+                            },
+                            function(error) { _d.miningError = _d.errorText(error) }
+                        )
+                    }
+                }
+
                 LogosButton {
                     objectName: "nodeRunButton"
                     variant: LogosButton.Variant.Primary
-                    text: opPage.stopping ? qsTr("Stopping…")
+                    text: opPage.stopping
+                          ? (opPage.stoppingSeconds > 0
+                             ? qsTr("Stopping… %1s").arg(opPage.stoppingSeconds)
+                             : qsTr("Stopping…"))
                           : opPage.canStop ? qsTr("Stop Node")
                           : qsTr("Start Node")
                     enabled: !opPage.stopping && (opPage.canStop || opPage.canStart)
@@ -465,6 +677,12 @@ Rectangle {
                 LogosTabButton {
                     objectName: "tabRewards"
                     text: qsTr("Rewards")
+                    font.pixelSize: Theme.typography.secondaryText
+                    enabled: opPage.nodeRunning
+                }
+                LogosTabButton {
+                    objectName: "tabMining"
+                    text: qsTr("Mining")
                     font.pixelSize: Theme.typography.secondaryText
                     enabled: opPage.nodeRunning
                 }
@@ -535,6 +753,13 @@ Rectangle {
                     genesisUnixMs: monitor.genesisUnixMs
                     uptimeSeconds: (root.backend && root.backend.uptimeSeconds !== undefined)
                                    ? root.backend.uptimeSeconds : 0
+                    miningRequested: opPage.miningRequested
+                    miningError: _d.miningError
+                    powRewardsClaimed: root.backend ? root.backend.powRewardsClaimed : 0
+                    powRewardsLepta: root.backend ? root.backend.powRewardsLepta : ""
+                    claimableTickets: root.backend ? root.backend.claimableTickets : 0
+                    claimsStalled: root.backend ? root.backend.claimsStalled : false
+                    powActive: root.backend ? root.backend.powActive : false
                 }
 
                 // ---- Section 1: Blocks ----
@@ -552,7 +777,7 @@ Rectangle {
                     }
                 }
 
-                // ---- Sections 2-6: wallet operations, one per tab ----
+                // ---- Sections 2-3: wallet operations, one per tab ----
                 AccountsView {
                     id: accountsView
                     accountsModel: root.accountsModel
@@ -596,7 +821,6 @@ Rectangle {
                                 } else {
                                     leaderRewardsView.setLeaderClaimResult(_d.errorText(result.error))
                                 }
-                                // Reflect the claim in the pending list.
                                 root.refreshClaimableVouchers()
                             },
                             function(error) { leaderRewardsView.setLeaderClaimResult(_d.errorText(error)) }
@@ -607,7 +831,32 @@ Rectangle {
                     }
                 }
 
-                // ---- Section 4: Explorer (block / transaction lookup) ----
+                // ---- Section 4: Mining (PoW tickets and claiming) ----
+                MiningView {
+                    id: miningView
+                    nodeRunning: opPage.nodeRunning
+                    autoClaimRunning: root.backend ? root.backend.autoClaimRunning : false
+                    rewardsClaimed: root.backend ? root.backend.powRewardsClaimed : 0
+                    rewardsLepta: root.backend ? root.backend.powRewardsLepta : ""
+                    accounts: root.backend ? root.backend.accountRows : []
+
+                    claimsStalled: root.backend ? root.backend.claimsStalled : false
+                    claimStallSeconds: root.backend ? root.backend.claimStallSeconds : 0
+                    claimableTickets: root.backend ? root.backend.claimableTickets : 0
+                    soonestExpirySlots: root.backend ? root.backend.soonestExpirySlots : -1
+                    soonestExpiryCount: root.backend ? root.backend.soonestExpiryCount : 0
+                    claimableLoaded: root.backend ? root.backend.claimableLoaded : false
+                    claimableError: root.backend ? root.backend.claimableError : ""
+
+                    claimBusy: _d.claimBusy
+                    claimSuccess: _d.claimSuccess
+                    claimMessage: _d.claimMessage
+
+                    onAutoClaimToggled: function(enabled) { _d.setAutoClaim(enabled) }
+                    onClaimRequested: function(addressHex) { _d.claimPowRewards(addressHex) }
+                }
+
+                // ---- Section 5: Explorer (block / transaction lookup) ----
                 ExplorerView {
                     id: explorerView
                     nodeRunning: opPage.nodeRunning
@@ -723,7 +972,7 @@ Rectangle {
                     }
                 }
 
-                // ---- Section 7: Settings ----
+                // ---- Section 8: Settings ----
                 NodeSettingsView {
                     userConfig: root.backend ? root.backend.userConfig : ""
                     deploymentConfig: root.backend ? root.backend.deploymentConfig : ""

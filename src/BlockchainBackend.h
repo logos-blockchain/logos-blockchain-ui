@@ -1,8 +1,10 @@
 #ifndef BLOCKCHAIN_BACKEND_H
 #define BLOCKCHAIN_BACKEND_H
 
+#include <QDateTime>
 #include <QElapsedTimer>
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QVariantList>
@@ -86,11 +88,25 @@ public slots:
                                     QStringList fundingPublicKeyHexes,
                                     QString maxTxFee,
                                     QString optionalTipHex) override;
+    QVariantMap powStartMining() override;
+    QVariantMap powStopMining() override;
+    QVariantMap powClaimableRewards() override;
+    QVariantMap powClaim(QString claimAddressHex) override;
+    QVariantMap powStartAutoClaim() override;
+    QVariantMap powStopAutoClaim() override;
+    QVariantMap getConfigWalletKeys(QString configPath) override;
+    void refreshAccountRoles();
+    QVariantMap powConfigure(QString configPath, QString configJson) override;
     void clearBlocks() override;
     void copyToClipboard(QString text) override;
 
 private:
     void fetchBalancesForAccounts(const QStringList& list);
+    // Re-reads every tracked balance, throttled. Without this walletFunded is a
+    // snapshot from node-start and the lifecycle lane never leaves "Fund your
+    // wallet", however much the node pays in afterwards.
+    void refreshBalancesIfStale();
+    QElapsedTimer m_balancesSampled;
     void setError(const QString& message);
     void refreshBlendRole();
     void refreshStake();
@@ -113,8 +129,16 @@ private:
     // definition: the sync call spins a nested event loop, so a stop can run to
     // completion while the reply is in flight.
     [[nodiscard]] bool stillRunning() const;
+    void countPowClaims(const QStringList& payoutKeys, int claimCount, quint64 lepta);
+    // Running total behind powRewardsLepta. Kept as a u64 here and published as
+    // a decimal string: lepta run past what a double holds exactly, and every
+    // consumer formats from the string anyway.
+    quint64 m_powRewardsLepta = 0;
     const Rule* diagnoseNode() const; // cached; call this
     bool moduleIsAlive();
+    // True when the node's log has been written to since the last look, which
+    // proves the process is alive however unreachable it is over the transport.
+    bool nodeLogAdvanced();
     // Record that the module's process is gone: one place, so the poll path and
     // the liveness timer cannot drift into telling different stories.
     void declareModuleGone();
@@ -138,11 +162,24 @@ private:
     QTimer* m_uptimeTimer = nullptr;
     int m_offlineReadings = 0;
     int m_consecutivePollFailures = 0;
+    // Last mtime seen on the node's log, for nodeLogAdvanced().
+    QDateTime m_lastNodeLogWrite;
+    // Claim-stall detection. -1 means nothing read yet, which is not the same as
+    // a count of zero and must not be mistaken for one.
+    int m_lastClaimableTickets = -1;
+    QElapsedTimer m_sinceClaimableFell;
+    // Since the claimable count last moved in either direction, for powActive.
+    QElapsedTimer m_sinceClaimableMoved;
+    void noteClaimableReading(int tickets);
+    void restartClaimStallWatch();
 
     // Asks whether the module is still there while the node is meant to be up.
     // The status poll only runs once the node reaches Running, so without this
     // a module that dies mid-start is never contradicted by anything.
     QTimer* m_livenessTimer = nullptr;
+    // Consecutive probe misses. Reset by a successful probe and by any block
+    // arriving, since a module pushing blocks is alive whatever the probe says.
+    int m_livenessMisses = 0;
 
     LogosAPI* m_logosAPI = nullptr;
     LogosAPIClient* m_blockchainClient = nullptr;
@@ -157,8 +194,20 @@ private:
     bool m_cpuSampledOnce = false;
     // When the data-dir walk last ran. Invalid until the first one.
     QElapsedTimer m_diskSampled;
+    QVariantMap readAccountRoles(const QString& configPath);
+    // Republishes accountRows from the model. Called after anything that
+    // changes which addresses exist or what they are called.
+    void publishAccountRows();
+    // One reading of pow_claimable_rewards, straight onto the properties above.
+    void pollClaimableRewards();
+
+    QTimer* m_claimablePollTimer = nullptr;
+
     AccountsModel* m_accountsModel = nullptr;
     BlockModel* m_blockModel = nullptr;
+    // Wallet addresses as the node reports them, normalised for comparison
+    // against the claim beneficiaries named in incoming blocks.
+    QSet<QString> m_knownAddresses;
 
     static const QString BLOCKCHAIN_MODULE_NAME;
     // TODO(logos-co/logos-liblogos#219): only reached for the PID behind the

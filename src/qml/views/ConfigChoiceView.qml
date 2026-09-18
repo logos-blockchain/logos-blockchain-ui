@@ -14,20 +14,33 @@ ColumnLayout {
     property bool generateResultSuccess: false
     property string generateResultMessage: ""
 
+    // PoW step, filled in by the host once the config exists.
+    property var powAccounts: []
+    property bool powBusy: false
+    property bool powResultSuccess: false
+    property string powResultMessage: ""
+
     signal generateRequested(string outputPath, var initialPeers, int netPort, int blendPort, string httpAddr, string externalAddress, bool noPublicIpCheck, int deploymentMode, string deploymentConfigPath, string statePath)
     signal setPathToConfigsRequested()
     signal userConfigPathSelected(string path)
     signal deploymentConfigPathSelected(string path)
+    signal powConfirmRequested(string configJson)
 
     QtObject {
         id: d
         property int selectedOption: 0
+        readonly property bool hasContent: selectedOption >= 1 && selectedOption <= 3
     }
 
-    // Switch to the "set path to config" sub-view. Used after a successful
-    // generate to land on the resolved-config-path screen, from which the user
-    // continues to start the node.
+    // Switch to the "set path to config" sub-view. Used after the PoW step to
+    // land on the resolved-config-path screen, from which the user continues to
+    // start the node.
     function showSetConfigPath() { d.selectedOption = 2 }
+
+    // Switch to the PoW sub-view. Generating a config is what makes this
+    // reachable: the settings are edited into that file, and the node reads them
+    // only at start, so this is the last moment before they take effect.
+    function showPowConfig() { d.selectedOption = 3 }
 
     spacing: Theme.spacing.large
 
@@ -74,14 +87,21 @@ ColumnLayout {
         id: contentLoader
         Layout.fillWidth: true
         Layout.fillHeight: true
-        visible: d.selectedOption === 1 || d.selectedOption === 2
-        active: d.selectedOption === 1 || d.selectedOption === 2
-        sourceComponent: d.selectedOption === 1 ? generateConfigComponent : (d.selectedOption === 2 ? setConfigPathComponent : null)
+        visible: d.hasContent
+        active: d.hasContent
+        sourceComponent: {
+            switch (d.selectedOption) {
+            case 1: return generateConfigComponent
+            case 2: return setConfigPathComponent
+            case 3: return powConfigComponent
+            default: return null
+            }
+        }
     }
 
     Item {
         Layout.fillHeight: true
-        visible: d.selectedOption !== 1 && d.selectedOption !== 2
+        visible: !d.hasContent
     }
 
     Component {
@@ -101,6 +121,18 @@ ColumnLayout {
                                            deploymentMode, deploymentConfigPath, statePath)
                 }
             }
+        }
+    }
+
+    Component {
+        id: powConfigComponent
+        PowConfigView {
+            objectName: "powConfigView"
+            accounts: root.powAccounts
+            busy: root.powBusy
+            resultSuccess: root.powResultSuccess
+            resultMessage: root.powResultMessage
+            onConfirmRequested: function(configJson) { root.powConfirmRequested(configJson) }
         }
     }
 

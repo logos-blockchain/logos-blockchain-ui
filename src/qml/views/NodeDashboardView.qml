@@ -41,7 +41,6 @@ Item {
     // Any known address holds tokens. Drives the lane's Funded stage only —
     // the figure itself belongs to the Accounts view.
     property bool walletFunded: false
-    property bool mining: false
     property var stakeAddresses: []
     property string peerId: ""
     // libp2p connectivity, shaped by the backend from get_network_info.
@@ -73,11 +72,47 @@ Item {
     // Seconds the node has been online, ticked by the backend and reset by it
     // whenever the view stops reporting Online — see the .rep.
     property int uptimeSeconds: 0
+    // PoW mining, as last toggled from the Fund button, and the failure that
+    // stopped it if there was one.
+    property bool miningRequested: false
+    property string miningError: ""
+    // Tickets mined and not yet claimed, and whether they have stopped being
+    // claimed at all. Both sit under the reward figure rather than replacing it:
+    // a ticket is not a reward until it is claimed, and a large number here with
+    // a zero above it is the symptom, not the achievement.
+    property int claimableTickets: 0
+    property bool claimsStalled: false
+    // The node is demonstrably doing PoW work — the claimable count moved
+    // recently. Not `mining`, which is only what was last asked for.
+    property bool powActive: false
+    // PoW reward claims paid to this wallet, counted from the blocks seen since
+    // the node started.
+    property int powRewardsClaimed: 0
+    // Lepta, decimal string. The value those claims paid; powRewardsClaimed is
+    // only how many tickets produced it.
+    property string powRewardsLepta: ""
 
     QtObject {
         id: d
 
         readonly property bool running: root.status === BlockchainBackend.Running
+
+        // Under the reward count, in order of how much the user needs to know it:
+        // a mining failure, then claiming having stopped, then the plain backlog.
+        // "Mining" alone only when there is nothing yet to say about it.
+        readonly property string miningCaption: {
+            if (root.miningError.length > 0)
+                return root.miningError
+            if (root.claimsStalled)
+                return qsTr("%1 waiting, outrunning claims")
+                           .arg(root.claimableTickets)
+            if (root.claimableTickets > 0)
+                return qsTr("%1 claimed \u00b7 %2 waiting")
+                           .arg(root.powRewardsClaimed).arg(root.claimableTickets)
+            if (root.powRewardsClaimed > 0)
+                return qsTr("from %1 tickets").arg(root.powRewardsClaimed)
+            return root.miningRequested ? qsTr("no tickets claimed") : ""
+        }
 
         function parseJson(text) {
             if (!text || text.length === 0)
@@ -615,7 +650,7 @@ Item {
                             },
                             LogosStage {
                                 label: qsTr("Funded")               
-                                busyLabel: root.mining ? qsTr("Funding")
+                                busyLabel: root.miningRequested ? qsTr("Funding")
                                                        : qsTr("Fund your wallet")
                             },
                             LogosStage {
@@ -663,6 +698,35 @@ Item {
                             visible: root.stakeAddresses.length === 1
                             value: root.stakeAddresses.length === 1
                                    ? root.stakeAddresses[0] : ""
+                        }
+                    ]
+                }
+
+                LogosStatCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
+                    label: qsTr("Mining Rewards")
+                    value: root.powRewardsLepta.length > 0
+                           ? Units.format(root.powRewardsLepta) : Units.format("0")
+                    flashOnChange: true
+                    flashColor: Theme.palette.success
+                    severity: (root.miningError.length > 0 || root.claimsStalled)
+                              ? LogosStatCard.Warning : LogosStatCard.None
+                    caption: d.miningCaption
+                    captionTrailing: [
+                        Rectangle {
+                            visible: root.powActive
+                            implicitWidth: 6
+                            implicitHeight: 6
+                            radius: 3
+                            color: Theme.palette.success
+                        }
+                    ]
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("Mining Rewards")
+                            dialogContentItem: InfoSections { info: InfoContent.mining }
                         }
                     ]
                 }

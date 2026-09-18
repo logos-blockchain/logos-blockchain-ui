@@ -5,10 +5,17 @@
 #include <QStringList>
 #include <QVector>
 
+// Wallet accounts, from whichever source can answer.
 class AccountsModel : public QAbstractListModel {
     Q_OBJECT
 public:
-    enum Roles { AddressRole = Qt::UserRole + 1, BalanceRole };
+    enum Roles {
+        AddressRole = Qt::UserRole + 1,
+        BalanceRole,
+        RolesRole,
+        RoleLabelRole,
+        LabelRole,
+    };
 
     explicit AccountsModel(QObject* parent = nullptr) : QAbstractListModel(parent) {}
 
@@ -16,6 +23,7 @@ public:
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     QHash<int, QByteArray> roleNames() const override;
 
+    // From the node. Keeps each address's balance and roles across a refresh.
     void setAddresses(const QStringList& addresses);
     Q_INVOKABLE void setBalanceForAddress(const QString& address, const QString& balance);
 
@@ -25,13 +33,38 @@ public:
     // strings out of it: they overflow a double and only need comparing to zero.
     bool hasFunds() const;
 
+    // From the config. Addresses not already present are added, because this
+    // runs before any node has reported one — and addresses already present
+    // keep their balances.
+    void setRoles(const QHash<QString, QStringList>& rolesByAddress);
+
+    // One account as a plain map: { address, roles, roleLabel, label }.
+    //
+    // For callers that need the rows *now* rather than through the model. The
+    // model reaches QML as a QtRO replica, which reports its row count at once
+    // but fetches row data in batches afterwards — fine for a list the user
+    // scrolls, wrong for a combo box, which asks once as it opens and renders
+    // whatever it got. Same composition either way, so the two can never
+    // disagree about what a key is called.
+    static QVariantMap describe(const QString& address, const QStringList& roles);
+
 private:
     struct Entry {
         QString address;
         QString balance;
+        QStringList roles;
         bool operator==(const Entry& other) const {
-            return address == other.address && balance == other.balance;
+            return address == other.address && balance == other.balance
+                && roles == other.roles;
         }
     };
+
+    // Case and a leading 0x differ between the config file and the node, so
+    // every cross-source comparison runs through this.
+    static QString normalizeKey(const QString& hex);
+    static QString shortHex(const QString& hex);
+    static QString roleLabelOf(const Entry& entry);
+    static QString labelOf(const Entry& entry);
+
     QVector<Entry> m_entries;
 };

@@ -10,7 +10,8 @@
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder";
     nix-bundle-lgx.url = "github:logos-co/nix-bundle-lgx";
-    blockchain_module.url = "github:logos-blockchain/logos-blockchain-module";
+    # TODO: drop the ref once logos-blockchain-module#83 (powConfigure) is merged.
+    blockchain_module.url = "github:logos-blockchain/logos-blockchain-module/cc84e6b506425c35307c8be1a0abeb0fbf1acdea";
     # TODO(logos-co/logos-liblogos#219): here only to sample the node module's
     # CPU and memory. liblogos measures both already but exposes them to hosts
     # alone, so this app resolves the PID through modules_state and samples it
