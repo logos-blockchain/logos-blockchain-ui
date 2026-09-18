@@ -38,6 +38,10 @@ Item {
     // Empty total means "not reported"; a reported "0" means nothing has aged.
     property string stakeTotal: ""
     property int stakeNoteCount: 0
+    // Any known address holds tokens. Drives the lane's Funded stage only —
+    // the figure itself belongs to the Accounts view.
+    property bool walletFunded: false
+    property bool mining: false
     property var stakeAddresses: []
     property string peerId: ""
     // libp2p connectivity, shaped by the backend from get_network_info.
@@ -45,6 +49,11 @@ Item {
     // finishes bootstrapping.
     property int peerCount: -1
     property int connectionCount: -1
+    property double nodeCpuPercent: -1
+    property double nodeMemoryMb: -1
+    property int cpuCount: 1
+    property double nodeDiskUsedMb: -1
+    property double nodeDiskFreeMb: -1
     property int blendRole: BlockchainBackend.Unknown
     // Debounced in BlockchainView — a single blip in `mode` must not repaint
     // the card. `hasBeenOnline` separates a first bootstrap from a node that
@@ -101,6 +110,38 @@ Item {
             const v = field(key)
             return (v === undefined || v === null) ? "" : String(v)
         }
+
+        // ---- Resource usage -------------------------------------------------
+        readonly property bool cpuSampled: root.nodeCpuPercent >= 0
+        readonly property real cpuMachineShare:
+            Math.min(100, root.nodeCpuPercent / Math.max(1, root.cpuCount))
+
+        // Whole percent, as the prototype shows it — except below 1%, where
+        // rounding would print "0%" for a node that is demonstrably working. On
+        // a many-core machine a whole busy core is already under 1%.
+        readonly property string cpuText: {
+            if (!cpuSampled)
+                return qsTr("—")
+            if (cpuMachineShare > 0 && cpuMachineShare < 1)
+                return qsTr("<1%")
+            return qsTr("%1%").arg(Math.round(cpuMachineShare))
+        }
+
+        // The prototype's format is one-decimal GB, but its fixtures are all
+        // above a gigabyte. A node holding 80 MB would render as "0.1GB", and a
+        // starting one as "0.0GB", so below a gigabyte this says MB.
+        function sizeText(mb) {
+            return mb >= 1024 ? qsTr("%1GB").arg((mb / 1024).toFixed(1))
+                              : qsTr("%1MB").arg(Math.round(mb))
+        }
+
+        // Free space is what kills a node — running out corrupts the chain db
+        // rather than slowing it. Both floors are about rocksdb compaction
+        // headroom, not about the node's own footprint.
+        readonly property bool diskCritical:
+            root.nodeDiskFreeMb >= 0 && root.nodeDiskFreeMb < 2048
+        readonly property bool diskLow:
+            root.nodeDiskFreeMb >= 0 && root.nodeDiskFreeMb < 5120
 
         // Hashes are far too long for a tile; show head and tail, copy the whole.
         function shorten(s) {
@@ -306,11 +347,51 @@ Item {
                  color: Theme.palette.textSecondary, dots: false, isError: false })
 
         // ---- Lifecycle -----------------------------------------------------
-        // Only the stages the node genuinely reports. Funded, Aged, Proposing
-        // and Earning stay out until their backend signals exist, rather than
-        // sitting permanently dark in the lane.
         // LogosStageLane's position model: stages before `currentIndex` are
         // complete, the one at it is in progress. -1 = nothing started.
+        //
+        // Two halves, governed differently. The node stages (Started, Online)
+        // are always live — a stopped node is not "proposing", whatever it
+        // reached last session. The wallet stages (Funded, Aged, Proposing,
+        // Earning) are steps: they hold at their high-water mark, because
+        // claiming a reward empties the voucher list and must not walk the lane
+        // backwards.
+        //
+        // Proposing carries no evidence of its own, and needs none: once notes
+        // have aged, the leader tests them every slot, so the node genuinely is
+        // competing for a block. It is the stage you sit in while waiting for a
+        // first voucher — which is why its busy label says so rather than
+        // claiming blocks are being produced.
+
+        // Where the wallet stands right now, 2..5. Later conditions imply the
+        // earlier ones: a node reporting aged notes is funded whether or not
+        // the per-address balance fetch has caught up with it.
+        readonly property int walletStage: {
+            if (d.voucherCount > 0) return 5    // Earning
+            if (root.stakeNoteCount > 0) return 4  // Proposing — aged, in the lottery
+            if (root.walletFunded) return 3     // Aged — aging in
+            return 2                            // Funded — waiting for tokens
+        }
+
+        // The node saying the stake is gone
+        readonly property bool stakeReportedGone:
+            running && root.stakeTotal.length > 0 && root.stakeNoteCount === 0
+
+        property int walletHighWater: 2
+
+        function advanceWallet() {
+            if (stakeReportedGone) {
+                if (walletStage < walletHighWater)
+                    walletHighWater = walletStage
+                return
+            }
+            if (walletStage > walletHighWater)
+                walletHighWater = walletStage
+        }
+
+        onWalletStageChanged: advanceWallet()
+        onStakeReportedGoneChanged: advanceWallet()
+
         readonly property int lifeCurrentIndex: {
             if (root.status < 0 || root.status === BlockchainBackend.NotStarted)
                 return -1
@@ -325,16 +406,15 @@ Item {
                 return 1                        // Started done, working toward Online
             if (root.status === BlockchainBackend.Starting)
                 return 0                        // Started, itself in progress
-            if (running)
+            if (!running)
+                return -1
+            if (!synced)
                 return 1                        // Online — busy while it syncs
-            return -1
+            return Math.max(2, walletHighWater)
         }
 
-        // The stage at the frontier is actively working.
         readonly property bool lifeBusy:
-            root.status === BlockchainBackend.Starting
-            || root.nodeRecovering
-            || (running && !synced)
+            lifeCurrentIndex >= 0 && lifeCurrentIndex < 5
 
         readonly property bool lifeFailed:
             root.status === BlockchainBackend.Error
@@ -532,6 +612,22 @@ Item {
                             LogosStage {
                                 label: qsTr("Online")
                                 busyLabel: qsTr("Syncing…")
+                            },
+                            LogosStage {
+                                label: qsTr("Funded")               
+                                busyLabel: root.mining ? qsTr("Funding")
+                                                       : qsTr("Fund your wallet")
+                            },
+                            LogosStage {
+                                label: qsTr("Aged")
+                                busyLabel: qsTr("Aging")
+                            },
+                            LogosStage {
+                                label: qsTr("Proposing")
+                                busyLabel: qsTr("Waiting for a slot")
+                            },
+                            LogosStage {
+                                label: qsTr("Earning")
                             }
                         ]
                     }
@@ -638,6 +734,63 @@ Item {
                         LogosInfoButton {
                             title: qsTr("Peers")
                             dialogContentItem: InfoSections { info: InfoContent.peers }
+                        }
+                    ]
+                }
+
+                LogosStatCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
+                    label: qsTr("CPU")
+                    opacity: d.infoOpacity
+                    value: d.cpuText
+                    flashOnChange: true
+                    flashColor: Theme.palette.success
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("CPU")
+                            dialogContentItem: InfoSections { info: InfoContent.cpu }
+                        }
+                    ]
+                }
+
+                LogosStatCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
+                    label: qsTr("RAM")
+                    opacity: d.infoOpacity
+                    value: root.nodeMemoryMb >= 0 ? d.sizeText(root.nodeMemoryMb)
+                                                  : qsTr("—")
+                    flashOnChange: true
+                    flashColor: Theme.palette.success
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("RAM")
+                            dialogContentItem: InfoSections { info: InfoContent.ram }
+                        }
+                    ]
+                }
+
+                LogosStatCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
+                    label: qsTr("Disk")
+                    value: root.nodeDiskUsedMb >= 0 ? d.sizeText(root.nodeDiskUsedMb)
+                                                    : qsTr("—")
+                    flashOnChange: true
+                    flashColor: Theme.palette.success
+                    valueColor: d.diskCritical ? Theme.palette.error
+                                : d.diskLow ? Theme.palette.warning
+                                            : Theme.palette.text
+                    caption: root.nodeDiskFreeMb >= 0
+                             ? qsTr("%1 free").arg(d.sizeText(root.nodeDiskFreeMb)) : ""
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("Disk")
+                            dialogContentItem: InfoSections { info: InfoContent.disk }
                         }
                     ]
                 }

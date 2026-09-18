@@ -322,3 +322,84 @@ var tip = {
     ],
     docs: "https://docs.logos.co/blockchain/concepts/about-cryptarchia#fork-choice-rule"
 }
+
+// TODO(logos-co/logos-liblogos#219): both of these describe a workaround.
+// liblogos already measures every module's CPU and memory — it is what
+// Basecamp's Core Inspector shows — but publishes it to hosts only, so this app
+// resolves the node module's PID through modules_state and samples that process
+// itself. When liblogos exposes the figures to modules, the source changes and
+// these two entries should say so; the numbers will not move.
+var cpu = {
+    title: "CPU",
+    what: "How much processor the node is using on this machine. The node runs "
+        + "inside the blockchain module's process, so what is measured is that "
+        + "process — the node's own work, plus a negligible amount of module "
+        + "overhead.",
+    calc: "The share of this machine's total processing power, averaged over "
+        + "the two seconds since the previous reading. The line beneath gives "
+        + "the same figure as a share of a single core, which is how Activity "
+        + "Monitor and top report a process: a node spread across four cores "
+        + "reads 400% there and 50% here on an eight-core machine.",
+    states: [
+        { label: "0–100%",
+          meaning: "Share of the whole machine. Mining drives this up hard and "
+                 + "deliberately; catching up on blocks does too, briefly." },
+        { label: "Measuring…",
+          meaning: "The first reading has no earlier one to compare against, so "
+                 + "no percentage exists yet. The next one, two seconds later, "
+                 + "does." },
+        { label: "—",
+          meaning: "The node is not running, or its process could not be "
+                 + "located." }
+    ],
+    docs: ""
+}
+
+var ram = {
+    title: "RAM",
+    what: "How much memory the node is holding on this machine. As with CPU, "
+        + "this is the blockchain module's process, which is where the node "
+        + "lives.",
+    calc: "Resident memory — what is actually in RAM, excluding anything the "
+        + "operating system has swapped or compressed away. macOS Activity "
+        + "Monitor's Memory column counts differently and will not match "
+        + "exactly.",
+    states: [
+        { label: "N MB / N.N GB",
+          meaning: "Resident memory now. It climbs while the node replays or "
+                 + "downloads blocks and settles once it is following the "
+                 + "chain." },
+        { label: "—",
+          meaning: "The node is not running, or its process could not be "
+                 + "located." }
+    ],
+    docs: ""
+}
+
+// Disk is NOT part of the #219 workaround above: nothing in the stack measures
+// it, so the app walking the node's data directory is the real implementation,
+// not a stopgap.
+var disk = {
+    title: "Disk",
+    what: "How much disk the node's data directory occupies — the chain "
+        + "database, its state and its logs — and how much room is left on the "
+        + "volume holding it.",
+    calc: "The data directory is found from the node's configuration file and "
+        + "its contents added up every twenty seconds. Free space comes from "
+        + "the volume itself, so it accounts for everything else on the disk, "
+        + "not just the node.",
+    states: [
+        { label: "N.N GB",
+          meaning: "What the node currently occupies, with free space beneath. "
+                 + "It grows as the chain does and never shrinks on its own." },
+        { label: "Amber / red",
+          meaning: "Under 5 GB free, then under 2 GB. This warns on free space, "
+                 + "not on the node's own size: a full disk does not slow the "
+                 + "node down, it corrupts the chain database, and recovering "
+                 + "from that means resetting chain state." },
+        { label: "—",
+          meaning: "The configuration file has not been set, or its data "
+                 + "directory could not be located." }
+    ],
+    docs: ""
+}

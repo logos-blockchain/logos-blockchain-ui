@@ -14,7 +14,7 @@
       "build": [],
       "runtime": ["qt6.qtdeclarative", "zstd", "abseil-cpp"]
     },
-    "external_libraries": [],
+    "external_libraries": [{ "name": "process_stats" }],
     "cmake": {
       "find_packages": ["Qt6Gui"],
       "extra_sources": [],

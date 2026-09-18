@@ -97,6 +97,22 @@ private:
     void clearStake();
     void refreshNetwork();
     void clearNetwork();
+    void refreshChainId();
+    // TODO(logos-co/logos-liblogos#219): both of these go away when liblogos
+    // publishes its per-module stats to modules. It already measures them — the
+    // same figures Basecamp's Core Inspector shows — but only a host can read
+    // them, so until then this resolves the node module's PID through
+    // modules_state and samples it here with the library liblogos itself uses.
+    void resolveNodePid();
+    void refreshResourceUsage();
+    // Disk is NOT part of that TODO: nothing in the stack measures it, so this
+    // stays once liblogos exposes CPU and memory.
+    [[nodiscard]] QString nodeDataDir() const;
+    void refreshDiskUsage();
+    // Re-checked AFTER every blocking module call, not just before one. See the
+    // definition: the sync call spins a nested event loop, so a stop can run to
+    // completion while the reply is in flight.
+    [[nodiscard]] bool stillRunning() const;
     const Rule* diagnoseNode() const; // cached; call this
     bool moduleIsAlive();
     // Record that the module's process is gone: one place, so the poll path and
@@ -130,10 +146,24 @@ private:
 
     LogosAPI* m_logosAPI = nullptr;
     LogosAPIClient* m_blockchainClient = nullptr;
+    // TODO(logos-co/logos-liblogos#219): scaffolding for the CPU/memory tiles.
+    // The PID belongs to the module's process, not the node, so it outlives a
+    // node stop/start and is only re-resolved when sampling starts failing.
+    LogosAPIClient* m_modulesStateClient = nullptr;
+    qint64 m_nodePid = 0;
+    int m_pidLookupFailures = 0;
+    // Whether a CPU sample has been taken for the current PID. The first one of
+    // any process has nothing to diff against and reports 0.0.
+    bool m_cpuSampledOnce = false;
+    // When the data-dir walk last ran. Invalid until the first one.
+    QElapsedTimer m_diskSampled;
     AccountsModel* m_accountsModel = nullptr;
     BlockModel* m_blockModel = nullptr;
 
     static const QString BLOCKCHAIN_MODULE_NAME;
+    // TODO(logos-co/logos-liblogos#219): only reached for the PID behind the
+    // CPU/memory tiles.
+    static const QString MODULES_STATE_MODULE_NAME;
 };
 
 #endif // BLOCKCHAIN_BACKEND_H

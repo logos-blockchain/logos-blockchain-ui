@@ -357,6 +357,10 @@ Rectangle {
                 ? root.backend.status === BlockchainBackend.Running
                 : false
 
+            readonly property string chainId: root.backend && root.backend.chainId
+                ? root.backend.chainId
+                : ""
+
             // Wallet operations require a running node. If the node stops while
             // Operations or Explorer is open, fall back to Dashboard so the
             // user isn't stranded on a disabled section.
@@ -509,10 +513,16 @@ Rectangle {
                     vouchersJson: root.claimableVouchersJson
                     stakeTotal: root.backend ? root.backend.stakeTotal : ""
                     stakeNoteCount: root.backend ? root.backend.stakeNoteCount : 0
+                    walletFunded: !!root.backend && root.backend.walletFunded
                     stakeAddresses: root.backend ? root.backend.stakeAddresses : []
                     peerId: root.peerId
                     peerCount: root.backend ? root.backend.peerCount : -1
                     connectionCount: root.backend ? root.backend.connectionCount : -1
+                    nodeCpuPercent: root.backend ? root.backend.nodeCpuPercent : -1
+                    nodeMemoryMb: root.backend ? root.backend.nodeMemoryMb : -1
+                    cpuCount: root.backend ? root.backend.cpuCount : 1
+                    nodeDiskUsedMb: root.backend ? root.backend.nodeDiskUsedMb : -1
+                    nodeDiskFreeMb: root.backend ? root.backend.nodeDiskFreeMb : -1
                     blendRole: root.backend ? root.backend.blendRole
                                             : BlockchainBackend.Unknown
                     synced: monitor.synced
@@ -721,6 +731,31 @@ Rectangle {
                     canChange: !opPage.canStop
                     onChangeConfigRequested: _d.currentPage = 0
                 }
+            }
+
+            // ---- Footer: which chain everything above belongs to ----------
+            RowLayout {
+                id: chainFooter
+
+                Layout.fillWidth: true
+                spacing: Theme.spacing.tiny
+                visible: opPage.chainId.length > 0
+
+                LogosText {
+                    objectName: "chainIdFooter"
+                    Layout.maximumWidth: root.width * 0.6
+                    text: qsTr("Chain ID: %1").arg(opPage.chainId)
+                    color: Theme.palette.textTertiary
+                    font.pixelSize: Theme.typography.secondaryText
+                    elide: Text.ElideRight
+                }
+
+                LogosCopyButton {
+                    value: opPage.chainId
+                    size: 16
+                }
+
+                Item { Layout.fillWidth: true }
             }
         }
     }
