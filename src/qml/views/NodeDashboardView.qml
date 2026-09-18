@@ -591,12 +591,6 @@ Item {
                     ]
                 }
 
-                // The design draws a progress caption here too ("6h of 10h").
-                // That needs the epoch length in slots, which get_time_info does
-                // not report — it could be inferred from current_slot /
-                // current_epoch, but that assumes epoch 0 starts at slot 0 and
-                // that epochs are fixed-length. Ship the number; ask the node
-                // for the length rather than guessing it.
                 LogosStatCard {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
@@ -608,7 +602,7 @@ Item {
                     labelTrailing: [
                         LogosInfoButton {
                             title: qsTr("Epoch")
-                            text: qsTr("The consensus epoch the chain is currently in, derived from the genesis time and slot duration. Stake eligibility is decided per epoch: a note becomes able to lead roughly two epochs after it is minted.")
+                            dialogContentItem: InfoSections { info: InfoContent.epoch }
                         }
                     ]
                 }
