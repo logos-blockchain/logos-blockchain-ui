@@ -332,13 +332,34 @@ Item {
         // backend only acquires a role while the node reports Online, and clears
         // it on any other mode or on leaving Running. Re-checking those two
         // could only ever hide a role the node has actually reported.
-        readonly property bool blendKnown: root.blendRole !== BlockchainBackend.Unknown
-
         readonly property string blendLabel: {
             switch (root.blendRole) {
-            case BlockchainBackend.Core: return qsTr("Core")
-            case BlockchainBackend.Edge: return qsTr("Edge")
-            default:                     return qsTr("—")
+            case BlockchainBackend.Core:     return qsTr("Core")
+            case BlockchainBackend.Edge:     return qsTr("Edge")
+            case BlockchainBackend.Inactive: return qsTr("Not active")
+            default:                         return qsTr("—")
+            }
+        }
+
+        readonly property string blendCaption: {
+            switch (root.blendRole) {
+            case BlockchainBackend.Core:     return qsTr("Mixing your proposals")
+            case BlockchainBackend.Edge:     return qsTr("Mixed by the core network")
+            case BlockchainBackend.Inactive: return qsTr("Proposals not mixed")
+            default:                         return ""
+            }
+        }
+
+        // Core is declared and earns for it; Edge is what every running node
+        // gets for free. Tinting both `info` blue made the role that took work
+        // look identical to the one that took none.
+        readonly property color blendColor: {
+            switch (root.blendRole) {
+            case BlockchainBackend.Core:     return Theme.palette.accentYellowSoft
+            case BlockchainBackend.Edge:     return Theme.palette.info
+            // Off is not an error and not an achievement — state it plainly.
+            case BlockchainBackend.Inactive: return Theme.palette.textSecondary
+            default:                         return Theme.palette.text
             }
         }
 
@@ -543,17 +564,17 @@ Item {
                     Layout.preferredWidth: 1
                     Layout.minimumWidth: d.minTileWidth
                     label: qsTr("Blend")
-                    value: d.blendKnown ? d.blendLabel : qsTr("—")
+                    value: d.blendLabel
                     // A role is a fact, not a verdict, so tint it rather than
                     // flag it. `severity: Info` also plants an ⓘ beside the
                     // label, which is indistinguishable from the info button
                     // already sitting there.
-                    valueColor: d.blendKnown ? Theme.palette.info
-                                             : Theme.palette.text
+                    valueColor: d.blendColor
+                    caption: d.blendCaption
                     labelTrailing: [
                         LogosInfoButton {
                             title: qsTr("Blend")
-                            text: qsTr("This node's role in the blend network, which mixes proposals. Reported only once the node is online and blend has announced itself.")
+                            dialogContentItem: InfoSections { info: InfoContent.blend }
                         }
                     ]
                 }

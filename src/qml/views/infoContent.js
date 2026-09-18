@@ -56,6 +56,45 @@ var status = {
     docs: "https://docs.logos.co/blockchain/get-started/run-a-logos-blockchain-node-from-basecamp"
 }
 
+// Like Peers below, the prototype lists this tile as unwired and shows a
+// placeholder "Not active". blend_info is wired and is where Core/Edge comes
+// from, so `calc` describes the real reading.
+//
+// `states` deliberately stops at the three the user can actually see. The view
+// renders a fourth, "Not active", against BlendRole::Inactive — but no node
+// reports it yet, and documenting a state nobody can reach is the mistake this
+// file's header is about. Add it here when refreshBlendRole() can set it.
+var blend = {
+    title: "Blend",
+    what: "Whether this node's block proposals travel through the Blend "
+        + "Network — the mixnet that hides which node proposed a block. The "
+        + "point is proposer privacy: without it the peer that announces a "
+        + "block is the peer that made it, which is worth knowing to anyone "
+        + "watching the network.",
+    calc: "From the node's own blend_info, read once it comes online. Every "
+        + "running node takes part at least as Edge; there is no setting that "
+        + "turns blend off. Core is opted into: the node declares itself "
+        + "through the Service Declaration Protocol, proving it holds a note "
+        + "of at least the minimum stake, and the declaration only takes "
+        + "effect two epochs later. A node that has just declared therefore "
+        + "still reads Edge — that is its honest live role until the "
+        + "declaration activates, not a stale reading.",
+    states: [
+        { label: "Edge",
+          meaning: "The default for a running node. Its own proposals are "
+                 + "mixed by the core network on their way out, but it does "
+                 + "not mix anyone else's." },
+        { label: "Core",
+          meaning: "A declared blend node. It mixes traffic for others as well "
+                 + "as itself, and earns rewards for doing so." },
+        { label: "—",
+          meaning: "The node is not running, or blend has not reported yet. "
+                 + "The role is cleared rather than remembered, because a node "
+                 + "that is off is mixing nothing." }
+    ],
+    docs: "https://docs.logos.co/blockchain/concepts/about-the-blend-network"
+}
+
 // The prototype lists this tile as unwired, needing a bridge to the node's HTTP
 // API. It does not: get_network_info landed in the 0.3 module with the same
 // counters, so this one is real.
