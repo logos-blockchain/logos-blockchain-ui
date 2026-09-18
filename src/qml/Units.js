@@ -142,6 +142,43 @@ function _add(a, b) {
     return out.length > 0 ? out : "0"
 }
 
+// Canonical LOGOS text ("1.5") -> lepta ("1500000000"). String arithmetic, like
+// everything else here: a lepta figure runs past 2^53, so Number() would lose
+// digits on exactly the amounts worth checking.
+//
+// Returns "" for anything it cannot represent EXACTLY — including more decimal
+// places than the chain has. That is a refusal, not a rounding: silently
+// truncating a transfer amount is the one failure mode this file exists to
+// prevent.
+function toLepta(canonicalText) {
+    const t = String(canonicalText || "").trim()
+    if (t.length === 0)
+        return ""
+    const dot = t.indexOf(".")
+    const whole = dot < 0 ? t : t.slice(0, dot)
+    let frac = dot < 0 ? "" : t.slice(dot + 1)
+    if (whole.length === 0 && frac.length === 0)
+        return ""
+    if (!/^[0-9]*$/.test(whole) || !/^[0-9]*$/.test(frac))
+        return ""
+    if (frac.length > DECIMALS)
+        return ""
+    frac = frac + new Array(DECIMALS - frac.length + 1).join("0")
+    return _stripLeadingZeros((whole.length > 0 ? whole : "0") + frac)
+}
+
+// Orders two lepta strings: -1, 0, 1, or NaN when either is not a figure.
+// Length first, then lexicographically — exact at any width, no Number().
+function compareLepta(a, b) {
+    const x = _stripLeadingZeros(String(a || "").trim())
+    const y = _stripLeadingZeros(String(b || "").trim())
+    if (!_digitsOnly(x) || !_digitsOnly(y))
+        return NaN
+    if (x.length !== y.length)
+        return x.length < y.length ? -1 : 1
+    return x < y ? -1 : (x > y ? 1 : 0)
+}
+
 // Strips grouping and normalises the decimal point to '.', so "1.234,5" (de)
 // and "1,234.5" (en) both become "1234.5". Locale knowledge stops here;
 // everything downstream sees canonical text.

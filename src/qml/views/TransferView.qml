@@ -1,20 +1,38 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
 import Logos.Theme
 import Logos.Controls
 
+import "../controls"
 import "../Units.js" as Units
 
 // Transfer funds panel. Extracted from the former WalletView.
 ColumnLayout {
     id: root
 
-    required property var accountsModel
+    // Rows, not the remoted model: the replica lands count-first, and a combo's
+    // currentValue reads at currentIndex — so a quick Send could transfer from
+    // an empty key. A QVariantList lands whole.
+    required property var accountRows
 
     signal transferRequested(string fromKeyHex, string toKeyHex, string amount)
     signal copyToClipboard(string text)
+
+    // The selected source's balance, for the availability check below. Reading
+    // the row rather than currentValue: currentValue is the address.
+    readonly property var fromRow:
+        transferFromCombo.currentIndex >= 0
+        && transferFromCombo.currentIndex < accountRows.length
+            ? accountRows[transferFromCombo.currentIndex] : null
+    readonly property string fromBalance: fromRow ? (fromRow.balance || "") : ""
+
+    readonly property string amountLepta:
+        Units.toLepta(Units.normalizeInput(transferAmountField.text))
+    // NaN when either side is not a figure — an unfetched balance cannot say
+    // anything about affordability, so it must not read as "insufficient".
+    readonly property bool overBalance:
+        Units.compareLepta(amountLepta, fromBalance) > 0
 
     property string resultHash: ""
     property string resultError: ""
@@ -37,197 +55,130 @@ ColumnLayout {
         Layout.fillWidth: true
         spacing: Theme.spacing.small
 
-        RowLayout {
+        FieldLabel { text: qsTr("From") }
+
+        LogosComboBox {
+            id: transferFromCombo
             Layout.fillWidth: true
-            LogosText {
-                text: qsTr("Transfer funds")
-                font.pixelSize: Theme.typography.secondaryText
-                font.bold: true
+            implicitHeight: 40
+            background: Rectangle {
+                radius: Theme.spacing.radiusSmall
+                color: Theme.palette.backgroundSecondary
+                border.width: 1
+                border.color: transferFromCombo.activeFocus
+                              ? Theme.palette.overlayOrange
+                              : Theme.palette.backgroundElevated
             }
-            Item { Layout.fillWidth: true }
-            LogosInfoButton {
-                title: qsTr("Transfer")
-                Layout.alignment: Qt.AlignVCenter
-                text: qsTr("Send funds between addresses. Choose a source address (its balance is shown), enter the recipient key and amount, then press Send.")
+            model: root.accountRows
+            textRole: "label"
+            valueRole: "address"
+            placeholderText: qsTr("From account")
+            editable: false
+
+            delegate: LogosItemDelegate {
+                required property var modelData
+                required property int index
+                width: transferFromCombo.width
+                implicitHeight: Math.max(
+                    36, implicitContentHeight + topPadding + bottomPadding)
+                highlighted: transferFromCombo.highlightedIndex === index
+                contentItem: AccountSummary {
+                    keyName: modelData.name || ""
+                    roleLabel: modelData.roleLabel || ""
+                    address: modelData.address || ""
+                    balance: modelData.balance || ""
+                }
             }
         }
 
-        StyledAddressComboBox {
-            id: transferFromCombo
-            model: root.accountsModel
-            textRole: "address"
-        }
+        FieldLabel { text: qsTr("To"); Layout.topMargin: Theme.spacing.small }
 
         LogosTextField {
             id: transferToField
             Layout.fillWidth: true
-            Layout.preferredHeight: 30
-            placeholderText: qsTr("To key (64 hex chars)")
+            placeholderText: qsTr("Recipient key — 64 hex characters")
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: Theme.spacing.small
+            FieldLabel { text: qsTr("Amount (LGO)") }
+            LogosText {
+                Layout.alignment: Qt.AlignRight
+                visible: text.length > 0
+                text: Units.format(root.fromBalance).length > 0
+                      ? qsTr("Available: %1").arg(Units.format(root.fromBalance)) : ""
+                font.pixelSize: Theme.typography.secondaryText
+                color: Theme.palette.textSecondary
+            }
         }
 
         LogosTextField {
             id: transferAmountField
             Layout.fillWidth: true
-            Layout.preferredHeight: 30
-            placeholderText: qsTr("Amount (LGO)")
+            placeholderText: qsTr("0.00")
             validator: RegularExpressionValidator {
                 regularExpression: Units.inputRegExp(Qt.locale())
             }
         }
 
+        LogosText {
+            Layout.fillWidth: true
+            visible: root.overBalance
+            text: qsTr("More than this account holds.")
+            font.pixelSize: Theme.typography.secondaryText
+            color: Theme.palette.error
+            wrapMode: Text.WordWrap
+        }
+
         RowLayout {
             Layout.fillWidth: true
+            Layout.topMargin: Theme.spacing.medium
             spacing: Theme.spacing.small
 
             LogosButton {
                 id: transferButton
                 Layout.alignment: Qt.AlignTop
                 text: qsTr("Send")
+                enabled: String(transferFromCombo.currentValue || "").trim().length > 0
+                         && transferToField.text.trim().length > 0
+                         && root.amountLepta.length > 0
+                         && !root.overBalance
                 // Canonical LOGOS; the backend scales it to lepta.
                 onClicked: root.transferRequested(
-                    transferFromCombo.currentText.trim(),
+                    String(transferFromCombo.currentValue || "").trim(),
                     transferToField.text.trim(),
                     Units.normalizeInput(transferAmountField.text))
             }
 
-            LogosSelectableText {
-                id: transferResult
-                Layout.fillWidth: true
-                Layout.alignment: Qt.AlignVCenter
-                visible: root.resultHash.length > 0 || root.resultError.length > 0
-                text: root.resultHash.length > 0
-                          ? qsTr("Tx hash: ") + root.resultHash
-                          : root.resultError
-                color: root.resultError.length > 0 ? Theme.palette.error
-                                                   : Theme.palette.text
-                font.pixelSize: Theme.typography.secondaryText
-                wrapMode: TextEdit.Wrap
-                horizontalAlignment: TextEdit.AlignRight
-            }
+        }
+
+        LogosNotice {
+            Layout.fillWidth: true
+            Layout.topMargin: Theme.spacing.medium
+
+            readonly property bool sent: root.resultHash.length > 0
+
+            severity: sent ? LogosNotice.Success : LogosNotice.Error
+            title: sent ? qsTr("Transaction sent") : qsTr("Transfer failed")
+            message: sent ? root.resultHash : root.resultError
+            shown: sent || root.resultError.length > 0
+            closable: false
+
+            actions: [
+                LogosCopyButton {
+                    visible: root.resultHash.length > 0
+                    value: root.resultHash
+                }
+            ]
         }
     }
 
     Item { Layout.fillHeight: true }
 
-    component StyledAddressComboBox: ComboBox {
-        id: comboControl
-
+    component FieldLabel: LogosText {
         Layout.fillWidth: true
-        padding: Theme.spacing.large
-        editable: true
-        // Balance of the selected row, shown read-only in the closed box (the
-        // editable text holds only the address — it's used as the transfer key).
-        valueRole: "balance"
         font.pixelSize: Theme.typography.secondaryText
-
-        background: Rectangle {
-            color: Theme.palette.backgroundTertiary
-            radius: Theme.spacing.radiusLarge
-            border.color: Theme.palette.border
-            border.width: 1
-        }
-        indicator: LogosText {
-            id: comboIndicator
-            text: "▼"
-            font.pixelSize: Theme.typography.secondaryText
-            color: Theme.palette.textSecondary
-            x: comboControl.width - width - Theme.spacing.small
-            y: (comboControl.height - height) / 2
-            visible: comboControl.count > 0
-        }
-        contentItem: Item {
-            implicitWidth: 200
-            implicitHeight: 30
-
-            TextField {
-                id: comboTextField
-                anchors.fill: parent
-                leftPadding: 0
-                rightPadding: (comboControl.count > 0 ? comboIndicator.width + Theme.spacing.small : Theme.spacing.small)
-                              + (balanceLabel.visible ? balanceLabel.width + Theme.spacing.small : 0)
-                topPadding: 0
-                bottomPadding: 0
-                verticalAlignment: Text.AlignVCenter
-                font.pixelSize: Theme.typography.secondaryText
-                text: comboControl.editText
-                onTextChanged: if (text !== comboControl.editText) comboControl.editText = text
-                selectByMouse: true
-                color: Theme.palette.text
-                background: Item { }
-            }
-            LogosText {
-                id: balanceLabel
-                anchors.right: parent.right
-                anchors.rightMargin: (comboControl.count > 0 ? comboIndicator.width + Theme.spacing.small : 0)
-                                     + Theme.spacing.small
-                anchors.verticalCenter: parent.verticalCenter
-                visible: comboControl.currentIndex >= 0 && text.length > 0
-                text: Units.format(comboControl.currentValue || "")
-                font.pixelSize: Theme.typography.secondaryText
-                color: Theme.palette.textSecondary
-            }
-            MouseArea {
-                anchors.fill: parent
-                visible: comboControl.count > 0
-                z: 1
-                onPressed: {
-                    comboControl.popup.visible ? comboControl.popup.close() : comboControl.popup.open()
-                }
-            }
-        }
-        delegate: ItemDelegate {
-            id: comboDelegate
-            width: comboControl.width
-            contentItem: RowLayout {
-                spacing: Theme.spacing.small
-                LogosText {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: implicitHeight + Theme.spacing.large
-                    font.pixelSize: Theme.typography.secondaryText
-                    font.bold: true
-                    text: (typeof model.address !== "undefined" ? model.address : modelData) || ""
-                    elide: Text.ElideMiddle
-                    horizontalAlignment: Text.AlignLeft
-                    verticalAlignment: Text.AlignVCenter
-                }
-                LogosText {
-                    visible: (typeof model.balance !== "undefined") && (model.balance || "").length > 0
-                    text: Units.format(model.balance || "")
-                    font.pixelSize: Theme.typography.secondaryText
-                    color: Theme.palette.textSecondary
-                    horizontalAlignment: Text.AlignRight
-                    verticalAlignment: Text.AlignVCenter
-                }
-            }
-            background: Rectangle {
-                color: comboDelegate.highlighted ?
-                           Theme.palette.backgroundTertiary :
-                           Theme.palette.backgroundSecondary
-            }
-            highlighted: comboControl.highlightedIndex === index
-        }
-        popup: Popup {
-            y: comboControl.height - 1
-            width: comboControl.width
-            height: contentItem.implicitHeight
-            padding: 1
-
-            onOpened: if (comboControl.count === 0) close()
-
-            contentItem: ListView {
-                clip: true
-                implicitHeight: contentHeight
-                model: comboControl.popup.visible ? comboControl.delegateModel : null
-                ScrollIndicator.vertical: ScrollIndicator { }
-                highlightFollowsCurrentItem: false
-            }
-
-            background: Rectangle {
-                color: Theme.palette.backgroundSecondary
-                border.color: Theme.palette.border
-                border.width: 1
-                radius: Theme.spacing.radiusLarge
-            }
-        }
+        color: Theme.palette.textSecondary
     }
 }

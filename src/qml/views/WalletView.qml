@@ -11,6 +11,7 @@ RowLayout {
     id: root
 
     property var accountsModel: null
+    property var accountRows: []
     property bool nodeRunning: false
 
     // ---- Requests out (the host orchestrates these) ----
@@ -67,7 +68,7 @@ RowLayout {
 
             TransferView {
                 id: transferView
-                accountsModel: root.accountsModel
+                accountRows: root.accountRows
                 onTransferRequested: (fromKeyHex, toKeyHex, amount) =>
                     root.transferRequested(fromKeyHex, toKeyHex, amount)
                 onCopyToClipboard: (text) => root.copyToClipboard(text)

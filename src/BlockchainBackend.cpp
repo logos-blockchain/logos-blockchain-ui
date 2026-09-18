@@ -1464,17 +1464,11 @@ QVariantMap BlockchainBackend::readAccountRoles(const QString& configPath)
     m_accountsModel->setNames(namesByAddress);
     publishAccountRows();
 
-    QVariantList accounts;
-    accounts.reserve(knownKeys.size());
-    for (const QJsonValue& keyValue : knownKeys) {
-        const QString key = keyValue.toString();
-        if (key.isEmpty())
-            continue;
-        accounts.append(AccountsModel::describe(
-            key, rolesByAddress.value(key), namesByAddress.value(normalizeHex(key))));
-    }
-
-    return result::toVariantMap(LogosResult{true, accounts, QVariant()});
+    // The rows publishAccountRows just built, not a second pass over knownKeys:
+    // setRoles above adds any config key the model was missing, so the model is
+    // now the superset — and it is the only side that carries balances. Building
+    // them twice is how the picker ended up showing a name with no figure.
+    return result::toVariantMap(LogosResult{true, accountRows(), QVariant()});
 }
 
 // The wizard's entry point: the same read, with the rows handed back.
@@ -1608,7 +1602,8 @@ void BlockchainBackend::publishAccountRows()
         rows.append(AccountsModel::describe(
             m_accountsModel->data(idx, AccountsModel::AddressRole).toString(),
             m_accountsModel->data(idx, AccountsModel::RolesRole).toStringList(),
-            m_accountsModel->data(idx, AccountsModel::NameRole).toString()));
+            m_accountsModel->data(idx, AccountsModel::NameRole).toString(),
+            m_accountsModel->data(idx, AccountsModel::BalanceRole).toString()));
     }
     setAccountRows(rows);
 }

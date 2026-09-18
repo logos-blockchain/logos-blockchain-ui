@@ -60,7 +60,7 @@ QString AccountsModel::shortHex(const QString& hex)
 }
 
 QVariantMap AccountsModel::describe(const QString& address, const QStringList& roles,
-                                    const QString& name)
+                                    const QString& name, const QString& balance)
 {
     Entry e;
     e.address = address;
@@ -72,6 +72,7 @@ QVariantMap AccountsModel::describe(const QString& address, const QStringList& r
         {QStringLiteral("roleLabel"), roleLabelOf(e)},
         {QStringLiteral("name"), name},
         {QStringLiteral("label"), labelOf(e)},
+        {QStringLiteral("balance"), balance},
     };
 }
 

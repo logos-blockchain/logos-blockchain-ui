@@ -853,6 +853,7 @@ Rectangle {
                 WalletView {
                     id: walletView
                     accountsModel: root.accountsModel
+                    accountRows: root.backend ? root.backend.accountRows : []
                     nodeRunning: opPage.nodeRunning
 
                     onRefreshAccountsRequested: if (root.backend) root.backend.refreshAccounts()

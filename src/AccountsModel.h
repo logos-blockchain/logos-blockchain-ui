@@ -40,7 +40,7 @@ public:
     void setRoles(const QHash<QString, QStringList>& rolesByAddress);
     void setNames(const QHash<QString, QString>& nameByAddress);
 
-    // One account as a plain map: { address, roles, roleLabel, name, label }.
+    // One account as a plain map: { address, roles, roleLabel, name, label, balance }.
     //
     // For callers that need the rows *now* rather than through the model. The
     // model reaches QML as a QtRO replica, which reports its row count at once
@@ -49,7 +49,8 @@ public:
     // whatever it got. Same composition either way, so the two can never
     // disagree about what a key is called.
     static QVariantMap describe(const QString& address, const QStringList& roles,
-                               const QString& name = QString());
+                               const QString& name = QString(),
+                               const QString& balance = QString());
 
 private:
     struct Entry {
