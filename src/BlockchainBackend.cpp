@@ -587,6 +587,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
             setBlendRole(Unknown);
             clearStake();
             clearNetwork();
+            setChainId(QString());
         }
     });
 
@@ -687,6 +688,12 @@ QVariantMap BlockchainBackend::getTimeInfo()
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_time_info"))));
 }
 
+// Whether a reading taken a moment ago still describes a running node.
+bool BlockchainBackend::stillRunning() const
+{
+    return status() == Running;
+}
+
 // blend_info answers with JSON:
 //   { "node_id": "<blend PeerId>", "core_info": null | { ... } }
 void BlockchainBackend::refreshBlendRole()
@@ -696,7 +703,7 @@ void BlockchainBackend::refreshBlendRole()
 
     const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("blend_info")));
-    if (!r.success)
+    if (!r.success || !stillRunning())
         return;
 
     const QJsonDocument doc = QJsonDocument::fromJson(r.value.toString().toUtf8());
@@ -723,13 +730,28 @@ void BlockchainBackend::refreshNetwork()
 
     const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_network_info")));
-    if (!r.success)
+    if (!r.success || !stillRunning())
         return;
 
     const QJsonObject payload =
         QJsonDocument::fromJson(r.value.toString().toUtf8()).object();
     setPeerCount(payload.value(QStringLiteral("n_peers")).toInt(-1));
     setConnectionCount(payload.value(QStringLiteral("n_connections")).toInt(-1));
+}
+
+// get_chain_id answers with a bare string — the only module call here that is
+// not JSON, so do not reach for QJsonDocument on the way out.
+void BlockchainBackend::refreshChainId()
+{
+    if (!m_blockchainClient || status() != Running || !chainId().isEmpty())
+        return;
+
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_chain_id")));
+    if (!r.success || !stillRunning())
+        return;
+
+    setChainId(r.value.toString().trimmed());
 }
 
 void BlockchainBackend::clearStake()
@@ -750,8 +772,10 @@ void BlockchainBackend::refreshStake()
 
     const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("wallet_get_leader_aged_notes"), QString()));
-    // Keep the last known stake on a transient failure; it is still true.
-    if (!r.success)
+    // Keep the last known stake on a transient failure; it is still true. A stop
+    // that landed mid-call is the opposite case — the stake was cleared on the
+    // way out of Running and must stay cleared.
+    if (!r.success || !stillRunning())
         return;
 
     const QJsonObject payload =
@@ -785,24 +809,35 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
         setNodeModuleReachable(true);
         setNodeRecovering(false);
         const bool modeOnline = cryptarchiaMode(r.value) == QLatin1String("Online");
-        // One reading, two consumers: the uptime clock and the blend role. The
-        // view debounces the same reading again for the headline — it has to,
-        // the poll is its own — but the clock has no reason to make a round trip
-        // for a verdict already in hand here.
-        applyOnlineReading(modeOnline);
-        refreshNetwork();
-        if (modeOnline) {
-            if (blendRole() == Unknown)
-                refreshBlendRole();
-            // Unlike the blend role, stake is not acquired once: it moves with
-            // every epoch.
-            refreshStake();
-        } else {
-            if (blendRole() != Unknown)
-                setBlendRole(Unknown);
-            // Not online means no stake: leaving the last figure up would
-            // credit the node with weight it no longer has.
-            clearStake();
+        // Everything below describes a running node, and this call blocked in a
+        // nested event loop long enough for the node to have been stopped inside
+        // it (see stillRunning). applyOnlineReading is the one that bites: fed a
+        // stale "Online" it restarts the uptime clock that statusChanged just
+        // stopped, and a stopped node sits there counting up.
+        //
+        // Skipping the else branch is safe — statusChanged clears the blend role
+        // and the stake on the way out of Running, which is the same work.
+        if (stillRunning()) {
+            // One reading, two consumers: the uptime clock and the blend role. The
+            // view debounces the same reading again for the headline — it has to,
+            // the poll is its own — but the clock has no reason to make a round trip
+            // for a verdict already in hand here.
+            applyOnlineReading(modeOnline);
+            refreshNetwork();
+            refreshChainId();
+            if (modeOnline) {
+                if (blendRole() == Unknown)
+                    refreshBlendRole();
+                // Unlike the blend role, stake is not acquired once: it moves with
+                // every epoch.
+                refreshStake();
+            } else {
+                if (blendRole() != Unknown)
+                    setBlendRole(Unknown);
+                // Not online means no stake: leaving the last figure up would
+                // credit the node with weight it no longer has.
+                clearStake();
+            }
         }
     } else if (r.error.toString().contains(QStringLiteral("Call failed"), Qt::CaseInsensitive)) {
         const Rule* cause = diagnoseNode();

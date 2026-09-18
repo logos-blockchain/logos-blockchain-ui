@@ -357,6 +357,10 @@ Rectangle {
                 ? root.backend.status === BlockchainBackend.Running
                 : false
 
+            readonly property string chainId: root.backend && root.backend.chainId
+                ? root.backend.chainId
+                : ""
+
             // Wallet operations require a running node. If the node stops while
             // Operations or Explorer is open, fall back to Dashboard so the
             // user isn't stranded on a disabled section.
@@ -721,6 +725,31 @@ Rectangle {
                     canChange: !opPage.canStop
                     onChangeConfigRequested: _d.currentPage = 0
                 }
+            }
+
+            // ---- Footer: which chain everything above belongs to ----------
+            RowLayout {
+                id: chainFooter
+
+                Layout.fillWidth: true
+                spacing: Theme.spacing.tiny
+                visible: opPage.chainId.length > 0
+
+                LogosText {
+                    objectName: "chainIdFooter"
+                    Layout.maximumWidth: root.width * 0.6
+                    text: qsTr("Chain ID: %1").arg(opPage.chainId)
+                    color: Theme.palette.textTertiary
+                    font.pixelSize: Theme.typography.secondaryText
+                    elide: Text.ElideRight
+                }
+
+                LogosCopyButton {
+                    value: opPage.chainId
+                    size: 16
+                }
+
+                Item { Layout.fillWidth: true }
             }
         }
     }

@@ -97,6 +97,11 @@ private:
     void clearStake();
     void refreshNetwork();
     void clearNetwork();
+    void refreshChainId();
+    // Re-checked AFTER every blocking module call, not just before one. See the
+    // definition: the sync call spins a nested event loop, so a stop can run to
+    // completion while the reply is in flight.
+    [[nodiscard]] bool stillRunning() const;
     const Rule* diagnoseNode() const; // cached; call this
     bool moduleIsAlive();
     // Record that the module's process is gone: one place, so the poll path and
