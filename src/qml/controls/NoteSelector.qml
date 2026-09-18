@@ -18,6 +18,7 @@ ColumnLayout {
     property var notes: []
     property bool loading: false
     property string errorText: ""
+    property bool addressChosen: false
 
     // Observable selection summary — bindings can't track ListModel reads, so
     // these properties are recomputed explicitly on every selection change.
@@ -93,7 +94,9 @@ ColumnLayout {
     LogosText {
         Layout.fillWidth: true
         visible: !root.loading && root.errorText === "" && notesModel.count === 0
-        text: qsTr("No notes found for this address. Load notes for a funded address.")
+        text: root.addressChosen
+              ? qsTr("This account holds no notes to deposit.")
+              : qsTr("Choose an account above to load its notes.")
         color: Theme.palette.textSecondary
         font.pixelSize: Theme.typography.secondaryText
         wrapMode: Text.WordWrap

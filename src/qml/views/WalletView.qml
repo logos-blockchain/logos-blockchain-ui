@@ -76,7 +76,7 @@ RowLayout {
 
             ChannelDepositView {
                 id: channelDepositView
-                accountsModel: root.accountsModel
+                accountRows: root.accountRows
                 nodeRunning: root.nodeRunning
                 onGetNotesRequested: (addressHex, optionalTipHex) =>
                     root.getNotesRequested(addressHex, optionalTipHex)

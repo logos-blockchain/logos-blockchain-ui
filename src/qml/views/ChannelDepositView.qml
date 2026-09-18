@@ -3,6 +3,7 @@ import QtQuick.Layouts
 
 import Logos.Theme
 import Logos.Controls
+import Logos.Icons
 
 import "../controls"
 import "../Units.js" as Units
@@ -15,9 +16,10 @@ import "../Units.js" as Units
 ColumnLayout {
     id: root
 
-    // Known wallet addresses (auto-remoted accounts model). Also used as
-    // public keys for the change/funding key pickers.
-    property var accountsModel: null
+    // Rows, not the remoted model: a combo reads currentValue at currentIndex,
+    // and the replica lands count-first. Rows also carry the name and balance,
+    // so a picker can show what an account IS rather than bare hex.
+    property var accountRows: []
     property bool nodeRunning: false
 
     signal getNotesRequested(string addressHex, string optionalTipHex)
@@ -59,6 +61,9 @@ ColumnLayout {
 
     spacing: Theme.spacing.large
 
+    // The accounts chosen to fund the gas fee.
+    ListModel { id: fundingKeysModel }
+
     QtObject {
         id: d
 
@@ -66,8 +71,24 @@ ColumnLayout {
         readonly property int stepCount: 4
         property string notesTip: ""
 
-        // Address whose notes are currently loaded. Selecting/entering a
-        // different address clears the old notes and loads the new ones.
+        readonly property var addressHexRegExp: /^(0x)?[0-9a-fA-F]{64}$/
+
+        property string selectedAddress: ""
+        property string changeKey: ""
+
+        // Row index for an address, so a combo can show what `d` holds.
+        function indexOfAddress(addr) {
+            const a = (addr || "").trim().toLowerCase()
+            if (a.length === 0) return -1
+            for (var i = 0; i < root.accountRows.length; ++i) {
+                if (String(root.accountRows[i].address || "").toLowerCase() === a)
+                    return i
+            }
+            return -1
+        }
+
+        // Address whose notes are currently loaded. Selecting a different
+        // address clears the old notes and loads the new ones.
         property string loadedAddress: ""
 
         // result state
@@ -93,9 +114,30 @@ ColumnLayout {
         }
 
         function fundingKeyList() {
-            return fundingKeysArea.text.split("\n")
-                .map(function(s) { return s.trim() })
-                .filter(function(s) { return s.length > 0 })
+            var out = []
+            for (var i = 0; i < fundingKeysModel.count; ++i)
+                out.push(fundingKeysModel.get(i).publicKey)
+            return out
+        }
+
+        function fundingHas(key) {
+            const k = String(key || "").trim().toLowerCase()
+            if (k.length === 0) return false
+            for (var i = 0; i < fundingKeysModel.count; ++i) {
+                if (String(fundingKeysModel.get(i).publicKey).toLowerCase() === k)
+                    return true
+            }
+            return false
+        }
+
+        function addFundingKey(key, label) {
+            const k = String(key || "").trim()
+            if (k.length === 0 || fundingHas(k))
+                return
+            fundingKeysModel.append({
+                publicKey: k,
+                label: String(label || "").trim()
+            })
         }
 
         // --- Metadata (base58-encoded bytes) ---
@@ -110,16 +152,21 @@ ColumnLayout {
             return /^[1-9A-HJ-NP-Za-km-z]+$/.test(s)
         }
 
+        function tipIsValid() {
+            return tipField.text.trim() === "" || tipField.textInput.acceptableInput
+        }
+
         function canAdvance() {
             switch (step) {
             case 0:
                 return noteSelector.selectedCount > 0
             case 1:
-                return channelIdField.text.trim().length > 0
-                    && changeKeyField.text.trim().length > 0
+                return channelIdField.textInput.acceptableInput
+                    && d.changeKey.trim().length > 0
                     && fundingKeyList().length > 0
                     && maxFeeField.text.trim().length > 0
                     && metadataIsValid()
+                    && tipIsValid()
             default:
                 return true
             }
@@ -133,10 +180,13 @@ ColumnLayout {
                 step++
             // Prefill key fields from the selected wallet when first reaching step 1.
             if (step === 1) {
-                if (changeKeyField.text.trim() === "")
-                    changeKeyField.text = walletField.text.trim()
-                if (fundingKeysArea.text.trim() === "" && walletField.text.trim() !== "")
-                    fundingKeysArea.text = walletField.text.trim()
+                if (d.changeKey.trim() === "")
+                    d.changeKey = d.selectedAddress.trim()
+                if (fundingKeysModel.count === 0 && d.selectedAddress.trim() !== "") {
+                    const i = indexOfAddress(d.selectedAddress)
+                    addFundingKey(d.selectedAddress.trim(),
+                                  i >= 0 ? (root.accountRows[i].label || "") : "")
+                }
             }
         }
 
@@ -154,7 +204,7 @@ ColumnLayout {
                 channelIdField.text.trim(),
                 noteSelector.selectedIds(),
                 metadataField.text.trim(),
-                changeKeyField.text.trim(),
+                d.changeKey.trim(),
                 fundingKeyList(),
                 Units.normalizeInput(maxFeeField.text.trim()),
                 tipField.text.trim())
@@ -164,11 +214,11 @@ ColumnLayout {
             noteSelector.clearSelection()
             noteSelector.notes = []
             noteSelector.errorText = ""
-            walletField.text = ""
+            selectedAddress = ""
             loadedAddress = ""
             channelIdField.text = ""
-            changeKeyField.text = ""
-            fundingKeysArea.text = ""
+            changeKey = ""
+            fundingKeysModel.clear()
             maxFeeField.text = ""
             metadataField.text = ""
             tipField.text = ""
@@ -184,7 +234,7 @@ ColumnLayout {
                 { k: qsTr("Channel ID"), v: channelIdField.text.trim() },
                 { k: qsTr("Notes to consume (%1)").arg(ids.length), v: ids.join("\n") },
                 { k: qsTr("Total amount"), v: Units.format(noteSelector.selectedTotal) },
-                { k: qsTr("Change public key"), v: changeKeyField.text.trim() },
+                { k: qsTr("Change public key"), v: d.changeKey.trim() },
                 { k: qsTr("Funding public keys"), v: fundingKeyList().join("\n") },
                 { k: qsTr("Max tx fee"), v: maxFeeField.text.trim().length > 0
                                             ? maxFeeField.text.trim() + " " + Units.SYMBOL : "" },
@@ -194,16 +244,47 @@ ColumnLayout {
         }
     }
 
+    component AccountPicker: LogosComboBox {
+        id: picker
+        Layout.fillWidth: true
+        model: root.accountRows
+        textRole: "label"
+        valueRole: "address"
+        implicitHeight: 40
+        background: Rectangle {
+            radius: Theme.spacing.radiusSmall
+            color: Theme.palette.backgroundSecondary
+            border.width: 1
+            border.color: picker.activeFocus ? Theme.palette.overlayOrange
+                                             : Theme.palette.backgroundElevated
+        }
+        delegate: LogosItemDelegate {
+            required property var modelData
+            required property int index
+            width: picker.width
+            implicitHeight: Math.max(
+                36, implicitContentHeight + topPadding + bottomPadding)
+            highlighted: picker.highlightedIndex === index
+            contentItem: AccountSummary {
+                keyName: modelData.name || ""
+                roleLabel: modelData.roleLabel || ""
+                address: modelData.address || ""
+                balance: modelData.balance || ""
+            }
+        }
+    }
+
+    component FieldLabel: LogosText {
+        Layout.fillWidth: true
+        font.pixelSize: Theme.typography.secondaryText
+        color: Theme.palette.textSecondary
+    }
+
     // ---- Header / step indicator ----
     RowLayout {
         Layout.fillWidth: true
         spacing: Theme.spacing.medium
 
-        LogosText {
-            text: qsTr("Channel Deposit")
-            font.pixelSize: Theme.typography.primaryText
-            font.bold: true
-        }
         Item { Layout.fillWidth: true }
         LogosText {
             text: qsTr("Step %1 of %2").arg(d.step + 1).arg(d.stepCount)
@@ -217,13 +298,11 @@ ColumnLayout {
         }
     }
 
-    LogosText {
+    LogosNotice {
         Layout.fillWidth: true
-        visible: !root.nodeRunning
-        text: qsTr("Start the node before making a deposit.")
-        color: Theme.palette.warning
-        font.pixelSize: Theme.typography.secondaryText
-        wrapMode: Text.WordWrap
+        severity: LogosNotice.Warning
+        message: qsTr("Start the node before making a deposit.")
+        shown: !root.nodeRunning
     }
 
     StackLayout {
@@ -243,40 +322,21 @@ ColumnLayout {
                 wrapMode: Text.WordWrap
             }
 
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: Theme.spacing.small
+            FieldLabel { text: qsTr("Deposit from") }
 
-                LogosComboBox {
-                    Layout.preferredWidth: 200
-                    placeholderText: qsTr("Known address…")
-                    model: root.accountsModel
-                    textRole: "address"
-                    currentIndex: -1
-                    // Selecting a (different) known address loads its notes.
-                    onActivated: function(index) {
-                        walletField.text = currentText
-                        d.loadNotesFor(currentText)
-                    }
-                }
-                LogosTextField {
-                    id: walletField
-                    Layout.fillWidth: true
-                    placeholderText: qsTr("Wallet address hex")
-
-                    // LogosTextField has no editingFinished; reach the inner
-                    // TextInput. Manually entered address loads on commit
-                    // (Enter / focus out).
-                    Connections {
-                        target: walletField.textInput
-                        function onEditingFinished() { d.loadNotesFor(walletField.text) }
-                    }
+            AccountPicker {
+                placeholderText: qsTr("Choose an account")
+                currentIndex: d.indexOfAddress(d.selectedAddress)
+                onActivated: function(index) {
+                    d.selectedAddress = String(currentValue || "")
+                    d.loadNotesFor(d.selectedAddress)
                 }
             }
 
             NoteSelector {
                 id: noteSelector
                 Layout.fillWidth: true
+                addressChosen: d.selectedAddress.length > 0
             }
 
             Item { Layout.fillHeight: true }
@@ -296,59 +356,132 @@ ColumnLayout {
                 LogosTextField {
                     id: channelIdField
                     Layout.fillWidth: true
-                    placeholderText: qsTr("Channel ID hex")
+                    placeholderText: qsTr("64 hex characters")
+                    validator: RegularExpressionValidator {
+                        regularExpression: d.addressHexRegExp
+                    }
+                }
+                LogosText {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    visible: channelIdField.text.trim().length > 0
+                             && !channelIdField.textInput.acceptableInput
+                    text: qsTr("A channel ID is 64 hex characters (32 bytes).")
+                    color: Theme.palette.error
+                    font.pixelSize: Theme.typography.secondaryText
+                    wrapMode: Text.WordWrap
                 }
 
-                LogosText {
-                    text: qsTr("Change public key (receives change)")
-                    font.pixelSize: Theme.typography.secondaryText
+                FieldLabel { text: qsTr("Change goes to") }
+                AccountPicker {
+                    placeholderText: qsTr("Choose an account")
+                    currentIndex: d.indexOfAddress(d.changeKey)
+                    onActivated: function(index) {
+                        d.changeKey = String(currentValue || "")
+                    }
                 }
+
+                FieldLabel { text: qsTr("Accounts funding the gas fee") }
+
+                LogosText {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    text: qsTr("Add one or more accounts. The node draws the transaction "
+                               + "fee from them.")
+                    font.pixelSize: Theme.typography.secondaryText
+                    color: Theme.palette.textSecondary
+                    wrapMode: Text.WordWrap
+                }
+
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: Theme.spacing.small
+
                     LogosComboBox {
-                        Layout.preferredWidth: 200
-                        placeholderText: qsTr("Known address…")
-                        model: root.accountsModel
-                        textRole: "address"
-                        currentIndex: -1
-                        onActivated: function(index) { changeKeyField.text = currentText }
-                    }
-                    LogosTextField {
-                        id: changeKeyField
+                        id: fundingPicker
                         Layout.fillWidth: true
-                        placeholderText: qsTr("Change public key hex")
-                    }
-                }
-
-                LogosText {
-                    text: qsTr("Funding public keys (one per line, fund the gas fee)")
-                    font.pixelSize: Theme.typography.secondaryText
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.spacing.small
-                    Item { Layout.fillWidth: true }
-                    LogosComboBox {
-                        Layout.preferredWidth: 220
-                        placeholderText: qsTr("Add known address…")
-                        model: root.accountsModel
-                        textRole: "address"
+                        placeholderText: qsTr("Account…")
+                        model: root.accountRows
+                        textRole: "label"
+                        valueRole: "address"
                         currentIndex: -1
-                        onActivated: function(index) {
-                            var t = fundingKeysArea.text.trim()
-                            fundingKeysArea.text = (t.length > 0 ? t + "\n" : "") + currentText
+                    }
+
+                    LogosButton {
+                        text: qsTr("Add")
+                        enabled: fundingPicker.currentIndex >= 0
+                                 && !d.fundingHas(fundingPicker.currentValue)
+                        onClicked: {
+                            d.addFundingKey(String(fundingPicker.currentValue || ""),
+                                            fundingPicker.currentText)
+                            fundingPicker.currentIndex = -1
                         }
                     }
                 }
-                LogosScrollView {
+
+                LogosFrame {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 80
-                    LogosTextArea {
-                        id: fundingKeysArea
-                        borderColor: Theme.palette.backgroundElevated
-                        placeholderText: qsTr("Funding public key hex, one per line")
-                        font.pixelSize: Theme.typography.secondaryText
+                    padding: Theme.spacing.medium
+                    backgroundColor: Theme.palette.surfaceRecessed
+                    borderColor: "transparent"
+                    radius: Theme.spacing.radiusMedium
+
+                    contentItem: ColumnLayout {
+                        spacing: Theme.spacing.small
+
+                        LogosText {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            visible: fundingKeysModel.count === 0
+                            text: qsTr("No accounts added yet.")
+                            font.pixelSize: Theme.typography.secondaryText
+                            color: Theme.palette.textTertiary
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Repeater {
+                            model: fundingKeysModel
+
+                            RowLayout {
+                                id: fundingRow
+                                required property int index
+                                required property string publicKey
+                                required property string label
+
+                                Layout.fillWidth: true
+                                spacing: Theme.spacing.small
+
+                                LogosText {
+                                    text: fundingRow.label
+                                    font.pixelSize: Theme.typography.secondaryText
+                                }
+                                LogosText {
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    text: fundingRow.publicKey
+                                    font.pixelSize: Theme.typography.secondaryText
+                                    color: Theme.palette.textSecondary
+                                    elide: Text.ElideMiddle
+                                }
+                                LogosIconButton {
+                                    id: removeFundingButton
+                                    flat: true
+                                    size: 28
+                                    iconSize: 16
+                                    iconSource: LogosIcons.trash
+                                    iconColor: removeFundingButton.hovered
+                                               ? Theme.palette.error
+                                               : Theme.palette.textTertiary
+                                    onClicked: fundingKeysModel.remove(fundingRow.index)
+
+                                    LogosToolTip {
+                                        text: qsTr("Remove this account")
+                                        placement: LogosToolTip.Placement.Top
+                                        visible: removeFundingButton.hovered
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -400,7 +533,10 @@ ColumnLayout {
                     LogosTextField {
                         id: tipField
                         Layout.fillWidth: true
-                        placeholderText: qsTr("Tip hex")
+                        placeholderText: qsTr("64 hex characters")
+                        validator: RegularExpressionValidator {
+                            regularExpression: d.addressHexRegExp
+                        }
                     }
                     LogosButton {
                         text: qsTr("Use query tip")
@@ -427,7 +563,8 @@ ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 padding: Theme.spacing.large
-                backgroundColor: Theme.palette.backgroundTertiary
+                backgroundColor: Theme.palette.surfaceRecessed
+                borderColor: "transparent"
                 radius: Theme.spacing.radiusLarge
 
                 contentItem: LogosScrollView {
@@ -477,48 +614,25 @@ ColumnLayout {
                 running: d.resultPending
             }
 
-            LogosText {
+            // Same severity surface the transfer result uses, so a deposit
+            // reports itself the same way a transfer does.
+            LogosNotice {
                 Layout.fillWidth: true
                 visible: !d.resultPending
-                text: d.resultSuccess ? qsTr("Deposit submitted") : qsTr("Deposit failed")
-                color: d.resultSuccess ? Theme.palette.success : Theme.palette.error
-                font.pixelSize: Theme.typography.primaryText
-                font.bold: true
-            }
 
-            // Success: tx hash + copy
-            RowLayout {
-                Layout.fillWidth: true
-                visible: !d.resultPending && d.resultSuccess
-                spacing: Theme.spacing.small
-                LogosFrame {
-                    Layout.fillWidth: true
-                    padding: Theme.spacing.small
-                    backgroundColor: Theme.palette.backgroundTertiary
-                    radius: Theme.spacing.radiusSmall
-                    contentItem: LogosText {
-                        id: txHashText
-                        text: d.resultText
-                        font.pixelSize: Theme.typography.secondaryText
-                        wrapMode: Text.WrapAnywhere
-                        verticalAlignment: Text.AlignVCenter
+                severity: d.resultSuccess ? LogosNotice.Success : LogosNotice.Error
+                title: d.resultSuccess ? qsTr("Deposit submitted")
+                                       : qsTr("Deposit failed")
+                message: d.resultText
+                shown: !d.resultPending && d.resultText !== ""
+                closable: false
+
+                actions: [
+                    LogosCopyButton {
+                        visible: d.resultSuccess && d.resultText !== ""
+                        value: d.resultText
                     }
-                }
-                LogosCopyButton {
-                    Layout.preferredHeight: 40
-                    Layout.preferredWidth: 40
-                    value: d.resultText
-                }
-            }
-
-            // Error
-            LogosText {
-                Layout.fillWidth: true
-                visible: !d.resultPending && !d.resultSuccess && d.resultText !== ""
-                text: d.resultText
-                color: Theme.palette.error
-                font.pixelSize: Theme.typography.secondaryText
-                wrapMode: Text.WordWrap
+                ]
             }
 
             Item { Layout.fillHeight: true }
