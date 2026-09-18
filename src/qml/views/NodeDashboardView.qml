@@ -95,7 +95,9 @@ Item {
             return (v === undefined || v === null) ? qsTr("—") : String(v)
         }
 
-        function hash(key) {
+        // The field as plain text, empty when absent — what a copy button has to
+        // carry. num()'s "—" is a thing to read, not a thing to paste.
+        function raw(key) {
             const v = field(key)
             return (v === undefined || v === null) ? "" : String(v)
         }
@@ -643,10 +645,10 @@ Item {
                     labelTrailing: [
                         LogosInfoButton {
                             title: qsTr("Peer ID")
-                            text: qsTr("This node's libp2p identity, derived from the selected user config. It does not need a running node.")
+                            dialogContentItem: InfoSections { info: InfoContent.peerId }
                         }
                     ]
-                    valueTrailing: [
+                    captionTrailing: [
                         LogosCopyButton { value: root.peerId }
                     ]
                 }
@@ -663,8 +665,11 @@ Item {
                     labelTrailing: [
                         LogosInfoButton {
                             title: qsTr("Slot")
-                            text: qsTr("Consensus slot of the current tip.")
+                            dialogContentItem: InfoSections { info: InfoContent.slot }
                         }
+                    ]
+                    captionTrailing: [
+                        LogosCopyButton { value: d.raw("slot") }
                     ]
                 }
 
@@ -680,8 +685,11 @@ Item {
                     labelTrailing: [
                         LogosInfoButton {
                             title: qsTr("Height")
-                            text: qsTr("Number of blocks in the chain up to the current tip.")
+                            dialogContentItem: InfoSections { info: InfoContent.height }
                         }
+                    ]
+                    captionTrailing: [
+                        LogosCopyButton { value: d.raw("height") }
                     ]
                 }
 
@@ -691,19 +699,26 @@ Item {
                     Layout.minimumWidth: d.minTileWidth
                     label: qsTr("LiB")
                     opacity: d.infoOpacity
-                    value: d.shorten(d.hash("lib"))
+                    value: d.shorten(d.raw("lib"))
                     // lib_slot rides along with the hash it belongs to: both
                     // describe the last irreversible block.
                     caption: d.field("lib_slot") !== undefined
                              ? qsTr("slot %1").arg(d.num("lib_slot")) : ""
                     labelTrailing: [
                         LogosInfoButton {
-                            title: qsTr("LiB")
-                            text: qsTr("Header id of the last irreversible block — the point the chain can no longer reorganise past.")
+                            title: qsTr("LiB — Last Immutable Block")
+                            dialogContentItem: InfoSections { info: InfoContent.lib }
                         }
                     ]
+                    // The only tile carrying two data, so it carries two copies:
+                    // each sits on the line of the value it takes. One button
+                    // would have to pick a line and silently copy the other
+                    // line's datum.
                     valueTrailing: [
-                        LogosCopyButton { value: d.hash("lib") }
+                        LogosCopyButton { value: d.raw("lib") }
+                    ]
+                    captionTrailing: [
+                        LogosCopyButton { value: d.raw("lib_slot") }
                     ]
                 }
 
@@ -713,15 +728,15 @@ Item {
                     Layout.minimumWidth: d.minTileWidth
                     label: qsTr("TiP")
                     opacity: d.infoOpacity
-                    value: d.shorten(d.hash("tip"))
+                    value: d.shorten(d.raw("tip"))
                     labelTrailing: [
                         LogosInfoButton {
-                            title: qsTr("TiP")
-                            text: qsTr("Header id of the current chain tip — the most recent block this node has applied.")
+                            title: qsTr("TiP — Tip")
+                            dialogContentItem: InfoSections { info: InfoContent.tip }
                         }
                     ]
-                    valueTrailing: [
-                        LogosCopyButton { value: d.hash("tip") }
+                    captionTrailing: [
+                        LogosCopyButton { value: d.raw("tip") }
                     ]
                 }
             }

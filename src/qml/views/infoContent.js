@@ -123,6 +123,29 @@ var peers = {
     docs: "https://docs.logos.co/get-started/glossary"
 }
 
+var peerId = {
+    title: "Peer ID",
+    what: "This node's libp2p identity — the address other peers use to find "
+        + "it and connect to it. It is the node's name on the network, not a "
+        + "wallet or an account, and it holds no funds.",
+    calc: "Derived from the node key in the selected user config, so it exists "
+        + "before the node is ever started and does not change while it runs. "
+        + "It belongs to the config rather than to the machine: point the app "
+        + "at a different user config and this becomes a different node. The "
+        + "tile shows the first 6 and last 4 characters to fit; the copy "
+        + "button always takes the whole thing.",
+    states: [
+        { label: "12D3Ko…EwLz",
+          meaning: "The shortened identity. Copy it to hand someone the full "
+                 + "value — the shortened form is for reading, not for use." },
+        { label: "—",
+          meaning: "No user config is selected, or its node key could not be "
+                 + "read. Nothing to do with the node being off: a valid "
+                 + "config reports an ID whether or not anything is running." }
+    ],
+    docs: "https://docs.logos.co/get-started/glossary"
+}
+
 // Checked against the node source rather than the docs site: stake is the aged
 // note set the leader service plays the lottery with (the wallet service's
 // get_leader_aged_notes), which is not the wallet balance.
@@ -170,4 +193,89 @@ var stake = {
           meaning: "The node is not running, or has not reported yet." }
     ],
     docs: "https://docs.logos.co/blockchain/concepts/about-cryptarchia#leadership-election"
+}
+
+// The prototype's calc for this tile describes a different implementation: it
+// reads the wall-clock head slot (current_slot from get_time_info), falls back
+// to the tip's slot, and drives its sync check off the gap between the two.
+// This app does none of that — see the comment on `d.synced` in
+// NodeDashboardView.qml for why the slot-gap check was taken out.
+var slot = {
+    title: "Slot",
+    what: "Cryptarchia divides time into fixed slots — about a second each on "
+        + "the reference network — and every slot is one chance for a block to "
+        + "be added. This is the slot the node's current tip sits in.",
+    calc: "Read straight from the node's cryptarchia_info.slot, which is the "
+        + "slot of the tip, not the slot the clock is in right now. The "
+        + "difference matters when the chain is sparse: between blocks this "
+        + "number stands still while wall-clock time keeps moving, and that is "
+        + "normal rather than a sign of trouble. It is also why the headline "
+        + "does not judge sync by comparing this against the clock — the node "
+        + "is asked directly instead.",
+    states: [
+        { label: "Integer",
+          meaning: "The tip's slot, e.g. 184502. Flashes when it advances, and is copyable from the line beneath." },
+        { label: "—",
+          meaning: "The node has not reported yet." }
+    ],
+    docs: "https://docs.logos.co/blockchain/concepts/about-cryptarchia#time-units"
+}
+
+var height = {
+    title: "Height",
+    what: "How many blocks this node's chain holds, counting from genesis up "
+        + "to its tip. Because it climbs as blocks are applied, it doubles as "
+        + "the honest progress bar while the node is catching up: a height "
+        + "that keeps rising is a node getting somewhere.",
+    calc: "Read directly from the node's cryptarchia_info.height.",
+    states: [
+        { label: "Integer",
+          meaning: "Block count, e.g. 92118. Flashes when it advances, and is copyable from the line beneath." },
+        { label: "—",
+          meaning: "The node has not reported yet." }
+    ],
+    docs: "https://docs.logos.co/blockchain/concepts/about-cryptarchia"
+}
+
+var lib = {
+    title: "LiB — Last Immutable Block",
+    what: "The most recent block that can no longer be undone. It is deep "
+        + "enough that no competing fork can grow past it, so everything at or "
+        + "below this point is settled — a payment confirmed here is final in "
+        + "the way one at the tip is not yet.",
+    calc: "A block becomes immutable once it is buried k blocks deep, where k "
+        + "is the fork-choice security parameter. Read from "
+        + "cryptarchia_info.lib, which is a block header id; the tile shows it "
+        + "shortened and its copy button carries the whole thing. The slot "
+        + "beneath is the same block's lib_slot, shown alongside because both "
+        + "describe the one block — and it has a copy button of its own, since "
+        + "the two are separate things to paste. The node's own source calls "
+        + "this the last irreversible block in places — the same thing under "
+        + "another name.",
+    states: [
+        { label: "0x1a2b…9f0c",
+          meaning: "The shortened header id, with its slot beneath. Each line "
+                 + "copies its own value." },
+        { label: "—",
+          meaning: "The node has not reported yet." }
+    ],
+    docs: "https://docs.logos.co/blockchain/concepts/about-cryptarchia#fork-choice-rule"
+}
+
+var tip = {
+    title: "TiP — Tip",
+    what: "The newest block this node has accepted — the head of the chain it "
+        + "currently prefers. Everything between LiB and here is confirmed but "
+        + "still reorganisable: a better fork could yet replace it, which is "
+        + "exactly what makes LiB the line worth trusting.",
+    calc: "The head of the branch the fork-choice rule picks, read from "
+        + "cryptarchia_info.tip. A block header id like LiB, shown shortened, "
+        + "with the full value on the copy button.",
+    states: [
+        { label: "0x7d3e…b118",
+          meaning: "The shortened header id of the current tip." },
+        { label: "—",
+          meaning: "The node has not reported yet." }
+    ],
+    docs: "https://docs.logos.co/blockchain/concepts/about-cryptarchia#fork-choice-rule"
 }
