@@ -3,40 +3,58 @@ import QtQuick.Layouts
 
 import Logos.Theme
 import Logos.Controls
-import Logos.Icons
 
 import "../Units.js" as Units
 
 LogosItemDelegate {
     id: root
 
-    property string balanceError: ""
-    property bool refreshing: false
-
-    signal getBalanceRequested(string addressHex)
     signal copyRequested(string text)
 
+    readonly property string keyName: model.name || ""
+    readonly property string roleLabel: model.roleLabel || ""
+    readonly property string title: keyName.length > 0 ? keyName : roleLabel
+    readonly property string address: model.address || ""
+    readonly property bool titled: root.title.length > 0
+
     width: ListView.view ? ListView.view.width : implicitWidth
-    hoverColor: Theme.palette.backgroundSecondary
     implicitHeight: Math.max(36, implicitContentHeight + topPadding + bottomPadding)
 
+    focusPolicy: Qt.NoFocus
+    background: Rectangle {
+        color: Theme.palette.surfaceRecessed
+        radius: Theme.spacing.radiusMedium
+    }
+
     contentItem: ColumnLayout {
-        spacing: Theme.spacing.small
+        spacing: Theme.spacing.tiny
 
         RowLayout {
             Layout.fillWidth: true
             spacing: Theme.spacing.small
 
             LogosText {
+                id: titleText
                 Layout.fillWidth: true
-                text: model.address || ""
+                text: root.titled ? root.title : root.address
                 elide: Text.ElideMiddle
                 font.pixelSize: Theme.typography.secondaryText
+                font.weight: Theme.typography.weightBold
+
+                HoverHandler { id: titleHover; enabled: root.titled }
+
+                LogosToolTip {
+                    text: root.roleLabel.length > 0
+                          ? qsTr("Used as “%1” in the node config.").arg(root.roleLabel)
+                          : qsTr("Held in the keystore; the node config gives it no job.")
+                    placement: LogosToolTip.Placement.Top
+                    visible: titleHover.hovered
+                }
             }
 
             LogosText {
                 Layout.preferredWidth: contentWidth
-                Layout.alignment: Qt.AlignRight
+                Layout.alignment: Qt.AlignVCenter
                 visible: (model.balance || "").length > 0
                 text: Units.format(model.balance || "")
                 font.pixelSize: Theme.typography.secondaryText
@@ -44,50 +62,21 @@ LogosItemDelegate {
                 elide: Text.ElideRight
             }
 
-            Item {
-                Layout.alignment: Qt.AlignRight
-                Layout.leftMargin: parent.spacing
-                Layout.preferredHeight: 40
-                Layout.preferredWidth: 40
-
-                LogosSpinner {
-                    anchors.centerIn: parent
-                    width: 20
-                    height: 20
-                    visible: root.refreshing
-                    running: root.refreshing
-                    ringColor: Theme.palette.textTertiary
-                }
-
-                LogosIconButton {
-                    id: refreshButton
-                    anchors.fill: parent
-                    visible: !root.refreshing
-                    flat: true
-                    size: 40
-                    iconSize: 20
-                    iconSource: LogosIcons.refresh
-                    iconColor: refreshButton.isActive ? Theme.palette.text
-                                                      : Theme.palette.textTertiary
-                    onClicked: root.getBalanceRequested(model.address || "")
-                }
-            }
-
             LogosCopyButton {
-                Layout.alignment: Qt.AlignRight
+                Layout.alignment: Qt.AlignVCenter
                 Layout.preferredHeight: 40
                 Layout.preferredWidth: 40
-                value: model.address || ""
+                value: root.address
             }
         }
 
         LogosText {
             Layout.fillWidth: true
-            visible: !!text
-            text: root.balanceError || ""
+            visible: root.titled
+            text: root.address
+            elide: Text.ElideMiddle
             font.pixelSize: Theme.typography.secondaryText
-            color: Theme.palette.error
-            wrapMode: Text.WordWrap
+            color: Theme.palette.textSecondary
         }
     }
 }

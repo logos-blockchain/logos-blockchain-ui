@@ -1380,6 +1380,38 @@ void BlockchainBackend::countPowClaims(
 // job as its own field and one key often holds several, so the cross-reference
 // is resolved here rather than by every view that wants it.
 //
+// Key titles, from the module's one keystore-reading call. Public half only.
+//
+// Optional by design: titles are decoration, and the keystore is expected to
+// become password-protected. A failure here is not reported — every caller
+// renders without titles, falling back to the config's roles and then to the
+// address itself. When the file locks, the labels quietly stop appearing and
+// nothing else changes.
+QHash<QString, QString> BlockchainBackend::readKeyTitles(const QString& configPath)
+{
+    QHash<QString, QString> namesByAddress;
+    if (!m_blockchainClient)
+        return namesByAddress;
+
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_key_titles"),
+        toLocalPath(configPath.trimmed())));
+    if (!r.success)
+        return namesByAddress;
+
+    const QJsonDocument doc = QJsonDocument::fromJson(r.value.toString().toUtf8());
+    if (!doc.isObject())
+        return namesByAddress;
+
+    const QJsonObject titles = doc.object();
+    for (auto it = titles.constBegin(); it != titles.constEnd(); ++it) {
+        const QString name = it.value().toString();
+        if (!name.isEmpty())
+            namesByAddress.insert(normalizeHex(it.key()), name);
+    }
+    return namesByAddress;
+}
+
 // Returns rows: { address, roles, roleLabel, label }.
 QVariantMap BlockchainBackend::readAccountRoles(const QString& configPath)
 {
@@ -1418,6 +1450,10 @@ QVariantMap BlockchainBackend::readAccountRoles(const QString& configPath)
         rolesByAddress.insert(key, roles);
     }
 
+    // Titles come from their own call — see readKeyTitles. Kept separate so a
+    // keystore that cannot be read never disturbs the config read.
+    const QHash<QString, QString> namesByAddress = readKeyTitles(configPath);
+
     // Both, from one composition. The model is what AccountsView renders and
     // what a later node refresh keeps roles on; the returned rows are what a
     // picker needs, because the model reaches QML as a QtRO replica that
@@ -1425,6 +1461,7 @@ QVariantMap BlockchainBackend::readAccountRoles(const QString& configPath)
     // once as it opens and draws whatever arrived, so it comes up empty the
     // first time and corrects itself on the second.
     m_accountsModel->setRoles(rolesByAddress);
+    m_accountsModel->setNames(namesByAddress);
     publishAccountRows();
 
     QVariantList accounts;
@@ -1433,7 +1470,8 @@ QVariantMap BlockchainBackend::readAccountRoles(const QString& configPath)
         const QString key = keyValue.toString();
         if (key.isEmpty())
             continue;
-        accounts.append(AccountsModel::describe(key, rolesByAddress.value(key)));
+        accounts.append(AccountsModel::describe(
+            key, rolesByAddress.value(key), namesByAddress.value(normalizeHex(key))));
     }
 
     return result::toVariantMap(LogosResult{true, accounts, QVariant()});
@@ -1569,7 +1607,8 @@ void BlockchainBackend::publishAccountRows()
         const QModelIndex idx = m_accountsModel->index(i, 0);
         rows.append(AccountsModel::describe(
             m_accountsModel->data(idx, AccountsModel::AddressRole).toString(),
-            m_accountsModel->data(idx, AccountsModel::RolesRole).toStringList()));
+            m_accountsModel->data(idx, AccountsModel::RolesRole).toStringList(),
+            m_accountsModel->data(idx, AccountsModel::NameRole).toString()));
     }
     setAccountRows(rows);
 }
@@ -1829,6 +1868,13 @@ void BlockchainBackend::refreshAccounts()
     m_knownAddresses.clear();
     for (const QString& address : list)
         m_knownAddresses.insert(normalizeHex(address));
+
+    m_balancesSampled.restart();
+    QPointer<BlockchainBackend> self(this);
+    QTimer::singleShot(0, this, [self, list]() {
+        if (self)
+            self->fetchBalancesForAccounts(list);
+    });
 }
 
 // Balances were fetched exactly once, right after refreshAccounts, so

@@ -5,7 +5,6 @@ import QtQuick.Layouts
 import Logos.Theme
 import Logos.Controls
 
-import "../controls"
 import "../Units.js" as Units
 
 // Transfer funds panel. Extracted from the former WalletView.
@@ -32,91 +31,78 @@ ColumnLayout {
 
     spacing: Theme.spacing.large
 
-    Rectangle {
-        id: transferRect
-
+    // No container of its own — WalletView provides the page surface. The form's
+    // rows sit directly in the root layout.
+    ColumnLayout {
         Layout.fillWidth: true
-        Layout.preferredHeight: transferCol.height + 2 * Theme.spacing.large
-        color: Theme.palette.backgroundTertiary
-        radius: Theme.spacing.radiusLarge
-        border.color: Theme.palette.border
-        border.width: 1
+        spacing: Theme.spacing.small
 
-        ColumnLayout {
-            id: transferCol
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.margins: Theme.spacing.large
+        RowLayout {
+            Layout.fillWidth: true
+            LogosText {
+                text: qsTr("Transfer funds")
+                font.pixelSize: Theme.typography.secondaryText
+                font.bold: true
+            }
+            Item { Layout.fillWidth: true }
+            LogosInfoButton {
+                title: qsTr("Transfer")
+                Layout.alignment: Qt.AlignVCenter
+                text: qsTr("Send funds between addresses. Choose a source address (its balance is shown), enter the recipient key and amount, then press Send.")
+            }
+        }
+
+        StyledAddressComboBox {
+            id: transferFromCombo
+            model: root.accountsModel
+            textRole: "address"
+        }
+
+        LogosTextField {
+            id: transferToField
+            Layout.fillWidth: true
+            Layout.preferredHeight: 30
+            placeholderText: qsTr("To key (64 hex chars)")
+        }
+
+        LogosTextField {
+            id: transferAmountField
+            Layout.fillWidth: true
+            Layout.preferredHeight: 30
+            placeholderText: qsTr("Amount (LGO)")
+            validator: RegularExpressionValidator {
+                regularExpression: Units.inputRegExp(Qt.locale())
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
             spacing: Theme.spacing.small
 
-            RowLayout {
-                Layout.fillWidth: true
-                LogosText {
-                    text: qsTr("Transfer funds")
-                    font.pixelSize: Theme.typography.secondaryText
-                    font.bold: true
-                }
-                Item { Layout.fillWidth: true }
-                LogosInfoButton {
-                    title: qsTr("Transfer")
-                    Layout.alignment: Qt.AlignVCenter
-                    text: qsTr("Send funds between addresses. Choose a source address (its balance is shown), enter the recipient key and amount, then press Send.")
-                }
+            LogosButton {
+                id: transferButton
+                Layout.alignment: Qt.AlignTop
+                text: qsTr("Send")
+                // Canonical LOGOS; the backend scales it to lepta.
+                onClicked: root.transferRequested(
+                    transferFromCombo.currentText.trim(),
+                    transferToField.text.trim(),
+                    Units.normalizeInput(transferAmountField.text))
             }
 
-            StyledAddressComboBox {
-                id: transferFromCombo
-                model: root.accountsModel
-                textRole: "address"
-            }
-
-            LogosTextField {
-                id: transferToField
+            LogosSelectableText {
+                id: transferResult
                 Layout.fillWidth: true
-                Layout.preferredHeight: 30
-                placeholderText: qsTr("To key (64 hex chars)")
-            }
-
-            LogosTextField {
-                id: transferAmountField
-                Layout.fillWidth: true
-                Layout.preferredHeight: 30
-                placeholderText: qsTr("Amount (LGO)")
-                validator: RegularExpressionValidator {
-                    regularExpression: Units.inputRegExp(Qt.locale())
-                }
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: Theme.spacing.small
-
-                LogosButton {
-                    id: transferButton
-                    Layout.alignment: Qt.AlignTop
-                    text: qsTr("Send")
-                    // Canonical LOGOS; the backend scales it to lepta.
-                    onClicked: root.transferRequested(
-                        transferFromCombo.currentText.trim(),
-                        transferToField.text.trim(),
-                        Units.normalizeInput(transferAmountField.text))
-                }
-
-                LogosSelectableText {
-                    id: transferResult
-                    Layout.fillWidth: true
-                    Layout.alignment: Qt.AlignVCenter
-                    visible: root.resultHash.length > 0 || root.resultError.length > 0
-                    text: root.resultHash.length > 0
-                              ? qsTr("Tx hash: ") + root.resultHash
-                              : root.resultError
-                    color: root.resultError.length > 0 ? Theme.palette.error
-                                                       : Theme.palette.text
-                    font.pixelSize: Theme.typography.secondaryText
-                    wrapMode: TextEdit.Wrap
-                    horizontalAlignment: TextEdit.AlignRight
-                }
+                Layout.alignment: Qt.AlignVCenter
+                visible: root.resultHash.length > 0 || root.resultError.length > 0
+                text: root.resultHash.length > 0
+                          ? qsTr("Tx hash: ") + root.resultHash
+                          : root.resultError
+                color: root.resultError.length > 0 ? Theme.palette.error
+                                                   : Theme.palette.text
+                font.pixelSize: Theme.typography.secondaryText
+                wrapMode: TextEdit.Wrap
+                horizontalAlignment: TextEdit.AlignRight
             }
         }
     }

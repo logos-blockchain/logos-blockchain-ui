@@ -135,16 +135,39 @@ sections:
               find_by: "objectName"
               find_value: "generateSubmitButton"
 
-            - name: "Generate succeeded and routed to the set-path view"
+            - name: "Generate succeeded and routed to the PoW step"
+              action: wait_for
+              texts: ["Proof of Work"]
+              timeout: 10000
+              screenshot: "blockchain-ui-pow.png"
+              text: |
+                Generating does not go straight to the node. A config exists
+                now, so the wizard offers the one thing that can only be set up
+                against a written config: **Proof of Work**. On a testnet this
+                is how a node funds itself, so it is asked once, here, rather
+                than left to be discovered in Settings later.
+
+                Auto-claim targets are picked from the accounts the config
+                already tracks — which is why this step comes after generate and
+                not before it. Leaving the list empty is a legitimate answer,
+                and the button says so: **Continue without auto-claim**.
+
+            - name: "Continue past the PoW step"
+              action: click_object
+              find_by: "objectName"
+              find_value: "powConfirmButton"
+
+            - name: "PoW settings saved, routed to the set-path view"
               action: wait_for
               texts: ["Select your config files, then continue to the node."]
               timeout: 10000
               screenshot: "blockchain-ui-generated.png"
               text: |
                 Reaching this view *is* the assertion: the UI only calls
-                `showSetConfigPath()` when `generate_user_config` returns
-                success, so arriving here proves the round-trip into
-                `blockchain_module` worked and a real config was written.
+                `showSetConfigPath()` when `powConfigure` returns success, which
+                in turn only runs against the config `generate_user_config`
+                wrote. Arriving here proves both round-trips into
+                `blockchain_module` worked.
 
                 The resolved path is displayed here, but it is machine-specific
                 and text matching is exact, so it is not asserted directly.
@@ -180,7 +203,7 @@ sections:
 
             - name: "Most sections are gated on a running node"
               action: wait_for
-              texts: ["Dashboard", "Explorer", "Accounts", "Rewards", "Mining", "Settings"]
+              texts: ["Dashboard", "Explorer", "Rewards", "Mining", "Wallet", "Settings"]
               timeout: 6000
               screenshot: "blockchain-ui-nav.png"
               text: |
@@ -188,15 +211,18 @@ sections:
                 section. Every tab is rendered, but only **Dashboard**,
                 **Explorer** and **Settings** are usable before the node is up:
                 the rest are disabled until it runs. That is why this doc-test
-                stops here — the accounts, transfer, rewards, mining and
-                channel-deposit sections cannot be reached without first
-                bootstrapping a node against a live network.
+                stops here — the wallet, rewards and mining sections cannot be
+                reached without first bootstrapping a node against a live network.
 
                 **Explorer** is one section holding both halves of reading the
                 chain: a lookup by block id or transaction hash on top, and under
                 it the table of blocks this node has seen. A lookup replaces the
                 table until it is cleared. The table needs no node, which is why
                 the tab stays open here; the lookup does, and says so in place.
+
+                **Wallet** is likewise one section rather than three: a left menu
+                picks between Accounts, Transfer and Channel Deposit, which share
+                the same account list and are all equally dead without a node.
 
                 Everything up to this point — the chooser, the generate form, the
                 round-trip into `blockchain_module`, and the dashboard — needs no
@@ -207,11 +233,11 @@ sections:
       This doc-test stops at the node view, because everything past it is gated
       on a running node:
 
-      - **Most sections are disabled until a node is up**: the Accounts,
-        Transfer, Rewards, Mining and Channel Deposit tabs are gated on a running
-        node and cannot be opened. Dashboard, Explorer and Settings stay
-        reachable throughout — though the Explorer's lookup itself needs a node,
-        so only its block table is exercised here.
+      - **Most sections are disabled until a node is up**: the Rewards, Mining
+        and Wallet tabs are gated on a running node and cannot be opened, which
+        takes Accounts, Transfer and Channel Deposit with them. Dashboard,
+        Explorer and Settings stay reachable throughout — though the Explorer's
+        lookup itself needs a node, so only its block table is exercised here.
       - **Bootstrapping and syncing** need reachable peers speaking a matching
         chainsync protocol version. When they do not match the node fails Initial
         Block Download with `AllPeersFailed` — a real failure, but driven by

@@ -15,6 +15,7 @@ public:
         RolesRole,
         RoleLabelRole,
         LabelRole,
+        NameRole,
     };
 
     explicit AccountsModel(QObject* parent = nullptr) : QAbstractListModel(parent) {}
@@ -37,8 +38,9 @@ public:
     // runs before any node has reported one — and addresses already present
     // keep their balances.
     void setRoles(const QHash<QString, QStringList>& rolesByAddress);
+    void setNames(const QHash<QString, QString>& nameByAddress);
 
-    // One account as a plain map: { address, roles, roleLabel, label }.
+    // One account as a plain map: { address, roles, roleLabel, name, label }.
     //
     // For callers that need the rows *now* rather than through the model. The
     // model reaches QML as a QtRO replica, which reports its row count at once
@@ -46,16 +48,18 @@ public:
     // scrolls, wrong for a combo box, which asks once as it opens and renders
     // whatever it got. Same composition either way, so the two can never
     // disagree about what a key is called.
-    static QVariantMap describe(const QString& address, const QStringList& roles);
+    static QVariantMap describe(const QString& address, const QStringList& roles,
+                               const QString& name = QString());
 
 private:
     struct Entry {
         QString address;
         QString balance;
         QStringList roles;
+        QString name;
         bool operator==(const Entry& other) const {
             return address == other.address && balance == other.balance
-                && roles == other.roles;
+                && roles == other.roles && name == other.name;
         }
     };
 
