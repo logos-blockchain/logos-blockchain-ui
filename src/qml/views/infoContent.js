@@ -123,6 +123,44 @@ var peers = {
     docs: "https://docs.logos.co/get-started/glossary"
 }
 
+// The prototype's sub-line for this tile is "Submitted: N", a count of claims
+// in flight. The payload has no such field — it carries { tip, vouchers[],
+// reward_amount, total_claimable } — so the line beneath reports the value of
+// the vouchers instead, which is the unused half of what the node does send.
+var readyToClaim = {
+    title: "Ready to Claim",
+    what: "Leader reward vouchers this wallet can claim right now. Every block "
+        + "the node leads mints one; claiming redeems it into spendable "
+        + "balance. The voucher is the receipt, not the money — the reward "
+        + "itself lives on the ledger until it is claimed.",
+    calc: "Counted from wallet_get_claimable_vouchers, which returns only the "
+        + "set the wallet can prove at the current tip. Vouchers the node has "
+        + "reserved or already has in flight never reach the UI, and one that "
+        + "cannot yet be proven stays hidden until it can — so this can read "
+        + "lower than the number of blocks the node has actually led. The line "
+        + "beneath is the node's own total_claimable: one voucher's payout at "
+        + "the current tip, times the number of them. Treat it as an estimate "
+        + "rather than a figure owed — the reward pool is split evenly across "
+        + "every unclaimed voucher on the network, so it falls as other "
+        + "leaders claim theirs, and what a claim actually settles for is "
+        + "decided when it lands — and the claim transaction's own fee comes "
+        + "off the top, which cannot be known until the transaction is built. "
+        + "Expect to receive a little less than the figure shown. Refreshed "
+        + "when the node starts and on every block it takes in, not on a timer.",
+    states: [
+        { label: "Number",
+          meaning: "Vouchers claimable now, with what they are worth beneath. "
+                 + "Claim them from the Rewards tab." },
+        { label: "0",
+          meaning: "The wallet was asked and has nothing claimable — either "
+                 + "nothing has been led yet, or it has all been claimed." },
+        { label: "—",
+          meaning: "Nothing reported yet: the node is off, or has not answered "
+                 + "since launch. Distinct from 0, which is an answer." }
+    ],
+    docs: "https://docs.logos.co/blockchain/node-app/claim-leader-rewards-in-logos-blockchain-ui-app"
+}
+
 var peerId = {
     title: "Peer ID",
     what: "This node's libp2p identity — the address other peers use to find "

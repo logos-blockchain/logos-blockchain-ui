@@ -216,8 +216,11 @@ Rectangle {
         enabled: root.backend !== null
         ignoreUnknownSignals: true
         function onStatusChanged() {
-            if (root.backend.status === BlockchainBackend.Running)
+            if (root.backend.status === BlockchainBackend.Running) {
                 root.refreshClaimableVouchers()
+            } else {
+                root.claimableVouchersJson = ""
+            }
         }
     }
 

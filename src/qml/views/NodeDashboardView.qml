@@ -178,7 +178,17 @@ Item {
         // ---- Vouchers ------------------------------------------------------
         readonly property var vouchers: parseJson(root.vouchersJson)
         readonly property int voucherCount:
-            (vouchers && vouchers.vouchers) ? vouchers.vouchers.length : 0
+            (vouchers && vouchers.vouchers) ? vouchers.vouchers.length : -1
+
+        readonly property string voucherCaption: {
+            if (voucherCount <= 0)
+                return ""
+            const total = vouchers ? vouchers.total_claimable : undefined
+            if (total === undefined || total === null)
+                return ""
+            const formatted = Units.format(String(total))
+            return formatted.length > 0 ? qsTr("≈%1 before fees").arg(formatted) : ""
+        }
 
         // ---- Status hero ---------------------------------------------------
         // Six states, most specific first. `label` is the headline, `sub` the
@@ -607,12 +617,14 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Layout.minimumWidth: d.minTileWidth
-                    label: qsTr("Vouchers Ready to Claim")
-                    value: String(d.voucherCount)
+                    label: qsTr("Ready to Claim")
+                    value: d.voucherCount >= 0 ? String(d.voucherCount)
+                                               : qsTr("—")
+                    caption: d.voucherCaption
                     labelTrailing: [
                         LogosInfoButton {
-                            title: qsTr("Vouchers Ready to Claim")
-                            text: qsTr("Leader reward vouchers this wallet can claim. A voucher carries no value of its own — the reward it redeems lives on the ledger. Claim them from the Rewards tab.")
+                            title: qsTr("Ready to Claim")
+                            dialogContentItem: InfoSections { info: InfoContent.readyToClaim }
                         }
                     ]
                 }
@@ -710,10 +722,6 @@ Item {
                             dialogContentItem: InfoSections { info: InfoContent.lib }
                         }
                     ]
-                    // The only tile carrying two data, so it carries two copies:
-                    // each sits on the line of the value it takes. One button
-                    // would have to pick a line and silently copy the other
-                    // line's datum.
                     valueTrailing: [
                         LogosCopyButton { value: d.raw("lib") }
                     ]
