@@ -45,6 +45,11 @@ Item {
     // finishes bootstrapping.
     property int peerCount: -1
     property int connectionCount: -1
+    property double nodeCpuPercent: -1
+    property double nodeMemoryMb: -1
+    property int cpuCount: 1
+    property double nodeDiskUsedMb: -1
+    property double nodeDiskFreeMb: -1
     property int blendRole: BlockchainBackend.Unknown
     // Debounced in BlockchainView — a single blip in `mode` must not repaint
     // the card. `hasBeenOnline` separates a first bootstrap from a node that
@@ -101,6 +106,38 @@ Item {
             const v = field(key)
             return (v === undefined || v === null) ? "" : String(v)
         }
+
+        // ---- Resource usage -------------------------------------------------
+        readonly property bool cpuSampled: root.nodeCpuPercent >= 0
+        readonly property real cpuMachineShare:
+            Math.min(100, root.nodeCpuPercent / Math.max(1, root.cpuCount))
+
+        // Whole percent, as the prototype shows it — except below 1%, where
+        // rounding would print "0%" for a node that is demonstrably working. On
+        // a many-core machine a whole busy core is already under 1%.
+        readonly property string cpuText: {
+            if (!cpuSampled)
+                return qsTr("—")
+            if (cpuMachineShare > 0 && cpuMachineShare < 1)
+                return qsTr("<1%")
+            return qsTr("%1%").arg(Math.round(cpuMachineShare))
+        }
+
+        // The prototype's format is one-decimal GB, but its fixtures are all
+        // above a gigabyte. A node holding 80 MB would render as "0.1GB", and a
+        // starting one as "0.0GB", so below a gigabyte this says MB.
+        function sizeText(mb) {
+            return mb >= 1024 ? qsTr("%1GB").arg((mb / 1024).toFixed(1))
+                              : qsTr("%1MB").arg(Math.round(mb))
+        }
+
+        // Free space is what kills a node — running out corrupts the chain db
+        // rather than slowing it. Both floors are about rocksdb compaction
+        // headroom, not about the node's own footprint.
+        readonly property bool diskCritical:
+            root.nodeDiskFreeMb >= 0 && root.nodeDiskFreeMb < 2048
+        readonly property bool diskLow:
+            root.nodeDiskFreeMb >= 0 && root.nodeDiskFreeMb < 5120
 
         // Hashes are far too long for a tile; show head and tail, copy the whole.
         function shorten(s) {
@@ -638,6 +675,63 @@ Item {
                         LogosInfoButton {
                             title: qsTr("Peers")
                             dialogContentItem: InfoSections { info: InfoContent.peers }
+                        }
+                    ]
+                }
+
+                LogosStatCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
+                    label: qsTr("CPU")
+                    opacity: d.infoOpacity
+                    value: d.cpuText
+                    flashOnChange: true
+                    flashColor: Theme.palette.success
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("CPU")
+                            dialogContentItem: InfoSections { info: InfoContent.cpu }
+                        }
+                    ]
+                }
+
+                LogosStatCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
+                    label: qsTr("RAM")
+                    opacity: d.infoOpacity
+                    value: root.nodeMemoryMb >= 0 ? d.sizeText(root.nodeMemoryMb)
+                                                  : qsTr("—")
+                    flashOnChange: true
+                    flashColor: Theme.palette.success
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("RAM")
+                            dialogContentItem: InfoSections { info: InfoContent.ram }
+                        }
+                    ]
+                }
+
+                LogosStatCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
+                    label: qsTr("Disk")
+                    value: root.nodeDiskUsedMb >= 0 ? d.sizeText(root.nodeDiskUsedMb)
+                                                    : qsTr("—")
+                    flashOnChange: true
+                    flashColor: Theme.palette.success
+                    valueColor: d.diskCritical ? Theme.palette.error
+                                : d.diskLow ? Theme.palette.warning
+                                            : Theme.palette.text
+                    caption: root.nodeDiskFreeMb >= 0
+                             ? qsTr("%1 free").arg(d.sizeText(root.nodeDiskFreeMb)) : ""
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("Disk")
+                            dialogContentItem: InfoSections { info: InfoContent.disk }
                         }
                     ]
                 }

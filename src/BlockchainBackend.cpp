@@ -5,6 +5,9 @@
 // to destroy one. Deleting through the forward declaration compiles (with a
 // warning) and silently skips the destructor, leaking the replica it wraps.
 #include "logos_object.h"
+// TODO(logos-co/logos-liblogos#219): the library liblogos uses for the same
+// numbers. Linked here only because liblogos does not expose them to modules.
+#include <process_stats/process_stats.h>
 
 #include <QByteArray>
 #include <QClipboard>
@@ -19,9 +22,12 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QDirIterator>
 #include <QSettings>
 #include <QPointer>
 #include <QSignalBlocker>
+#include <QStorageInfo>
+#include <QThread>
 #include <QTimer>
 #include <QUrl>
 #include <QVariant>
@@ -30,6 +36,8 @@
 
 const QString BlockchainBackend::BLOCKCHAIN_MODULE_NAME =
     QStringLiteral("blockchain_module");
+const QString BlockchainBackend::MODULES_STATE_MODULE_NAME =
+    QStringLiteral("modules_state");
 
 void BlockchainBackend::setError(const QString& message)
 {
@@ -126,6 +134,15 @@ constexpr int kNodeCallTimeoutMs = 15 * 60 * 1000;
 // Teardown gets a much shorter one: there is nobody left to tell, and holding
 // the process open is worse than exiting with the node still winding down.
 constexpr int kShutdownStopTimeoutMs = 30 * 1000;
+// How often the node's data directory is walked. Slower than the status poll by
+// an order of magnitude: the walk touches every file the chain db holds, and
+// disk moves slowly enough that a 20-second figure is never misleading.
+constexpr int kDiskSampleIntervalMs = 20 * 1000;
+// The PID lookup runs on the status-poll path, so it gets a short deadline and
+// a small number of attempts: modules_state is either there or it is not, and
+// two tiles must never cost the dashboard its responsiveness.
+constexpr int kPidLookupTimeoutMs = 1500;
+constexpr int kPidLookupAttempts = 3;
 constexpr int kLivenessProbeMs = 1500;
 // How often to ask, while the node is meant to be up.
 constexpr int kLivenessIntervalMs = 15 * 1000;
@@ -474,6 +491,14 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     setNodeModuleReachable(true);
     setBlendRole(Unknown);
     clearNetwork();
+    // TODO(logos-co/logos-liblogos#219). -1, not 0: the first CPU sample of a
+    // PID has nothing to diff against and reads 0.0, and an idle-looking node is
+    // a worse lie than an empty tile. Core count is fixed for the process.
+    setNodeCpuPercent(-1.0);
+    setNodeMemoryMb(-1.0);
+    setNodeDiskUsedMb(-1.0);
+    setNodeDiskFreeMb(-1.0);
+    setCpuCount(QThread::idealThreadCount());
     setUseGeneratedConfig(false);
     setGeneratedUserConfigPath(
         QDir::currentPath() + QStringLiteral("/user_config.yaml"));
@@ -588,6 +613,13 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
             clearStake();
             clearNetwork();
             setChainId(QString());
+            // The sampler only runs from the status poll, so leaving these up
+            // would freeze the last reading on screen and present it as live —
+            // the same trap the network counters fell into. Disk is deliberately
+            // left alone: it describes a directory, which outlives the node.
+            setNodeCpuPercent(-1.0);
+            setNodeMemoryMb(-1.0);
+            m_cpuSampledOnce = false;
         }
     });
 
@@ -602,6 +634,14 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         qWarning() << "BlockchainBackend: failed to get blockchain module client";
         return;
     }
+
+    // TODO(logos-co/logos-liblogos#219): for the node module's PID, nothing else.
+    // A missing modules_state costs the CPU and memory tiles and nothing more,
+    // so it warns rather than setError()ing the whole backend.
+    m_modulesStateClient = m_logosAPI->getClient(MODULES_STATE_MODULE_NAME);
+    if (!m_modulesStateClient)
+        qWarning() << "BlockchainBackend: no modules_state client; "
+                      "CPU and memory will read as unavailable";
 
     LogosObject* replica =
         m_blockchainClient->requestObject(BLOCKCHAIN_MODULE_NAME);
@@ -739,6 +779,167 @@ void BlockchainBackend::refreshNetwork()
     setConnectionCount(payload.value(QStringLiteral("n_connections")).toInt(-1));
 }
 
+// TODO(logos-co/logos-liblogos#219): delete this pair once liblogos publishes
+// per-module stats to modules. It already computes them — logos_core_get_module_stats
+// feeds Basecamp's Core Inspector — but only a host can call that, and this
+// backend is a module. So the PID comes from modules_state, and process-stats
+// (the library behind that host API) turns it into the same numbers, which is
+// what keeps this tile and the inspector from disagreeing.
+//
+// The PID belongs to the module's PROCESS: it survives a node stop/start and
+// only changes if the module itself is reloaded. Resolved on demand, not polled.
+//
+// modules_state is deliberately NOT in metadata.json's dependencies, even
+// though this calls it. liblogos bundles it as a built-in (flake.nix:118-122,
+// beside capability_module), so it is always loaded — and declaring it makes
+// mkStandaloneApp try to install it a second time over the read-only copy it
+// already made of the host's modules, which fails the standalone build outright.
+// The cost of leaving it undeclared: under `--access-policy enforce` this call
+// is denied and the two tiles read as unavailable. Enforcement is off by
+// default, and the whole path is temporary.
+void BlockchainBackend::resolveNodePid()
+{
+    if (!m_modulesStateClient)
+        return;
+
+    // Deliberately NOT result::toLogosResult: that casts the reply to
+    // LogosResult, which is only correct for modules whose methods return one.
+    // blockchain_module does; modules_state answers with the ModuleRecord
+    // itself. The cast on a record yields a default-constructed — and therefore
+    // failed — result, so the PID never arrives and both tiles read as
+    // unavailable for ever, with the node perfectly healthy behind them.
+    // Short timeout, and it gives up after a few tries. Both matter: this runs
+    // on the status-poll path, so an unreachable modules_state would otherwise
+    // stall every poll for the default 20 seconds — costing the whole dashboard
+    // to light two tiles.
+    const QVariant reply = m_modulesStateClient->invokeRemoteMethod(
+        MODULES_STATE_MODULE_NAME, QStringLiteral("module_record"),
+        QVariantList{BLOCKCHAIN_MODULE_NAME}, Timeout(kPidLookupTimeoutMs));
+    if (!reply.isValid()) {
+        if (++m_pidLookupFailures >= kPidLookupAttempts)
+            qWarning() << "BlockchainBackend: modules_state.module_record got no reply after"
+                       << kPidLookupAttempts << "tries; CPU and memory stay unavailable";
+        return;
+    }
+
+    // The record arrives either already decoded into a map, or as the JSON the
+    // wire format carries (recToWire_ModulesState_ModuleRecord builds an object
+    // with a "pid" key). Accept both rather than betting on one.
+    QVariantMap record = reply.toMap();
+    if (record.isEmpty())
+        record = QJsonDocument::fromJson(reply.toString().toUtf8()).object().toVariantMap();
+
+    const qint64 pid = record.value(QStringLiteral("pid")).toLongLong();
+    if (pid <= 0) {
+        // Says what came back, so the next shape surprise is diagnosed from the
+        // log rather than guessed at.
+        if (++m_pidLookupFailures >= kPidLookupAttempts)
+            qWarning() << "BlockchainBackend: no PID in the modules_state record for"
+                       << BLOCKCHAIN_MODULE_NAME << "— reply type" << reply.typeName()
+                       << "payload" << reply.toString().left(200);
+        return;
+    }
+    m_nodePid = pid;
+    m_pidLookupFailures = 0;
+}
+
+// The node's data directory: where its chain db, state and logs live. Derived
+// from the config path the same way newestNodeLogPath derives the log dir — the
+// config's own directory, then its parent, and no further, so an unrelated tree
+// higher up cannot be mistaken for the node's.
+//
+// Unlike CPU and memory this is NOT covered by liblogos-co#219: nothing in the
+// stack measures disk, so this stays after that lands.
+QString BlockchainBackend::nodeDataDir() const
+{
+    const QString cfg = userConfig();
+    if (cfg.trimmed().isEmpty())
+        return {};
+    const QString local = toLocalPath(cfg);
+    QDir dir = QFileInfo(local.isEmpty() ? cfg : local).absoluteDir();
+
+    for (int level = 0; level < 2; ++level) {
+        // "db" is the node's own name for its storage dir; the other two are
+        // its siblings. Any one of them identifies the base.
+        for (const QString& marker : {QStringLiteral("db"), QStringLiteral("state"),
+                                      QStringLiteral("logs")}) {
+            if (dir.exists(marker))
+                return dir.absolutePath();
+        }
+        if (!dir.cdUp())
+            break;
+    }
+    return {};
+}
+
+// Apparent size, summed recursively. Not `du`: that reports blocks allocated,
+// which differs on a compressing filesystem, and the figure here is meant to
+// answer "how much is this node keeping" rather than to reconcile with df.
+void BlockchainBackend::refreshDiskUsage()
+{
+    // The walk is the expensive part — thousands of SST files on a long chain —
+    // so it runs on its own slow cadence rather than every status poll.
+    if (m_diskSampled.isValid() && m_diskSampled.elapsed() < kDiskSampleIntervalMs)
+        return;
+
+    const QString base = nodeDataDir();
+    if (base.isEmpty()) {
+        setNodeDiskUsedMb(-1.0);
+        setNodeDiskFreeMb(-1.0);
+        return;
+    }
+    m_diskSampled.restart();
+
+    qint64 total = 0;
+    QDirIterator it(base, QDir::Files | QDir::NoDotAndDotDot | QDir::Hidden,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        it.next();
+        total += it.fileInfo().size();
+    }
+    setNodeDiskUsedMb(static_cast<double>(total) / (1024.0 * 1024.0));
+
+    // Free space is the number that matters: running out does not slow the node
+    // down, it corrupts the chain db (see the "Storage backend error" rule).
+    const QStorageInfo storage(base);
+    setNodeDiskFreeMb(storage.isValid()
+                          ? static_cast<double>(storage.bytesAvailable()) / (1024.0 * 1024.0)
+                          : -1.0);
+}
+
+void BlockchainBackend::refreshResourceUsage()
+{
+    if (m_nodePid <= 0) {
+        // Stop asking once it is clearly not coming. Without this the poll pays
+        // a failed IPC round trip every two seconds, for ever.
+        if (m_pidLookupFailures >= kPidLookupAttempts)
+            return;
+        resolveNodePid();
+        if (m_nodePid <= 0)
+            return; // Tiles stay at "no sample"; the log says why.
+    }
+
+    const ProcessStats::ProcessStatsData s = ProcessStats::getProcessStats(m_nodePid);
+
+    // Everything reads zero when the PID is gone — a module that was reloaded
+    // under us. Re-resolve once rather than reporting an idle node for ever.
+    if (s.memoryMB <= 0.0 && s.cpuTimeSeconds <= 0.0) {
+        m_nodePid = 0;
+        return;
+    }
+
+    setNodeMemoryMb(s.memoryMB);
+
+    // cpuPercent is a delta against the previous sample of this PID, so the
+    // very first one is structurally 0.0 and means "not measured yet" rather
+    // than "idle". Track that we have taken one instead of inferring it from
+    // the value: keying off `> 0.0` would hold an idle node at "—" for ever,
+    // since a node doing nothing reports a genuine 0.0 on every sample.
+    if (m_cpuSampledOnce)
+        setNodeCpuPercent(s.cpuPercent);
+    m_cpuSampledOnce = true;
+}
+
 // get_chain_id answers with a bare string — the only module call here that is
 // not JSON, so do not reach for QJsonDocument on the way out.
 void BlockchainBackend::refreshChainId()
@@ -825,6 +1026,12 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
             applyOnlineReading(modeOnline);
             refreshNetwork();
             refreshChainId();
+            // TODO(logos-co/logos-liblogos#219). Rides the status poll rather
+            // than owning a timer: the poll's cadence is already what the tiles
+            // render at, and the sample is a local syscall, not a module call —
+            // it cannot block on a busy node the way the calls above can.
+            refreshResourceUsage();
+            refreshDiskUsage();
             if (modeOnline) {
                 if (blendRole() == Unknown)
                     refreshBlendRole();

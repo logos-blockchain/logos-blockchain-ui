@@ -28,6 +28,20 @@ class BlockchainBackend
     PROP(bool blockStreamEnded READONLY)
     // The chain the running node was started against, from get_chain_id
     PROP(QString chainId READONLY)
+    // What the node module's process costs this machine. Sampled here rather
+    // than reported by the node: liblogos measures it (it is what Basecamp's
+    // Core Inspector shows) but exposes it to hosts only — see
+    // logos-co/logos-liblogos#219
+    PROP(double nodeCpuPercent READONLY)
+    PROP(double nodeMemoryMb READONLY)
+    PROP(int cpuCount READONLY)
+    // What the node's data directory holds, and what is left on its volume.
+    // Unlike the two above this is NOT waiting on #219 — nothing anywhere in
+    // the stack measures disk, so the app is the right place for it. Free space
+    // is the one that matters: running out corrupts the chain db rather than
+    // slowing it down. -1 in either means the data directory was not located.
+    PROP(double nodeDiskUsedMb READONLY)
+    PROP(double nodeDiskFreeMb READONLY)
     // libp2p connectivity of the running node, from get_network_info. -1 is
     // "not reported": zero peers is a real and rather important reading, so it
     // cannot double as the unknown value.

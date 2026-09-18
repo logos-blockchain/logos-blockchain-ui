@@ -11,6 +11,12 @@
     logos-module-builder.url = "github:logos-co/logos-module-builder";
     nix-bundle-lgx.url = "github:logos-co/nix-bundle-lgx";
     blockchain_module.url = "github:logos-blockchain/logos-blockchain-module";
+    # TODO(logos-co/logos-liblogos#219): here only to sample the node module's
+    # CPU and memory. liblogos measures both already but exposes them to hosts
+    # alone, so this app resolves the PID through modules_state and samples it
+    # with the same library liblogos uses. Goes away with the input, the
+    # external_libraries entry and EXTERNAL_LIBS in CMakeLists.txt.
+    process-stats.url = "github:logos-co/process-stats";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
@@ -18,5 +24,9 @@
       src = ./.;
       configFile = ./metadata.json;
       flakeInputs = inputs;
+
+      externalLibInputs = {
+        process_stats = inputs.process-stats;
+      };
     };
 }

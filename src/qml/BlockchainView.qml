@@ -517,6 +517,11 @@ Rectangle {
                     peerId: root.peerId
                     peerCount: root.backend ? root.backend.peerCount : -1
                     connectionCount: root.backend ? root.backend.connectionCount : -1
+                    nodeCpuPercent: root.backend ? root.backend.nodeCpuPercent : -1
+                    nodeMemoryMb: root.backend ? root.backend.nodeMemoryMb : -1
+                    cpuCount: root.backend ? root.backend.cpuCount : 1
+                    nodeDiskUsedMb: root.backend ? root.backend.nodeDiskUsedMb : -1
+                    nodeDiskFreeMb: root.backend ? root.backend.nodeDiskFreeMb : -1
                     blendRole: root.backend ? root.backend.blendRole
                                             : BlockchainBackend.Unknown
                     synced: monitor.synced

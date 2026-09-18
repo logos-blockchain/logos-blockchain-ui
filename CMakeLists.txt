@@ -20,6 +20,12 @@ logos_module(
         src/AccountsModel.cpp
         src/BlockModel.h
         src/BlockModel.cpp
+    # TODO(logos-co/logos-liblogos#219): only for the node module's CPU and
+    # memory figures — the library behind liblogos's own host-side stats, used
+    # here because those stats are not exposed to modules. Goes with the flake
+    # input and the metadata.json entry when that lands.
+    EXTERNAL_LIBS
+        process_stats
     FIND_PACKAGES
         Qt6Gui
     LINK_LIBRARIES
