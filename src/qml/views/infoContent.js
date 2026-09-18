@@ -56,6 +56,34 @@ var status = {
     docs: "https://docs.logos.co/blockchain/get-started/run-a-logos-blockchain-node-from-basecamp"
 }
 
+// The prototype lists this tile as unwired, needing a bridge to the node's HTTP
+// API. It does not: get_network_info landed in the 0.3 module with the same
+// counters, so this one is real.
+var peers = {
+    title: "Peers",
+    what: "How many other nodes this node is connected to on the peer-to-peer "
+        + "network. Peers are how it gossips blocks in and out — a node with "
+        + "none can neither catch up nor publish anything it proposes.",
+    calc: "The node's own libp2p connection counters, read on every status "
+        + "poll while it is running. Peers and connections are counted "
+        + "separately because one peer can hold more than one connection, so "
+        + "the line beneath the figure reports the connections those peers add "
+        + "up to. Only a running node has them: the counts are not remembered "
+        + "across a stop, and the peers a node dials on the way up come from "
+        + "the bootstrap list in its config.",
+    states: [
+        { label: "Count",
+          meaning: "Connected peers, with total connections beneath." },
+        { label: "0",
+          meaning: "Running, but connected to nobody. This is the usual reason "
+                 + "a node bootstraps forever: check that the bootstrap peers "
+                 + "in its config are reachable and on the same network." },
+        { label: "—",
+          meaning: "The node is not running, or has not reported yet." }
+    ],
+    docs: "https://docs.logos.co/get-started/glossary"
+}
+
 // Checked against the node source rather than the docs site: stake is the aged
 // note set the leader service plays the lottery with (the wallet service's
 // get_leader_aged_notes), which is not the wallet balance.

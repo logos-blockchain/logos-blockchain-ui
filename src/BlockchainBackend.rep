@@ -20,6 +20,11 @@ class BlockchainBackend
     // The processed-block stream delivered its end sentinel. Resubscribing needs
     // a node stop/start, so the silence after this is permanent, not slowness.
     PROP(bool blockStreamEnded READONLY)
+    // libp2p connectivity of the running node, from get_network_info. -1 is
+    // "not reported": zero peers is a real and rather important reading, so it
+    // cannot double as the unknown value.
+    PROP(int peerCount READONLY)
+    PROP(int connectionCount READONLY)
     // The notes this node can lead with, from wallet_get_leader_aged_notes
     PROP(QString stakeTotal READONLY)
     PROP(int stakeNoteCount READONLY)

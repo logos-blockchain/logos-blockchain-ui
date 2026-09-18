@@ -95,6 +95,8 @@ private:
     void refreshBlendRole();
     void refreshStake();
     void clearStake();
+    void refreshNetwork();
+    void clearNetwork();
     const Rule* diagnoseNode() const; // cached; call this
     bool moduleIsAlive();
     // Record that the module's process is gone: one place, so the poll path and

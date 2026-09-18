@@ -40,6 +40,11 @@ Item {
     property int stakeNoteCount: 0
     property var stakeAddresses: []
     property string peerId: ""
+    // libp2p connectivity, shaped by the backend from get_network_info.
+    // -1 = not reported; 0 is a real reading and the usual reason a node never
+    // finishes bootstrapping.
+    property int peerCount: -1
+    property int connectionCount: -1
     property int blendRole: BlockchainBackend.Unknown
     // Debounced in BlockchainView — a single blip in `mode` must not repaint
     // the card. `hasBeenOnline` separates a first bootstrap from a node that
@@ -339,7 +344,8 @@ Item {
 
         // Tiles fed by the status poll go dim when it stops answering. Without
         // this the hero says "I can't see the node" while four tiles carry on
-        // presenting frozen numbers as though they were live. Only the
+        // presenting frozen numbers as though they were live. Peers rides along
+        // with them — the backend refreshes it from the same poll. Only the
         // poll-derived ones: Balance, Vouchers, Blend, Peer ID and Epoch come
         // from elsewhere and are not stale just because this poll is.
         readonly property real infoOpacity: root.statusStale ? 0.45 : 1.0
@@ -536,20 +542,6 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Layout.minimumWidth: d.minTileWidth
-                    label: qsTr("Vouchers Ready to Claim")
-                    value: String(d.voucherCount)
-                    labelTrailing: [
-                        LogosInfoButton {
-                            title: qsTr("Vouchers Ready to Claim")
-                            text: qsTr("Leader reward vouchers this wallet can claim. A voucher carries no value of its own — the reward it redeems lives on the ledger. Claim them from the Rewards tab.")
-                        }
-                    ]
-                }
-
-                LogosStatCard {
-                    Layout.fillWidth: true
-                    Layout.preferredWidth: 1
-                    Layout.minimumWidth: d.minTileWidth
                     label: qsTr("Blend")
                     value: d.blendKnown ? d.blendLabel : qsTr("—")
                     // A role is a fact, not a verdict, so tint it rather than
@@ -585,6 +577,56 @@ Item {
                             title: qsTr("Epoch")
                             text: qsTr("The consensus epoch the chain is currently in, derived from the genesis time and slot duration. Stake eligibility is decided per epoch: a note becomes able to lead roughly two epochs after it is minted.")
                         }
+                    ]
+                }
+
+                LogosStatCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
+                    label: qsTr("Vouchers Ready to Claim")
+                    value: String(d.voucherCount)
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("Vouchers Ready to Claim")
+                            text: qsTr("Leader reward vouchers this wallet can claim. A voucher carries no value of its own — the reward it redeems lives on the ledger. Claim them from the Rewards tab.")
+                        }
+                    ]
+                }
+
+                LogosStatCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
+                    label: qsTr("Peers")
+                    opacity: d.infoOpacity
+                    value: root.peerCount >= 0 ? String(root.peerCount) : qsTr("—")
+                    valueColor: root.peerCount === 0 ? Theme.palette.error
+                                                     : Theme.palette.text
+                    caption: root.connectionCount >= 0
+                             ? qsTr("%n connection(s)", "", root.connectionCount) : ""
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("Peers")
+                            dialogContentItem: InfoSections { info: InfoContent.peers }
+                        }
+                    ]
+                }
+
+                LogosStatCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
+                    label: qsTr("Peer ID")
+                    value: d.shorten(root.peerId)
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("Peer ID")
+                            text: qsTr("This node's libp2p identity, derived from the selected user config. It does not need a running node.")
+                        }
+                    ]
+                    valueTrailing: [
+                        LogosCopyButton { value: root.peerId }
                     ]
                 }
 
@@ -659,23 +701,6 @@ Item {
                     ]
                     valueTrailing: [
                         LogosCopyButton { value: d.hash("tip") }
-                    ]
-                }
-
-                LogosStatCard {
-                    Layout.fillWidth: true
-                    Layout.preferredWidth: 1
-                    Layout.minimumWidth: d.minTileWidth
-                    label: qsTr("Peer ID")
-                    value: d.shorten(root.peerId)
-                    labelTrailing: [
-                        LogosInfoButton {
-                            title: qsTr("Peer ID")
-                            text: qsTr("This node's libp2p identity, derived from the selected user config. It does not need a running node.")
-                        }
-                    ]
-                    valueTrailing: [
-                        LogosCopyButton { value: root.peerId }
                     ]
                 }
             }

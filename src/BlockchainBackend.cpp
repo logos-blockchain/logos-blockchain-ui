@@ -473,6 +473,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     // Nothing has contradicted it yet; only a failed probe may say otherwise.
     setNodeModuleReachable(true);
     setBlendRole(Unknown);
+    clearNetwork();
     setUseGeneratedConfig(false);
     setGeneratedUserConfigPath(
         QDir::currentPath() + QStringLiteral("/user_config.yaml"));
@@ -585,6 +586,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         if (status() != Running) {
             setBlendRole(Unknown);
             clearStake();
+            clearNetwork();
         }
     });
 
@@ -704,6 +706,32 @@ void BlockchainBackend::refreshBlendRole()
     setBlendRole(doc.object().value(QStringLiteral("core_info")).isObject() ? Core : Edge);
 }
 
+void BlockchainBackend::clearNetwork()
+{
+    setPeerCount(-1);
+    setConnectionCount(-1);
+}
+
+// get_network_info answers with JSON:
+//   { n_peers, n_connections, n_pending_connections, n_discovered_peers }
+// Peers and connections are not the same count — one peer can hold several
+// connections — so both are reported rather than collapsed into one number
+void BlockchainBackend::refreshNetwork()
+{
+    if (!m_blockchainClient || status() != Running)
+        return;
+
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_network_info")));
+    if (!r.success)
+        return;
+
+    const QJsonObject payload =
+        QJsonDocument::fromJson(r.value.toString().toUtf8()).object();
+    setPeerCount(payload.value(QStringLiteral("n_peers")).toInt(-1));
+    setConnectionCount(payload.value(QStringLiteral("n_connections")).toInt(-1));
+}
+
 void BlockchainBackend::clearStake()
 {
     setStakeTotal(QString());
@@ -762,6 +790,7 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
         // the poll is its own — but the clock has no reason to make a round trip
         // for a verdict already in hand here.
         applyOnlineReading(modeOnline);
+        refreshNetwork();
         if (modeOnline) {
             if (blendRole() == Unknown)
                 refreshBlendRole();
