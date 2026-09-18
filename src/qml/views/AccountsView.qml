@@ -6,98 +6,56 @@ import Logos.Controls
 
 import "../controls"
 
-// Accounts panel: the list of known wallet addresses with per-account
-// balance refresh and copy. Extracted from the former WalletView.
+// Accounts panel: the known wallet addresses, what each one is for, and its
+// balance. One Refresh covers the lot — the backend reads addresses and
+// balances in the same call — so there is nothing per-row to press.
 ColumnLayout {
     id: root
 
     required property var accountsModel
 
-    signal getBalanceRequested(string addressHex)
     signal refreshAccountsRequested()
     signal copyToClipboard(string text)
 
-    function setBalanceResult(addressHex, success, errorMessage) {
-        var next = Object.assign({}, d.pending)
-        delete next[addressHex]
-        d.pending = next
+    spacing: Theme.spacing.large
 
-        d.errorAddress = success ? "" : addressHex
-        d.errorMessage = success ? "" : (errorMessage || "")
-    }
+    RowLayout {
+        Layout.fillWidth: true
+        Item { Layout.fillWidth: true }
+        LogosButton {
+            id: refreshButton
+            Layout.alignment: Qt.AlignVCenter
+            text: qsTr("Refresh")
+            padding: Theme.spacing.small
+            onClicked: root.refreshAccountsRequested()
 
-    QtObject {
-        id: d
-        property var pending: ({})
-        property string errorAddress: ""
-        property string errorMessage: ""
-
-        function markPending(addressHex) {
-            var next = Object.assign({}, d.pending)
-            next[addressHex] = true
-            d.pending = next
+            LogosToolTip {
+                text: qsTr("Refreshes every wallet account and its balance")
+                placement: LogosToolTip.Placement.Bottom
+                visible: refreshButton.hovered
+            }
         }
     }
 
-    spacing: Theme.spacing.large
+    LogosText {
+        text: qsTr("Start node to see accounts here.")
+        font.pixelSize: Theme.typography.secondaryText
+        color: Theme.palette.textSecondary
+        wrapMode: Text.WordWrap
+        Layout.fillWidth: true
+        Layout.minimumWidth: 0
+        visible: balanceListView.count === 0
+    }
 
-    LogosFrame {
+    LogosListView {
+        id: balanceListView
         Layout.fillWidth: true
         Layout.fillHeight: true
-        padding: Theme.spacing.large
-        backgroundColor: Theme.palette.backgroundTertiary
-        radius: Theme.spacing.radiusLarge
+        model: root.accountsModel
+        spacing: Theme.spacing.small
 
-        contentItem: ColumnLayout {
-            spacing: Theme.spacing.large
-
-            RowLayout {
-                Layout.fillWidth: true
-                LogosText {
-                    text: qsTr("Accounts")
-                    font.pixelSize: Theme.typography.secondaryText
-                    font.bold: true
-                }
-                Item { Layout.fillWidth: true }
-                LogosButton {
-                    text: qsTr("Refresh")
-                    padding: Theme.spacing.small
-                    onClicked: root.refreshAccountsRequested()
-                }
-                LogosInfoButton {
-                    title: qsTr("Accounts")
-                    Layout.alignment: Qt.AlignVCenter
-                    text: qsTr("Your wallet addresses and balances. Press Refresh to fetch the latest known addresses and their balances from the running node.")
-                }
-            }
-
-            LogosText {
-                text: qsTr("Start node to see accounts here.")
-                font.pixelSize: Theme.typography.secondaryText
-                color: Theme.palette.textSecondary
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-                Layout.minimumWidth: 0
-                visible: balanceListView.count === 0
-            }
-
-            LogosListView {
-                id: balanceListView
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                model: root.accountsModel
-                spacing: Theme.spacing.small
-
-                delegate: AccountDelegate {
-                    balanceError: d.errorAddress === model.address ? d.errorMessage : ""
-                    refreshing: !!d.pending[model.address]
-                    onGetBalanceRequested: (addr) => {
-                        d.markPending(addr)
-                        root.getBalanceRequested(addr)
-                    }
-                    onCopyRequested: (text) => root.copyToClipboard(text)
-                }
-            }
+        delegate: AccountDelegate {
+            onCopyRequested: (text) => root.copyToClipboard(text)
         }
     }
 }

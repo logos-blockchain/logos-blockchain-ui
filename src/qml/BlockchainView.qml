@@ -177,13 +177,13 @@ Rectangle {
 
 
     // The backend polls and derives; this only says whether anyone is looking,
-    // which is the one half of it the backend cannot know. Section 4 is Mining,
+    // which is the one half of it the backend cannot know. Section 3 is Mining,
     // the only place the claimable counts are shown — keep this in step with
     // the tab bar.
     Binding {
         target: root.backend
         property: "claimablePollActive"
-        value: root.nodeRunning && _d.currentPage === 1 && opPage.sectionIndex === 4
+        value: root.nodeRunning && _d.currentPage === 1 && opPage.sectionIndex === 3
         when: root.backend !== null
         restoreMode: Binding.RestoreNone
     }
@@ -500,8 +500,8 @@ Rectangle {
             spacing: Theme.spacing.medium
 
             // Selected section. The tab bar and the StackLayout's children are
-            // index-for-index: 0 Dashboard · 1 Explorer · 2 Accounts ·
-            // 3 Rewards · 4 Mining · 5 Transfer · 6 Channel Deposit · 7 Settings.
+            // index-for-index: 0 Dashboard · 1 Explorer · 2 Rewards ·
+            // 3 Mining · 4 Wallet · 5 Settings.
             // Reorder one and you must reorder the other.
             //
             // The tab bar owns the selection. Binding its currentIndex to a
@@ -519,16 +519,16 @@ Rectangle {
                 : ""
             readonly property bool miningRequested: root.backend ? root.backend.miningRequested : false
 
-            // Sections 2-6 (the wallet operations, Rewards and Mining) need a
-            // running node; if it stops while one is open, fall back to Dashboard
-            // so the user isn't stranded on a disabled section. Dashboard,
-            // Explorer and Settings stay reachable throughout — the Explorer's
-            // block table keeps the blocks this session already saw.
+            // Sections 2-4 (Rewards, Mining, Wallet) need a running node; if it
+            // stops while one is open, fall back to Dashboard so the user isn't
+            // stranded on a disabled section. Dashboard, Explorer and Settings
+            // stay reachable throughout — the Explorer's block table keeps the
+            // blocks this session already saw.
             onNodeRunningChanged: {
                 // Whichever way this went, the message belonged to the previous
                 // run of the node and no longer describes anything.
                 _d.miningError = ""
-                if (!nodeRunning && sectionIndex >= 2 && sectionIndex <= 6)
+                if (!nodeRunning && sectionIndex >= 2 && sectionIndex <= 4)
                     sectionTabs.currentIndex = 0
             }
 
@@ -675,12 +675,6 @@ Rectangle {
                     font.pixelSize: Theme.typography.secondaryText
                 }
                 LogosTabButton {
-                    objectName: "tabAccounts"
-                    text: qsTr("Accounts")
-                    font.pixelSize: Theme.typography.secondaryText
-                    enabled: opPage.nodeRunning
-                }
-                LogosTabButton {
                     objectName: "tabRewards"
                     text: qsTr("Rewards")
                     font.pixelSize: Theme.typography.secondaryText
@@ -693,14 +687,8 @@ Rectangle {
                     enabled: opPage.nodeRunning
                 }
                 LogosTabButton {
-                    objectName: "tabTransfer"
-                    text: qsTr("Transfer")
-                    font.pixelSize: Theme.typography.secondaryText
-                    enabled: opPage.nodeRunning
-                }
-                LogosTabButton {
-                    objectName: "tabChannelDeposit"
-                    text: qsTr("Channel Deposit")
+                    objectName: "tabWallet"
+                    text: qsTr("Wallet")
                     font.pixelSize: Theme.typography.secondaryText
                     enabled: opPage.nodeRunning
                 }
@@ -811,37 +799,7 @@ Rectangle {
                     onCopyToClipboard: (text) => root.copyText(text)
                 }
 
-                // ---- Section 2: Accounts ----
-                AccountsView {
-                    id: accountsView
-                    accountsModel: root.accountsModel
-
-                    onGetBalanceRequested: function(addressHex) {
-                        if (!root.backend) {
-                            accountsView.setBalanceResult(
-                                addressHex, false, qsTr("Not connected to the module."))
-                            return
-                        }
-                        logos.watch(
-                            root.backend.getBalance(addressHex),
-                            function(result) {
-                                accountsView.setBalanceResult(
-                                    addressHex, result.success,
-                                    result.success ? "" : _d.errorText(result.error))
-                            },
-                            function(error) {
-                                accountsView.setBalanceResult(
-                                    addressHex, false, _d.errorText(error))
-                            }
-                        )
-                    }
-                    onRefreshAccountsRequested: if (root.backend) root.backend.refreshAccounts()
-                    onCopyToClipboard: (text) => {
-                        root.copyText(text)
-                    }
-                }
-
-                // ---- Section 3: Rewards ----
+                // ---- Section 2: Rewards ----
                 LeaderRewardsView {
                     id: leaderRewardsView
                     vouchersJson: root.claimableVouchersJson
@@ -866,7 +824,7 @@ Rectangle {
                     }
                 }
 
-                // ---- Section 4: Mining (PoW tickets and claiming) ----
+                // ---- Section 3: Mining (PoW tickets and claiming) ----
                 MiningView {
                     id: miningView
                     nodeRunning: opPage.nodeRunning
@@ -891,10 +849,13 @@ Rectangle {
                     onClaimRequested: function(addressHex) { _d.claimPowRewards(addressHex) }
                 }
 
-                // ---- Section 5: Transfer ----
-                TransferView {
-                    id: transferView
+                // ---- Section 4: Wallet ----
+                WalletView {
+                    id: walletView
                     accountsModel: root.accountsModel
+                    nodeRunning: opPage.nodeRunning
+
+                    onRefreshAccountsRequested: if (root.backend) root.backend.refreshAccounts()
 
                     onTransferRequested: function(fromKeyHex, toKeyHex, amount) {
                         if (!root.backend) return
@@ -902,24 +863,14 @@ Rectangle {
                             root.backend.transferFunds(fromKeyHex, toKeyHex, amount),
                             function(result) {
                                 if (result.success) {
-                                    transferView.setTransferHash(result.value)
+                                    walletView.setTransferHash(result.value)
                                 } else {
-                                    transferView.setTransferError(_d.errorText(result.error))
+                                    walletView.setTransferError(_d.errorText(result.error))
                                 }
                             },
-                            function(error) { transferView.setTransferError(_d.errorText(error)) }
+                            function(error) { walletView.setTransferError(_d.errorText(error)) }
                         )
                     }
-                    onCopyToClipboard: (text) => {
-                        root.copyText(text)
-                    }
-                }
-
-                // ---- Section 6: Channel Deposit ----
-                ChannelDepositView {
-                    id: channelDepositView
-                    accountsModel: root.accountsModel
-                    nodeRunning: opPage.nodeRunning
 
                     onGetNotesRequested: function(addressHex, optionalTipHex) {
                         if (!root.backend) return
@@ -927,11 +878,11 @@ Rectangle {
                             root.backend.getNotes(addressHex, optionalTipHex),
                             function(result) {
                                 if (result.success)
-                                    channelDepositView.setNotes(result.value)
+                                    walletView.setNotes(result.value)
                                 else
-                                    channelDepositView.setNotesError(_d.errorText(result.error))
+                                    walletView.setNotesError(_d.errorText(result.error))
                             },
-                            function(error) { channelDepositView.setNotesError(_d.errorText(error)) }
+                            function(error) { walletView.setNotesError(_d.errorText(error)) }
                         )
                     }
                     onSubmitRequested: function(channelIdHex, inputNoteIdHexes, metadataBase58, changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex) {
@@ -942,19 +893,18 @@ Rectangle {
                                 changePublicKeyHex, fundingPublicKeyHexes, maxTxFee, optionalTipHex),
                             function(result) {
                                 if (result.success)
-                                    channelDepositView.setSubmitResult(true, result.value)
+                                    walletView.setSubmitResult(true, result.value)
                                 else
-                                    channelDepositView.setSubmitResult(false, _d.errorText(result.error))
+                                    walletView.setSubmitResult(false, _d.errorText(result.error))
                             },
-                            function(error) { channelDepositView.setSubmitResult(false, _d.errorText(error)) }
+                            function(error) { walletView.setSubmitResult(false, _d.errorText(error)) }
                         )
                     }
-                    onCopyToClipboard: (text) => {
-                        root.copyText(text)
-                    }
+
+                    onCopyToClipboard: (text) => root.copyText(text)
                 }
 
-                // ---- Section 7: Settings ----
+                // ---- Section 5: Settings ----
                 NodeSettingsView {
                     userConfig: root.backend ? root.backend.userConfig : ""
                     deploymentConfig: root.backend ? root.backend.deploymentConfig : ""

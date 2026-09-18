@@ -3,6 +3,7 @@
 
 #include <QDateTime>
 #include <QElapsedTimer>
+#include <QHash>
 #include <QObject>
 #include <QSet>
 #include <QString>
@@ -195,6 +196,9 @@ private:
     // When the data-dir walk last ran. Invalid until the first one.
     QElapsedTimer m_diskSampled;
     QVariantMap readAccountRoles(const QString& configPath);
+    // Public-half keystore titles, or empty. Never fails loudly: titles are
+    // decoration and the keystore is expected to become password-protected.
+    QHash<QString, QString> readKeyTitles(const QString& configPath);
     // Republishes accountRows from the model. Called after anything that
     // changes which addresses exist or what they are called.
     void publishAccountRows();
