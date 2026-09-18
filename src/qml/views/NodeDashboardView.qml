@@ -38,6 +38,10 @@ Item {
     // Empty total means "not reported"; a reported "0" means nothing has aged.
     property string stakeTotal: ""
     property int stakeNoteCount: 0
+    // Any known address holds tokens. Drives the lane's Funded stage only —
+    // the figure itself belongs to the Accounts view.
+    property bool walletFunded: false
+    property bool mining: false
     property var stakeAddresses: []
     property string peerId: ""
     // libp2p connectivity, shaped by the backend from get_network_info.
@@ -343,11 +347,51 @@ Item {
                  color: Theme.palette.textSecondary, dots: false, isError: false })
 
         // ---- Lifecycle -----------------------------------------------------
-        // Only the stages the node genuinely reports. Funded, Aged, Proposing
-        // and Earning stay out until their backend signals exist, rather than
-        // sitting permanently dark in the lane.
         // LogosStageLane's position model: stages before `currentIndex` are
         // complete, the one at it is in progress. -1 = nothing started.
+        //
+        // Two halves, governed differently. The node stages (Started, Online)
+        // are always live — a stopped node is not "proposing", whatever it
+        // reached last session. The wallet stages (Funded, Aged, Proposing,
+        // Earning) are steps: they hold at their high-water mark, because
+        // claiming a reward empties the voucher list and must not walk the lane
+        // backwards.
+        //
+        // Proposing carries no evidence of its own, and needs none: once notes
+        // have aged, the leader tests them every slot, so the node genuinely is
+        // competing for a block. It is the stage you sit in while waiting for a
+        // first voucher — which is why its busy label says so rather than
+        // claiming blocks are being produced.
+
+        // Where the wallet stands right now, 2..5. Later conditions imply the
+        // earlier ones: a node reporting aged notes is funded whether or not
+        // the per-address balance fetch has caught up with it.
+        readonly property int walletStage: {
+            if (d.voucherCount > 0) return 5    // Earning
+            if (root.stakeNoteCount > 0) return 4  // Proposing — aged, in the lottery
+            if (root.walletFunded) return 3     // Aged — aging in
+            return 2                            // Funded — waiting for tokens
+        }
+
+        // The node saying the stake is gone
+        readonly property bool stakeReportedGone:
+            running && root.stakeTotal.length > 0 && root.stakeNoteCount === 0
+
+        property int walletHighWater: 2
+
+        function advanceWallet() {
+            if (stakeReportedGone) {
+                if (walletStage < walletHighWater)
+                    walletHighWater = walletStage
+                return
+            }
+            if (walletStage > walletHighWater)
+                walletHighWater = walletStage
+        }
+
+        onWalletStageChanged: advanceWallet()
+        onStakeReportedGoneChanged: advanceWallet()
+
         readonly property int lifeCurrentIndex: {
             if (root.status < 0 || root.status === BlockchainBackend.NotStarted)
                 return -1
@@ -362,16 +406,15 @@ Item {
                 return 1                        // Started done, working toward Online
             if (root.status === BlockchainBackend.Starting)
                 return 0                        // Started, itself in progress
-            if (running)
+            if (!running)
+                return -1
+            if (!synced)
                 return 1                        // Online — busy while it syncs
-            return -1
+            return Math.max(2, walletHighWater)
         }
 
-        // The stage at the frontier is actively working.
         readonly property bool lifeBusy:
-            root.status === BlockchainBackend.Starting
-            || root.nodeRecovering
-            || (running && !synced)
+            lifeCurrentIndex >= 0 && lifeCurrentIndex < 5
 
         readonly property bool lifeFailed:
             root.status === BlockchainBackend.Error
@@ -569,6 +612,22 @@ Item {
                             LogosStage {
                                 label: qsTr("Online")
                                 busyLabel: qsTr("Syncing…")
+                            },
+                            LogosStage {
+                                label: qsTr("Funded")               
+                                busyLabel: root.mining ? qsTr("Funding")
+                                                       : qsTr("Fund your wallet")
+                            },
+                            LogosStage {
+                                label: qsTr("Aged")
+                                busyLabel: qsTr("Aging")
+                            },
+                            LogosStage {
+                                label: qsTr("Proposing")
+                                busyLabel: qsTr("Waiting for a slot")
+                            },
+                            LogosStage {
+                                label: qsTr("Earning")
                             }
                         ]
                     }

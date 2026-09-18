@@ -1293,6 +1293,7 @@ QVariantMap BlockchainBackend::getBalance(QString addressHex)
 
     m_accountsModel->setBalanceForAddress(
         addressHex, lr.success ? lr.value.toString() : QString());
+    setWalletFunded(m_accountsModel->hasFunds());
     return result::toVariantMap(lr);
 }
 

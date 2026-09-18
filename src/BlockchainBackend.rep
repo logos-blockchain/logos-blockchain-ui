@@ -47,6 +47,11 @@ class BlockchainBackend
     // cannot double as the unknown value.
     PROP(int peerCount READONLY)
     PROP(int connectionCount READONLY)
+    // Whether any known address holds tokens — the lifecycle lane's "Funded".
+    // Refreshed with the account balances, not on the status poll: there is no
+    // total-balance call, so it costs one request per key, and it answers a
+    // question that changes rarely.
+    PROP(bool walletFunded READONLY)
     // The notes this node can lead with, from wallet_get_leader_aged_notes
     PROP(QString stakeTotal READONLY)
     PROP(int stakeNoteCount READONLY)

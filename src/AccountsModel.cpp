@@ -71,3 +71,19 @@ void AccountsModel::setBalanceForAddress(const QString& address, const QString& 
         }
     }
 }
+
+bool AccountsModel::hasFunds() const
+{
+    for (const Entry& e : m_entries) {
+        const QString balance = e.balance.trimmed();
+        bool digitsOnly = !balance.isEmpty();
+        bool nonZero = false;
+        for (const QChar c : balance) {
+            if (!c.isDigit()) { digitsOnly = false; break; }
+            if (c != QLatin1Char('0')) nonZero = true;
+        }
+        if (digitsOnly && nonZero)
+            return true;
+    }
+    return false;
+}
