@@ -40,6 +40,11 @@ Item {
     property int stakeNoteCount: 0
     property var stakeAddresses: []
     property string peerId: ""
+    // libp2p connectivity, shaped by the backend from get_network_info.
+    // -1 = not reported; 0 is a real reading and the usual reason a node never
+    // finishes bootstrapping.
+    property int peerCount: -1
+    property int connectionCount: -1
     property int blendRole: BlockchainBackend.Unknown
     // Debounced in BlockchainView — a single blip in `mode` must not repaint
     // the card. `hasBeenOnline` separates a first bootstrap from a node that
@@ -90,7 +95,9 @@ Item {
             return (v === undefined || v === null) ? qsTr("—") : String(v)
         }
 
-        function hash(key) {
+        // The field as plain text, empty when absent — what a copy button has to
+        // carry. num()'s "—" is a thing to read, not a thing to paste.
+        function raw(key) {
             const v = field(key)
             return (v === undefined || v === null) ? "" : String(v)
         }
@@ -171,7 +178,17 @@ Item {
         // ---- Vouchers ------------------------------------------------------
         readonly property var vouchers: parseJson(root.vouchersJson)
         readonly property int voucherCount:
-            (vouchers && vouchers.vouchers) ? vouchers.vouchers.length : 0
+            (vouchers && vouchers.vouchers) ? vouchers.vouchers.length : -1
+
+        readonly property string voucherCaption: {
+            if (voucherCount <= 0)
+                return ""
+            const total = vouchers ? vouchers.total_claimable : undefined
+            if (total === undefined || total === null)
+                return ""
+            const formatted = Units.format(String(total))
+            return formatted.length > 0 ? qsTr("≈%1 before fees").arg(formatted) : ""
+        }
 
         // ---- Status hero ---------------------------------------------------
         // Six states, most specific first. `label` is the headline, `sub` the
@@ -327,19 +344,41 @@ Item {
         // backend only acquires a role while the node reports Online, and clears
         // it on any other mode or on leaving Running. Re-checking those two
         // could only ever hide a role the node has actually reported.
-        readonly property bool blendKnown: root.blendRole !== BlockchainBackend.Unknown
-
         readonly property string blendLabel: {
             switch (root.blendRole) {
-            case BlockchainBackend.Core: return qsTr("Core")
-            case BlockchainBackend.Edge: return qsTr("Edge")
-            default:                     return qsTr("—")
+            case BlockchainBackend.Core:     return qsTr("Core")
+            case BlockchainBackend.Edge:     return qsTr("Edge")
+            case BlockchainBackend.Inactive: return qsTr("Not active")
+            default:                         return qsTr("—")
+            }
+        }
+
+        readonly property string blendCaption: {
+            switch (root.blendRole) {
+            case BlockchainBackend.Core:     return qsTr("Mixing your proposals")
+            case BlockchainBackend.Edge:     return qsTr("Mixed by the core network")
+            case BlockchainBackend.Inactive: return qsTr("Proposals not mixed")
+            default:                         return ""
+            }
+        }
+
+        // Core is declared and earns for it; Edge is what every running node
+        // gets for free. Tinting both `info` blue made the role that took work
+        // look identical to the one that took none.
+        readonly property color blendColor: {
+            switch (root.blendRole) {
+            case BlockchainBackend.Core:     return Theme.palette.accentYellowSoft
+            case BlockchainBackend.Edge:     return Theme.palette.info
+            // Off is not an error and not an achievement — state it plainly.
+            case BlockchainBackend.Inactive: return Theme.palette.textSecondary
+            default:                         return Theme.palette.text
             }
         }
 
         // Tiles fed by the status poll go dim when it stops answering. Without
         // this the hero says "I can't see the node" while four tiles carry on
-        // presenting frozen numbers as though they were live. Only the
+        // presenting frozen numbers as though they were live. Peers rides along
+        // with them — the backend refreshes it from the same poll. Only the
         // poll-derived ones: Balance, Vouchers, Blend, Peer ID and Epoch come
         // from elsewhere and are not stale just because this poll is.
         readonly property real infoOpacity: root.statusStale ? 0.45 : 1.0
@@ -536,42 +575,22 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Layout.minimumWidth: d.minTileWidth
-                    label: qsTr("Vouchers Ready to Claim")
-                    value: String(d.voucherCount)
-                    labelTrailing: [
-                        LogosInfoButton {
-                            title: qsTr("Vouchers Ready to Claim")
-                            text: qsTr("Leader reward vouchers this wallet can claim. A voucher carries no value of its own — the reward it redeems lives on the ledger. Claim them from the Rewards tab.")
-                        }
-                    ]
-                }
-
-                LogosStatCard {
-                    Layout.fillWidth: true
-                    Layout.preferredWidth: 1
-                    Layout.minimumWidth: d.minTileWidth
                     label: qsTr("Blend")
-                    value: d.blendKnown ? d.blendLabel : qsTr("—")
+                    value: d.blendLabel
                     // A role is a fact, not a verdict, so tint it rather than
                     // flag it. `severity: Info` also plants an ⓘ beside the
                     // label, which is indistinguishable from the info button
                     // already sitting there.
-                    valueColor: d.blendKnown ? Theme.palette.info
-                                             : Theme.palette.text
+                    valueColor: d.blendColor
+                    caption: d.blendCaption
                     labelTrailing: [
                         LogosInfoButton {
                             title: qsTr("Blend")
-                            text: qsTr("This node's role in the blend network, which mixes proposals. Reported only once the node is online and blend has announced itself.")
+                            dialogContentItem: InfoSections { info: InfoContent.blend }
                         }
                     ]
                 }
 
-                // The design draws a progress caption here too ("6h of 10h").
-                // That needs the epoch length in slots, which get_time_info does
-                // not report — it could be inferred from current_slot /
-                // current_epoch, but that assumes epoch 0 starts at slot 0 and
-                // that epochs are fixed-length. Ship the number; ask the node
-                // for the length rather than guessing it.
                 LogosStatCard {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
@@ -583,8 +602,60 @@ Item {
                     labelTrailing: [
                         LogosInfoButton {
                             title: qsTr("Epoch")
-                            text: qsTr("The consensus epoch the chain is currently in, derived from the genesis time and slot duration. Stake eligibility is decided per epoch: a note becomes able to lead roughly two epochs after it is minted.")
+                            dialogContentItem: InfoSections { info: InfoContent.epoch }
                         }
+                    ]
+                }
+
+                LogosStatCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
+                    label: qsTr("Ready to Claim")
+                    value: d.voucherCount >= 0 ? String(d.voucherCount)
+                                               : qsTr("—")
+                    caption: d.voucherCaption
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("Ready to Claim")
+                            dialogContentItem: InfoSections { info: InfoContent.readyToClaim }
+                        }
+                    ]
+                }
+
+                LogosStatCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
+                    label: qsTr("Peers")
+                    opacity: d.infoOpacity
+                    value: root.peerCount >= 0 ? String(root.peerCount) : qsTr("—")
+                    valueColor: root.peerCount === 0 ? Theme.palette.error
+                                                     : Theme.palette.text
+                    caption: root.connectionCount >= 0
+                             ? qsTr("%n connection(s)", "", root.connectionCount) : ""
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("Peers")
+                            dialogContentItem: InfoSections { info: InfoContent.peers }
+                        }
+                    ]
+                }
+
+                LogosStatCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
+                    label: qsTr("Peer ID")
+                    value: d.shorten(root.peerId)
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("Peer ID")
+                            dialogContentItem: InfoSections { info: InfoContent.peerId }
+                        }
+                    ]
+                    captionTrailing: [
+                        LogosCopyButton { value: root.peerId }
                     ]
                 }
 
@@ -600,8 +671,11 @@ Item {
                     labelTrailing: [
                         LogosInfoButton {
                             title: qsTr("Slot")
-                            text: qsTr("Consensus slot of the current tip.")
+                            dialogContentItem: InfoSections { info: InfoContent.slot }
                         }
+                    ]
+                    captionTrailing: [
+                        LogosCopyButton { value: d.raw("slot") }
                     ]
                 }
 
@@ -617,8 +691,11 @@ Item {
                     labelTrailing: [
                         LogosInfoButton {
                             title: qsTr("Height")
-                            text: qsTr("Number of blocks in the chain up to the current tip.")
+                            dialogContentItem: InfoSections { info: InfoContent.height }
                         }
+                    ]
+                    captionTrailing: [
+                        LogosCopyButton { value: d.raw("height") }
                     ]
                 }
 
@@ -628,19 +705,22 @@ Item {
                     Layout.minimumWidth: d.minTileWidth
                     label: qsTr("LiB")
                     opacity: d.infoOpacity
-                    value: d.shorten(d.hash("lib"))
+                    value: d.shorten(d.raw("lib"))
                     // lib_slot rides along with the hash it belongs to: both
                     // describe the last irreversible block.
                     caption: d.field("lib_slot") !== undefined
                              ? qsTr("slot %1").arg(d.num("lib_slot")) : ""
                     labelTrailing: [
                         LogosInfoButton {
-                            title: qsTr("LiB")
-                            text: qsTr("Header id of the last irreversible block — the point the chain can no longer reorganise past.")
+                            title: qsTr("LiB — Last Immutable Block")
+                            dialogContentItem: InfoSections { info: InfoContent.lib }
                         }
                     ]
                     valueTrailing: [
-                        LogosCopyButton { value: d.hash("lib") }
+                        LogosCopyButton { value: d.raw("lib") }
+                    ]
+                    captionTrailing: [
+                        LogosCopyButton { value: d.raw("lib_slot") }
                     ]
                 }
 
@@ -650,32 +730,15 @@ Item {
                     Layout.minimumWidth: d.minTileWidth
                     label: qsTr("TiP")
                     opacity: d.infoOpacity
-                    value: d.shorten(d.hash("tip"))
+                    value: d.shorten(d.raw("tip"))
                     labelTrailing: [
                         LogosInfoButton {
-                            title: qsTr("TiP")
-                            text: qsTr("Header id of the current chain tip — the most recent block this node has applied.")
+                            title: qsTr("TiP — Tip")
+                            dialogContentItem: InfoSections { info: InfoContent.tip }
                         }
                     ]
-                    valueTrailing: [
-                        LogosCopyButton { value: d.hash("tip") }
-                    ]
-                }
-
-                LogosStatCard {
-                    Layout.fillWidth: true
-                    Layout.preferredWidth: 1
-                    Layout.minimumWidth: d.minTileWidth
-                    label: qsTr("Peer ID")
-                    value: d.shorten(root.peerId)
-                    labelTrailing: [
-                        LogosInfoButton {
-                            title: qsTr("Peer ID")
-                            text: qsTr("This node's libp2p identity, derived from the selected user config. It does not need a running node.")
-                        }
-                    ]
-                    valueTrailing: [
-                        LogosCopyButton { value: root.peerId }
+                    captionTrailing: [
+                        LogosCopyButton { value: d.raw("tip") }
                     ]
                 }
             }

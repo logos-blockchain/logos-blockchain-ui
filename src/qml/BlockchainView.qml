@@ -216,8 +216,11 @@ Rectangle {
         enabled: root.backend !== null
         ignoreUnknownSignals: true
         function onStatusChanged() {
-            if (root.backend.status === BlockchainBackend.Running)
+            if (root.backend.status === BlockchainBackend.Running) {
                 root.refreshClaimableVouchers()
+            } else {
+                root.claimableVouchersJson = ""
+            }
         }
     }
 
@@ -508,6 +511,8 @@ Rectangle {
                     stakeNoteCount: root.backend ? root.backend.stakeNoteCount : 0
                     stakeAddresses: root.backend ? root.backend.stakeAddresses : []
                     peerId: root.peerId
+                    peerCount: root.backend ? root.backend.peerCount : -1
+                    connectionCount: root.backend ? root.backend.connectionCount : -1
                     blendRole: root.backend ? root.backend.blendRole
                                             : BlockchainBackend.Unknown
                     synced: monitor.synced
