@@ -110,6 +110,15 @@ Rectangle {
     }
 
     LogosToast {
+        id: keystoreBackupToast
+        z: 1
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Theme.spacing.large
+        severity: LogosNotice.Success
+    }
+
+    LogosToast {
         id: stopFailedToast
         z: 1
         anchors.horizontalCenter: parent.horizontalCenter
@@ -962,7 +971,6 @@ Rectangle {
                     id: miningView
                     nodeOffSeverity: root.nodeOffSeverity
                     nodeRunning: opPage.nodeRunning
-                    autoClaimRunning: root.backend ? root.backend.autoClaimRunning : false
                     submittedCount: root.backend ? root.backend.powClaimsSubmitted : 0
                     pendingCount: root.backend ? root.backend.powClaimsPending : 0
                     claimsModel: root.miningClaimsModel
@@ -982,7 +990,6 @@ Rectangle {
                     claimSuccess: _d.claimSuccess
                     claimMessage: _d.claimMessage
 
-                    onAutoClaimToggled: function(enabled) { _d.setAutoClaim(enabled) }
                     onClaimRequested: function(addressHex) { _d.claimPowRewards(addressHex) }
                     onHistoryPendingOnlyChanged: function(pendingOnly) {
                         if (root.backend)
@@ -997,12 +1004,45 @@ Rectangle {
                 }
 
                 // ---- Section 5: Settings ----
-                NodeSettingsView {
-                    userConfig: root.backend ? root.backend.userConfig : ""
-                    deploymentConfig: root.backend ? root.backend.deploymentConfig : ""
-                    useGeneratedConfig: root.backend ? root.backend.useGeneratedConfig : false
-                    canChange: !opPage.canStop
+                // Wrapped rather than made scrollable internally: four cards do
+                // not fit a short window, and the Destructive card is last —
+                // a page that cut off at the bottom would hide exactly what the
+                // user came for when the node is wedged.
+                LogosScrollView {
+                    id: settingsScroll
+
+                    NodeSettingsView {
+                        id: nodeSettingsView
+                        width: settingsScroll.availableWidth
+                        userConfig: root.backend ? root.backend.userConfig : ""
+                        deploymentConfig: root.backend ? root.backend.deploymentConfig : ""
+                        useGeneratedConfig: root.backend ? root.backend.useGeneratedConfig : false
+                        canChange: !opPage.canStop
+                        nodeRunning: root.nodeRunning
+                        nodeDataDir: root.backend ? root.backend.nodeDataDir : ""
+                        nodeKeystorePath: root.backend ? root.backend.nodeKeystorePath : ""
+                        onBackupKeystoreRequested: function(destinationPath) {
+                        if (!root.backend) return
+                        logos.watch(
+                            root.backend.backupKeystore(destinationPath),
+                            function(result) {
+                                if (result.success) {
+                                    nodeSettingsView.backupError = ""
+                                    keystoreBackupToast.show(
+                                        qsTr("Keystore saved"), result.value)
+                                } else {
+                                    nodeSettingsView.backupError = _d.errorText(result.error)
+                                }
+                            },
+                            function(error) {
+                                nodeSettingsView.backupError = _d.errorText(error)
+                            }
+                        )
+                    }
+                    autoClaimRunning: root.backend ? root.backend.autoClaimRunning : false
                     onChangeConfigRequested: _d.currentPage = 0
+                    onAutoClaimToggled: function(enabled) { _d.setAutoClaim(enabled) }
+                    }
                 }
             }
 

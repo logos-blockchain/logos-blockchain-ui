@@ -752,6 +752,8 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         setUserConfig(toLocalPath(envConfigPath));
     else if (!restoredUserConfig.isEmpty())
         setUserConfig(restoredUserConfig);
+    setNodeDataDir(nodeDatabaseDir());
+    setNodeKeystorePath(nodeKeystorePath());
 
     if (!restoredDeploymentConfig.isEmpty())
         setDeploymentConfig(restoredDeploymentConfig);
@@ -839,6 +841,10 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         }
         QSettings("Logos", "BlockchainUI")
             .setValue("userConfigPath", userConfig());
+        // Derived from the config's location, so it moves with it.
+        setNodeDataDir(nodeDatabaseDir());
+    setNodeKeystorePath(nodeKeystorePath());
+        setNodeKeystorePath(nodeKeystorePath());
         // A different config means different keys and different jobs for them.
         refreshAccountRoles();
     });
@@ -1206,6 +1212,70 @@ QString BlockchainBackend::nodeDataDir() const
 // Apparent size, summed recursively. Not `du`: that reports blocks allocated,
 // which differs on a compressing filesystem, and the figure here is meant to
 // answer "how much is this node keeping" rather than to reconcile with df.
+// Where the chain database really is, resolved rather than assumed.
+//
+// Basecamp's generate_user_config writes storage_path ABSOLUTE, which discards
+// the node's own state.base_folder / storage.folder_name composition, so the db
+// lands at <base>/db. Standalone and the CLI omit that routing and keep the
+// defaults, which compose to <base>/state/db. Same app, two layouts — so this
+// looks for the one that exists instead of naming a path the user may not have.
+//
+// Empty when neither is there: the node has not run yet, and there is nothing
+// to delete.
+QString BlockchainBackend::nodeDatabaseDir() const
+{
+    const QString base = nodeDataDir();
+    if (base.isEmpty())
+        return {};
+    const QDir dir(base);
+    for (const QString& candidate : {QStringLiteral("db"), QStringLiteral("state/db")}) {
+        if (dir.exists(candidate))
+            return QDir::toNativeSeparators(dir.filePath(candidate));
+    }
+    return {};
+}
+
+// The node writes its keystore beside its data, under the default name the
+// CLI uses (keys.rs: default_value = "keystore.yaml"). Reported only when it is
+// actually there — offering to back up a file that does not exist is worse than
+// saying nothing.
+QString BlockchainBackend::nodeKeystorePath() const
+{
+    const QString base = nodeDataDir();
+    if (base.isEmpty())
+        return {};
+    const QDir dir(base);
+    if (!dir.exists(QStringLiteral("keystore.yaml")))
+        return {};
+    return QDir::toNativeSeparators(dir.filePath(QStringLiteral("keystore.yaml")));
+}
+
+// Copy, not move. The node reads this file on every start, so a "backup" that
+// relocated it would take the node's keys away at the moment the user was
+// trying to protect them.
+QVariantMap BlockchainBackend::backupKeystore(QString destinationPath)
+{
+    const QString source = nodeKeystorePath();
+    if (source.isEmpty())
+        return result::toVariantMap(result::err(QStringLiteral("No keystore found to back up.")));
+
+    const QString target = toLocalPath(destinationPath.trimmed());
+    if (target.isEmpty())
+        return result::toVariantMap(result::err(QStringLiteral("No destination was given.")));
+
+    // QFile::copy refuses to overwrite, and the save dialog has already asked
+    // the user about replacing. Clear the way so their answer is honoured.
+    if (QFile::exists(target) && !QFile::remove(target)) {
+        return result::toVariantMap(
+            result::err(QStringLiteral("Could not replace %1.").arg(target)));
+    }
+    if (!QFile::copy(source, target)) {
+        return result::toVariantMap(
+            result::err(QStringLiteral("Could not write %1.").arg(target)));
+    }
+    return result::toVariantMap(LogosResult{true, target, QVariant()});
+}
+
 void BlockchainBackend::refreshDiskUsage()
 {
     // The walk is the expensive part — thousands of SST files on a long chain —
