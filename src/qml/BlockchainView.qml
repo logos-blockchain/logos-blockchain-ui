@@ -89,6 +89,8 @@ Rectangle {
     // "<module>/<propertyName>". QML acquires them via logos.model(...).
     readonly property var accountsModel: logos.model("blockchain_ui", "accounts")
     readonly property var blockModel: logos.model("blockchain_ui", "blocks")
+    readonly property var claimsModel: logos.model("blockchain_ui", "claims")
+    readonly property var miningClaimsModel: logos.model("blockchain_ui", "miningClaims")
 
     // Clipboard must be handled here in the UI-host (GUI) process. The backend
     // .rep source runs in a separate, non-GUI ViewModuleHost subprocess where
@@ -822,6 +824,10 @@ Rectangle {
                 LeaderRewardsView {
                     id: leaderRewardsView
                     vouchersJson: root.claimableVouchersJson
+                    submittedCount: root.backend ? root.backend.earnedClaimsSubmitted : 0
+                    pendingCount: root.backend ? root.backend.earnedClaimsPending : 0
+                    claimsModel: root.claimsModel
+                    timeInfoJson: monitor.timeInfoJson
 
                     onClaimLeaderRewardsRequested: function() {
                         if (!root.backend) return
@@ -829,17 +835,30 @@ Rectangle {
                             root.backend.claimLeaderRewards(),
                             function(result) {
                                 if (result.success) {
-                                    leaderRewardsView.setLeaderClaimResult(result.value)
+                                    leaderRewardsView.setLeaderClaimResult(result.value, true)
                                 } else {
-                                    leaderRewardsView.setLeaderClaimResult(_d.errorText(result.error))
+                                    leaderRewardsView.setLeaderClaimResult(_d.errorText(result.error), false)
                                 }
                                 root.refreshClaimableVouchers()
                             },
-                            function(error) { leaderRewardsView.setLeaderClaimResult(_d.errorText(error)) }
+                            function(error) {
+                                leaderRewardsView.setLeaderClaimResult(_d.errorText(error), false)
+                            }
                         )
                     }
                     onCopyToClipboard: (text) => {
                         root.copyText(text)
+                    }
+                    onHistoryPendingOnlyChanged: function(pendingOnly) {
+                        if (root.backend)
+                            root.backend.setClaimHistoryFilter(pendingOnly ? 1 : 0)
+                    }
+                    // Section 1 is the Explorer — keep in step with the tab bar.
+                    onOpenInExplorerRequested: function(id) {
+                        if (!id || id.length === 0)
+                            return
+                        sectionTabs.currentIndex = 1
+                        explorerView.searchFor(id)
                     }
                 }
 
@@ -848,8 +867,10 @@ Rectangle {
                     id: miningView
                     nodeRunning: opPage.nodeRunning
                     autoClaimRunning: root.backend ? root.backend.autoClaimRunning : false
-                    rewardsClaimed: root.backend ? root.backend.powRewardsClaimed : 0
-                    rewardsLepta: root.backend ? root.backend.powRewardsLepta : ""
+                    submittedCount: root.backend ? root.backend.powClaimsSubmitted : 0
+                    pendingCount: root.backend ? root.backend.powClaimsPending : 0
+                    claimsModel: root.miningClaimsModel
+                    timeInfoJson: monitor.timeInfoJson
                     accounts: root.backend ? root.backend.accountRows : []
 
                     claimsStalled: root.backend ? root.backend.claimsStalled : false
@@ -866,6 +887,16 @@ Rectangle {
 
                     onAutoClaimToggled: function(enabled) { _d.setAutoClaim(enabled) }
                     onClaimRequested: function(addressHex) { _d.claimPowRewards(addressHex) }
+                    onHistoryPendingOnlyChanged: function(pendingOnly) {
+                        if (root.backend)
+                            root.backend.setMiningHistoryFilter(pendingOnly ? 1 : 0)
+                    }
+                    onOpenInExplorerRequested: function(id) {
+                        if (!id || id.length === 0)
+                            return
+                        sectionTabs.currentIndex = 1
+                        explorerView.searchFor(id)
+                    }
                 }
 
                 // ---- Section 4: Wallet ----

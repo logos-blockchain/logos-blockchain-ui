@@ -149,6 +149,16 @@ constexpr int kEventFetchesPerPoll = 8;
 // NotFound every time and is genuinely gone; a busy node answers the same way
 // once and then succeeds, which is the case this exists for.
 constexpr int kMaxEventFetchAttempts = 3;
+// How far finality may advance past a submitted claim before this app stops
+// saying it is in flight. A claim is included within a slot or two or not at
+// all, so this is generous by a wide margin — it exists so a claim that was
+// priced out, or lost with the mempool, cannot sit in the count for ever and
+// quietly turn "in flight" into "at some point we pressed the button".
+//
+// Counted in LIB slots rather than wall time on purpose: a node that has
+// stopped advancing has not failed to include the claim, and expiring one on a
+// stalled chain would be blaming the claim for the node's problem.
+constexpr quint64 kSubmissionWindowSlots = 150;
 // The ledger is rewritten whole on every save, and a catch-up replay can find
 // claims faster than a disk write is worth doing. Anything newer than this is
 // still in memory, and is flushed when the node stops.
@@ -694,6 +704,8 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     , m_logosAPI(logosAPI)
     , m_accountsModel(new AccountsModel(this))
     , m_blockModel(new BlockModel(this))
+    , m_claimsModel(new ClaimsModel(ClaimLedger::Kind::Staking, this))
+    , m_miningClaimsModel(new ClaimsModel(ClaimLedger::Kind::Mining, this))
 {
     setStatus(NotStarted);
     // Nothing has contradicted it yet; only a failed probe may say otherwise.
@@ -1029,8 +1041,10 @@ QVariantMap BlockchainBackend::claimLeaderRewards()
     if (!m_blockchainClient)
         return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
 
-    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, "leader_claim")));
+    const QVariantMap reply = result::toVariantMap(result::toLogosResult(
+        m_blockchainClient->invokeRemoteMethod(BLOCKCHAIN_MODULE_NAME, "leader_claim")));
+    noteSubmittedClaim(ClaimLedger::Kind::Staking, reply);
+    return reply;
 }
 
 // Consensus time info as JSON: { slot_duration_ms, genesis_time_unix_ms,
@@ -1343,9 +1357,34 @@ void BlockchainBackend::saveClaims(bool force)
         m_claimsSaved.restart();
 }
 
+// 0 all, 1 pending only — see the .rep. Anything else falls back to showing
+// everything rather than an empty list the user cannot explain.
+void BlockchainBackend::setClaimHistoryFilter(int mode)
+{
+    m_claimsModel->setFilter(mode == 1 ? ClaimsModel::PendingOnly : ClaimsModel::All);
+}
+
+void BlockchainBackend::setMiningHistoryFilter(int mode)
+{
+    m_miningClaimsModel->setFilter(mode == 1 ? ClaimsModel::PendingOnly : ClaimsModel::All);
+}
+
 void BlockchainBackend::publishClaims()
 {
-    if (!m_claimsLoaded || m_libSlot == 0)
+    if (!m_claimsLoaded)
+        return;
+
+    // Deliberately above the LIB guard. "We sent this" is true the moment we
+    // send it and owes the chain nothing, so it must not wait on the finality
+    // gate the totals below are subject to — a claim made seconds after the
+    // node started would otherwise show nothing at all until the first block
+    // event arrived, which is the silence this tile exists to end.
+    if (m_claims.expireSubmissions(m_libSlot, kSubmissionWindowSlots) > 0)
+        saveClaims();
+    setEarnedClaimsSubmitted(m_claims.submittedCount(ClaimLedger::Kind::Staking));
+    setPowClaimsSubmitted(m_claims.submittedCount(ClaimLedger::Kind::Mining));
+
+    if (m_libSlot == 0)
         return;
     // Staking is gross: its fee is funded from notes the claim never touches,
     // so there is no net figure to have.
@@ -1354,6 +1393,14 @@ void BlockchainBackend::publishClaims()
     setPowRewardsLepta(m_claims.confirmedTotal(ClaimLedger::Kind::Mining, m_libSlot));
     setPowRewardsClaimed(m_claims.confirmedCount(ClaimLedger::Kind::Mining, m_libSlot));
     setClaimsCountingSince(m_claims.countingSince());
+    setEarnedClaimsPending(m_claims.pendingCount(ClaimLedger::Kind::Staking, m_libSlot));
+    setPowClaimsPending(m_claims.pendingCount(ClaimLedger::Kind::Mining, m_libSlot));
+
+    // Same source, same moment, same finality gate as the four figures above —
+    // so a row can never say something the totals contradict. The model no-ops
+    // when nothing moved, which is every poll but the rare one.
+    m_claimsModel->setClaims(m_claims.records(), m_libSlot);
+    m_miningClaimsModel->setClaims(m_claims.records(), m_libSlot);
 }
 
 QString BlockchainBackend::chainIdentity()
@@ -1693,11 +1740,38 @@ void BlockchainBackend::recordClaimsFrom(const QString& eventsJson, const Pendin
         // slot on the next start, where the LIB gate could judge it against a
         // block it is no longer in.
         m_claims.add(record);
+        // The claim we sent has been seen on chain, so it is no longer in
+        // flight. A mining claim bundles many tickets into one transaction and
+        // so answers here once per ticket; the first clears the submission and
+        // the rest find nothing, which is what we want.
+        m_claims.clearSubmission(record.kind, normalizeHex(record.txHash));
         changed = true;
     }
 
     if (changed)
         saveClaims();
+}
+
+// The reply is the module's, verbatim: { success, value, error }. `value` is a
+// transaction hash on success and nothing useful otherwise, and a claim that
+// the node refused was never submitted — so a failure records nothing rather
+// than putting a claim in flight that does not exist.
+void BlockchainBackend::noteSubmittedClaim(ClaimLedger::Kind kind, const QVariantMap& reply)
+{
+    if (!m_claimsLoaded || !reply.value(QStringLiteral("success")).toBool())
+        return;
+
+    ClaimLedger::Submission submission;
+    submission.kind = kind;
+    submission.txHash = normalizeHex(reply.value(QStringLiteral("value")).toString());
+    submission.libSlotAtSubmit = m_libSlot;
+    if (!m_claims.addSubmission(submission))
+        return;
+
+    saveClaims();
+    // Straight to the views rather than waiting for the next status poll: this
+    // is the one figure whose whole value is that it answers the button press.
+    publishClaims();
 }
 
 void BlockchainBackend::clearStake()
@@ -1882,6 +1956,8 @@ QVariantMap BlockchainBackend::powClaim(QString claimAddressHex)
     const QVariantMap reply = result::toVariantMap(result::toLogosResult(
         m_blockchainClient->invokeRemoteMethod(
             BLOCKCHAIN_MODULE_NAME, QStringLiteral("pow_claim"), claimAddressHex.trimmed())));
+
+    noteSubmittedClaim(ClaimLedger::Kind::Mining, reply);
 
     // The count has moved either way — a claim can fail after consuming tickets
     // — and waiting a full interval makes a successful claim look inert.
