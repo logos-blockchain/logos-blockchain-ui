@@ -173,19 +173,54 @@ Rectangle {
         root.ready && root.backend
         && root.backend.status === BlockchainBackend.Running
 
+    // Why the node cannot answer right now, or empty when it can. One string,
+    // computed where the status actually lives, so a view does not have to
+    // infer "start the node" from a single boolean and be wrong about it — a
+    // node that is bootstrapping IS running, and one whose module died needs
+    // the app restarted, not the node started.
+    readonly property string nodeOffReason: {
+        if (!root.ready || !root.backend)
+            return qsTr("Connecting to the node service…")
+        if (!root.moduleReachable)
+            return qsTr("The node service stopped responding. Restart the app.")
+        switch (root.backend.status) {
+        case BlockchainBackend.Running:
+            return monitor.synced ? "" : qsTr("The node is still catching up.")
+        case BlockchainBackend.Starting:
+            return qsTr("The node is starting…")
+        case BlockchainBackend.Stopping:
+            return qsTr("The node is stopping…")
+        case BlockchainBackend.Error:
+            return qsTr("The node stopped unexpectedly. Start it again from the Node tab.")
+        default:
+            return qsTr("Start the node from the Node tab.")
+        }
+    }
+
+    // Error only when something is wrong and the user must act; Info for the
+    // transient and the expected. A node that has not been started yet is not
+    // a warning — it is Tuesday.
+    readonly property int nodeOffSeverity: {
+        if (!root.moduleReachable)
+            return LogosNotice.Error
+        if (root.backend && root.backend.status === BlockchainBackend.Error)
+            return LogosNotice.Error
+        return LogosNotice.Info
+    }
+
     readonly property bool moduleReachable:
         !root.backend || root.backend.nodeModuleReachable === undefined
         || root.backend.nodeModuleReachable
 
 
     // The backend polls and derives; this only says whether anyone is looking,
-    // which is the one half of it the backend cannot know. Section 3 is Mining,
+    // which is the one half of it the backend cannot know. Section 4 is Mining,
     // the only place the claimable counts are shown — keep this in step with
     // the tab bar.
     Binding {
         target: root.backend
         property: "claimablePollActive"
-        value: root.nodeRunning && _d.currentPage === 1 && opPage.sectionIndex === 3
+        value: root.nodeRunning && _d.currentPage === 1 && opPage.sectionIndex === 4
         when: root.backend !== null
         restoreMode: Binding.RestoreNone
     }
@@ -546,8 +581,9 @@ Rectangle {
                 // Whichever way this went, the message belonged to the previous
                 // run of the node and no longer describes anything.
                 _d.miningError = ""
-                if (!nodeRunning && sectionIndex >= 2 && sectionIndex <= 4)
-                    sectionTabs.currentIndex = 0
+                // No tab is gated on the node any more: every view states why
+                // it cannot answer instead of being unreachable. So a stopping
+                // node no longer moves the user off the tab they chose.
             }
 
             // A node module whose process is gone leaves status frozen at Error,
@@ -681,8 +717,13 @@ Rectangle {
 
                 // Index-for-index with operationStack's children below.
                 LogosTabButton {
-                    objectName: "tabDashboard"
-                    text: qsTr("Dashboard")
+                    objectName: "tabNode"
+                    text: qsTr("Node")
+                    font.pixelSize: Theme.typography.secondaryText
+                }
+                LogosTabButton {
+                    objectName: "tabRewards"
+                    text: qsTr("Rewards")
                     font.pixelSize: Theme.typography.secondaryText
                 }
                 // Ungated: the lookup itself needs a node, but the block table
@@ -693,22 +734,14 @@ Rectangle {
                     font.pixelSize: Theme.typography.secondaryText
                 }
                 LogosTabButton {
-                    objectName: "tabRewards"
-                    text: qsTr("Rewards")
+                    objectName: "tabWallet"
+                    text: qsTr("Wallet")
                     font.pixelSize: Theme.typography.secondaryText
-                    enabled: opPage.nodeRunning
                 }
                 LogosTabButton {
                     objectName: "tabMining"
                     text: qsTr("Mining")
                     font.pixelSize: Theme.typography.secondaryText
-                    enabled: opPage.nodeRunning
-                }
-                LogosTabButton {
-                    objectName: "tabWallet"
-                    text: qsTr("Wallet")
-                    font.pixelSize: Theme.typography.secondaryText
-                    enabled: opPage.nodeRunning
                 }
                 LogosTabButton {
                     objectName: "tabSettings"
@@ -723,7 +756,7 @@ Rectangle {
                 Layout.fillHeight: true
                 currentIndex: opPage.sectionIndex
 
-                // ---- Section 0: Dashboard ----
+                // ---- Section 0: Node ----
                 NodeDashboardView {
                     status: root.backend ? root.backend.status : -1
                     connected: root.ready && root.backend !== null
@@ -771,9 +804,55 @@ Rectangle {
                     powActive: root.backend ? root.backend.powActive : false
                 }
 
-                // ---- Section 1: Explorer (lookup + the blocks this node saw) ----
+                // ---- Section 1: Rewards ----
+                LeaderRewardsView {
+                    id: leaderRewardsView
+                    nodeOffSeverity: root.nodeOffSeverity
+                    vouchersJson: root.claimableVouchersJson
+                    submittedCount: root.backend ? root.backend.earnedClaimsSubmitted : 0
+                    pendingCount: root.backend ? root.backend.earnedClaimsPending : 0
+                    claimsModel: root.claimsModel
+                    nodeOffReason: root.nodeOffReason
+                    timeInfoJson: monitor.timeInfoJson
+
+                    onClaimLeaderRewardsRequested: function() {
+                        if (!root.backend) return
+                        logos.watch(
+                            root.backend.claimLeaderRewards(),
+                            function(result) {
+                                if (result.success) {
+                                    leaderRewardsView.setLeaderClaimResult(result.value, true)
+                                } else {
+                                    leaderRewardsView.setLeaderClaimResult(_d.errorText(result.error), false)
+                                }
+                                root.refreshClaimableVouchers()
+                            },
+                            function(error) {
+                                leaderRewardsView.setLeaderClaimResult(_d.errorText(error), false)
+                            }
+                        )
+                    }
+                    onCopyToClipboard: (text) => {
+                        root.copyText(text)
+                    }
+                    onHistoryPendingOnlyChanged: function(pendingOnly) {
+                        if (root.backend)
+                            root.backend.setClaimHistoryFilter(pendingOnly ? 1 : 0)
+                    }
+                    // Section 2 is the Explorer — keep in step with the tab bar.
+                    onOpenInExplorerRequested: function(id) {
+                        if (!id || id.length === 0)
+                            return
+                        sectionTabs.currentIndex = 2
+                        explorerView.searchFor(id)
+                    }
+                }
+
+                // ---- Section 2: Explorer (lookup + the blocks this node saw) ----
                 ExplorerView {
                     id: explorerView
+                    nodeOffSeverity: root.nodeOffSeverity
+                    nodeOffReason: root.nodeOffReason
                     nodeRunning: opPage.nodeRunning
                     nodeReportedState: monitor.infoJson.length > 0
                     blockModel: root.blockModel
@@ -820,88 +899,11 @@ Rectangle {
                     onCopyToClipboard: (text) => root.copyText(text)
                 }
 
-                // ---- Section 2: Rewards ----
-                LeaderRewardsView {
-                    id: leaderRewardsView
-                    vouchersJson: root.claimableVouchersJson
-                    submittedCount: root.backend ? root.backend.earnedClaimsSubmitted : 0
-                    pendingCount: root.backend ? root.backend.earnedClaimsPending : 0
-                    claimsModel: root.claimsModel
-                    timeInfoJson: monitor.timeInfoJson
-
-                    onClaimLeaderRewardsRequested: function() {
-                        if (!root.backend) return
-                        logos.watch(
-                            root.backend.claimLeaderRewards(),
-                            function(result) {
-                                if (result.success) {
-                                    leaderRewardsView.setLeaderClaimResult(result.value, true)
-                                } else {
-                                    leaderRewardsView.setLeaderClaimResult(_d.errorText(result.error), false)
-                                }
-                                root.refreshClaimableVouchers()
-                            },
-                            function(error) {
-                                leaderRewardsView.setLeaderClaimResult(_d.errorText(error), false)
-                            }
-                        )
-                    }
-                    onCopyToClipboard: (text) => {
-                        root.copyText(text)
-                    }
-                    onHistoryPendingOnlyChanged: function(pendingOnly) {
-                        if (root.backend)
-                            root.backend.setClaimHistoryFilter(pendingOnly ? 1 : 0)
-                    }
-                    // Section 1 is the Explorer — keep in step with the tab bar.
-                    onOpenInExplorerRequested: function(id) {
-                        if (!id || id.length === 0)
-                            return
-                        sectionTabs.currentIndex = 1
-                        explorerView.searchFor(id)
-                    }
-                }
-
-                // ---- Section 3: Mining (PoW tickets and claiming) ----
-                MiningView {
-                    id: miningView
-                    nodeRunning: opPage.nodeRunning
-                    autoClaimRunning: root.backend ? root.backend.autoClaimRunning : false
-                    submittedCount: root.backend ? root.backend.powClaimsSubmitted : 0
-                    pendingCount: root.backend ? root.backend.powClaimsPending : 0
-                    claimsModel: root.miningClaimsModel
-                    timeInfoJson: monitor.timeInfoJson
-                    accounts: root.backend ? root.backend.accountRows : []
-
-                    claimsStalled: root.backend ? root.backend.claimsStalled : false
-                    claimStallSeconds: root.backend ? root.backend.claimStallSeconds : 0
-                    claimableTickets: root.backend ? root.backend.claimableTickets : 0
-                    soonestExpirySlots: root.backend ? root.backend.soonestExpirySlots : -1
-                    soonestExpiryCount: root.backend ? root.backend.soonestExpiryCount : 0
-                    claimableLoaded: root.backend ? root.backend.claimableLoaded : false
-                    claimableError: root.backend ? root.backend.claimableError : ""
-
-                    claimBusy: _d.claimBusy
-                    claimSuccess: _d.claimSuccess
-                    claimMessage: _d.claimMessage
-
-                    onAutoClaimToggled: function(enabled) { _d.setAutoClaim(enabled) }
-                    onClaimRequested: function(addressHex) { _d.claimPowRewards(addressHex) }
-                    onHistoryPendingOnlyChanged: function(pendingOnly) {
-                        if (root.backend)
-                            root.backend.setMiningHistoryFilter(pendingOnly ? 1 : 0)
-                    }
-                    onOpenInExplorerRequested: function(id) {
-                        if (!id || id.length === 0)
-                            return
-                        sectionTabs.currentIndex = 1
-                        explorerView.searchFor(id)
-                    }
-                }
-
-                // ---- Section 4: Wallet ----
+                // ---- Section 3: Wallet ----
                 WalletView {
                     id: walletView
+                    nodeOffSeverity: root.nodeOffSeverity
+                    nodeOffReason: root.nodeOffReason
                     accountsModel: root.accountsModel
                     accountRows: root.backend ? root.backend.accountRows : []
                     nodeRunning: opPage.nodeRunning
@@ -953,6 +955,45 @@ Rectangle {
                     }
 
                     onCopyToClipboard: (text) => root.copyText(text)
+                }
+
+                // ---- Section 4: Mining (PoW tickets and claiming) ----
+                MiningView {
+                    id: miningView
+                    nodeOffSeverity: root.nodeOffSeverity
+                    nodeRunning: opPage.nodeRunning
+                    autoClaimRunning: root.backend ? root.backend.autoClaimRunning : false
+                    submittedCount: root.backend ? root.backend.powClaimsSubmitted : 0
+                    pendingCount: root.backend ? root.backend.powClaimsPending : 0
+                    claimsModel: root.miningClaimsModel
+                    nodeOffReason: root.nodeOffReason
+                    timeInfoJson: monitor.timeInfoJson
+                    accounts: root.backend ? root.backend.accountRows : []
+
+                    claimsStalled: root.backend ? root.backend.claimsStalled : false
+                    claimStallSeconds: root.backend ? root.backend.claimStallSeconds : 0
+                    claimableTickets: root.backend ? root.backend.claimableTickets : 0
+                    soonestExpirySlots: root.backend ? root.backend.soonestExpirySlots : -1
+                    soonestExpiryCount: root.backend ? root.backend.soonestExpiryCount : 0
+                    claimableLoaded: root.backend ? root.backend.claimableLoaded : false
+                    claimableError: root.backend ? root.backend.claimableError : ""
+
+                    claimBusy: _d.claimBusy
+                    claimSuccess: _d.claimSuccess
+                    claimMessage: _d.claimMessage
+
+                    onAutoClaimToggled: function(enabled) { _d.setAutoClaim(enabled) }
+                    onClaimRequested: function(addressHex) { _d.claimPowRewards(addressHex) }
+                    onHistoryPendingOnlyChanged: function(pendingOnly) {
+                        if (root.backend)
+                            root.backend.setMiningHistoryFilter(pendingOnly ? 1 : 0)
+                    }
+                    onOpenInExplorerRequested: function(id) {
+                        if (!id || id.length === 0)
+                            return
+                        sectionTabs.currentIndex = 2
+                        explorerView.searchFor(id)
+                    }
                 }
 
                 // ---- Section 5: Settings ----

@@ -28,6 +28,9 @@ ColumnLayout {
     signal copyToClipboard(string text)
 
     property bool nodeRunning: false
+    // Why the node cannot answer, or empty when it can, plus its severity.
+    property string nodeOffReason: ""
+    property int nodeOffSeverity: LogosNotice.Info
 
     // ---- Block table ----
     required property var blockModel
@@ -185,6 +188,11 @@ ColumnLayout {
     }
 
     spacing: Theme.spacing.large
+
+    NodeOffNotice {
+        reason: root.nodeOffReason
+        reasonSeverity: root.nodeOffSeverity
+    }
 
     // ---- Search ----
     RowLayout {

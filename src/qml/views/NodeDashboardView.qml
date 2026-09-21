@@ -762,35 +762,6 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Layout.minimumWidth: d.minTileWidth
-                    label: qsTr("Mining Rewards")
-                    value: root.powRewardsLepta.length > 0
-                           ? Units.format(root.powRewardsLepta) : Units.format("0")
-                    flashOnChange: true
-                    flashColor: Theme.palette.success
-                    severity: (root.miningError.length > 0 || root.claimsStalled)
-                              ? LogosStatCard.Warning : LogosStatCard.None
-                    caption: d.miningCaption
-                    captionTrailing: [
-                        Rectangle {
-                            visible: root.powActive
-                            implicitWidth: 6
-                            implicitHeight: 6
-                            radius: 3
-                            color: Theme.palette.success
-                        }
-                    ]
-                    labelTrailing: [
-                        LogosInfoButton {
-                            title: qsTr("Mining Rewards")
-                            dialogContentItem: InfoSections { info: InfoContent.mining }
-                        }
-                    ]
-                }
-
-                LogosStatCard {
-                    Layout.fillWidth: true
-                    Layout.preferredWidth: 1
-                    Layout.minimumWidth: d.minTileWidth
                     label: qsTr("Blend")
                     value: d.blendLabel
                     // A role is a fact, not a verdict, so tint it rather than
@@ -862,6 +833,52 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Layout.minimumWidth: d.minTileWidth
+                    label: qsTr("Peer ID")
+                    value: d.shorten(root.peerId)
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("Peer ID")
+                            dialogContentItem: InfoSections { info: InfoContent.peerId }
+                        }
+                    ]
+                    captionTrailing: [
+                        LogosCopyButton { value: root.peerId }
+                    ]
+                }
+
+                LogosStatCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
+                    label: qsTr("Mining Rewards")
+                    value: root.powRewardsLepta.length > 0
+                           ? Units.format(root.powRewardsLepta) : Units.format("0")
+                    flashOnChange: true
+                    flashColor: Theme.palette.success
+                    severity: (root.miningError.length > 0 || root.claimsStalled)
+                              ? LogosStatCard.Warning : LogosStatCard.None
+                    caption: d.miningCaption
+                    captionTrailing: [
+                        Rectangle {
+                            visible: root.powActive
+                            implicitWidth: 6
+                            implicitHeight: 6
+                            radius: 3
+                            color: Theme.palette.success
+                        }
+                    ]
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("Mining Rewards")
+                            dialogContentItem: InfoSections { info: InfoContent.mining }
+                        }
+                    ]
+                }
+
+                LogosStatCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
                     label: qsTr("CPU")
                     opacity: d.infoOpacity
                     value: d.cpuText
@@ -912,23 +929,6 @@ Item {
                             title: qsTr("Disk")
                             dialogContentItem: InfoSections { info: InfoContent.disk }
                         }
-                    ]
-                }
-
-                LogosStatCard {
-                    Layout.fillWidth: true
-                    Layout.preferredWidth: 1
-                    Layout.minimumWidth: d.minTileWidth
-                    label: qsTr("Peer ID")
-                    value: d.shorten(root.peerId)
-                    labelTrailing: [
-                        LogosInfoButton {
-                            title: qsTr("Peer ID")
-                            dialogContentItem: InfoSections { info: InfoContent.peerId }
-                        }
-                    ]
-                    captionTrailing: [
-                        LogosCopyButton { value: root.peerId }
                     ]
                 }
 

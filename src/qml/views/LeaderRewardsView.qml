@@ -30,6 +30,11 @@ ColumnLayout {
     // counted from the model, because with the filter on the model holds only
     // pending rows and could never report zero.
     property int pendingCount: 0
+    // Why the node cannot answer, or empty when it can. "Start the node" is
+    // wrong advice for one that is running and merely catching up.
+    property string nodeOffReason: ""
+    // A LogosNotice.Severity for the banner above.
+    property int nodeOffSeverity: LogosNotice.Info
 
     signal claimLeaderRewardsRequested()
     signal copyToClipboard(string text)
@@ -85,6 +90,11 @@ ColumnLayout {
     }
 
     spacing: Theme.spacing.large
+
+    NodeOffNotice {
+        reason: root.nodeOffReason
+        reasonSeverity: root.nodeOffSeverity
+    }
 
     // ---- Header ----
     RowLayout {
@@ -288,7 +298,7 @@ ColumnLayout {
                 wrapMode: Text.WordWrap
                 visible: !d.hasVouchers
                 text: d.reported ? qsTr("Nothing left to claim.")
-                                 : qsTr("Start the node to see claimable vouchers.")
+                                 : root.nodeOffReason
                 color: Theme.palette.textSecondary
                 font.pixelSize: Theme.typography.secondaryText
             }

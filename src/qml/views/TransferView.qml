@@ -16,6 +16,12 @@ ColumnLayout {
     // an empty key. A QVariantList lands whole.
     required property var accountRows
 
+    property bool nodeRunning: false
+    // Why the node cannot answer, or empty when it can.
+    property string nodeOffReason: ""
+    // A LogosNotice.Severity for the banner above.
+    property int nodeOffSeverity: LogosNotice.Info
+
     signal transferRequested(string fromKeyHex, string toKeyHex, string amount)
     signal copyToClipboard(string text)
 
@@ -48,6 +54,11 @@ ColumnLayout {
     }
 
     spacing: Theme.spacing.large
+
+    NodeOffNotice {
+        reason: root.nodeOffReason
+        reasonSeverity: root.nodeOffSeverity
+    }
 
     // No container of its own — WalletView provides the page surface. The form's
     // rows sit directly in the root layout.
@@ -140,7 +151,10 @@ ColumnLayout {
                 id: transferButton
                 Layout.alignment: Qt.AlignTop
                 text: qsTr("Send")
-                enabled: String(transferFromCombo.currentValue || "").trim().length > 0
+                // A transfer needs a node to build and submit it. Without one
+                // the form would take the details and fail at the module.
+                enabled: root.nodeRunning
+                         && String(transferFromCombo.currentValue || "").trim().length > 0
                          && transferToField.text.trim().length > 0
                          && root.amountLepta.length > 0
                          && !root.overBalance

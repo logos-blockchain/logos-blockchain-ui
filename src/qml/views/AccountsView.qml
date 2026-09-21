@@ -14,10 +14,21 @@ ColumnLayout {
 
     required property var accountsModel
 
+    // Empty when the node can answer. An empty list then means the wallet
+    // genuinely has no accounts, which is a different thing to say.
+    property string nodeOffReason: ""
+    // A LogosNotice.Severity for the banner above.
+    property int nodeOffSeverity: LogosNotice.Info
+
     signal refreshAccountsRequested()
     signal copyToClipboard(string text)
 
     spacing: Theme.spacing.large
+
+    NodeOffNotice {
+        reason: root.nodeOffReason
+        reasonSeverity: root.nodeOffSeverity
+    }
 
     RowLayout {
         Layout.fillWidth: true
@@ -27,6 +38,7 @@ ColumnLayout {
             Layout.alignment: Qt.AlignVCenter
             text: qsTr("Refresh")
             padding: Theme.spacing.small
+            enabled: root.nodeOffReason.length === 0
             onClicked: root.refreshAccountsRequested()
 
             LogosToolTip {
@@ -38,13 +50,13 @@ ColumnLayout {
     }
 
     LogosText {
-        text: qsTr("Start node to see accounts here.")
+        text: qsTr("No accounts in this wallet yet.")
         font.pixelSize: Theme.typography.secondaryText
         color: Theme.palette.textSecondary
         wrapMode: Text.WordWrap
         Layout.fillWidth: true
         Layout.minimumWidth: 0
-        visible: balanceListView.count === 0
+        visible: balanceListView.count === 0 && root.nodeOffReason.length === 0
     }
 
     LogosListView {
