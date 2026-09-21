@@ -18,7 +18,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QCryptographicHash>
 #include <QRegularExpression>
+#include <QStandardPaths>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -113,6 +115,44 @@ bool leptaFromLgo(const QString& canonical, QString* lepta, QString* error)
     *lepta = digits;
     return true;
 }
+
+// Mantle ops share one `{ opcode, payload }` wire shape, so the opcode is what
+// identifies the operation. TRANSFER matters here only because it is how a
+// mining reward reaches a wallet: the claim mints to a per-ticket key, and a
+// transfer in the same transaction moves it on.
+constexpr int kTransferOpcode = 0x00;
+constexpr int kLeaderClaimOpcode = 0x30;
+constexpr int kClaimPowRewardOpcode = 0x40;
+
+// Slots and note values cross as JSON numbers, which Qt 6 keeps as exact
+// integers — unlike toDouble(), which starts losing lepta above 2^53. Strings
+// are tolerated because the node's own serializers are not consistent about it.
+quint64 jsonUint(const QJsonValue& value)
+{
+    if (value.isString())
+        return value.toString().toULongLong();
+    return static_cast<quint64>(value.toInteger());
+}
+
+// Base name of the claims ledger, in the UI's own data location. The node it
+// belongs to is appended — see claimLedgerPath().
+constexpr auto kEarnedLedgerFile = "blockchain-ui-earned";
+// A backstop against unbounded memory, not a working limit. The queue only
+// holds blocks that actually carry a leader claim, so a node replaying years of
+// its own history still sits far below this; reaching it means rewards are
+// being dropped, which is why it warns rather than trimming quietly.
+constexpr int kMaxPendingEventBlocks = 50000;
+// Event fetches one poll pays for. Each is a module round trip, so this is a
+// rate limit, not a batch size.
+constexpr int kEventFetchesPerPoll = 8;
+// How many times a block's events are worth asking for. A pruned block answers
+// NotFound every time and is genuinely gone; a busy node answers the same way
+// once and then succeeds, which is the case this exists for.
+constexpr int kMaxEventFetchAttempts = 3;
+// The ledger is rewritten whole on every save, and a catch-up replay can find
+// claims faster than a disk write is worth doing. Anything newer than this is
+// still in memory, and is flushed when the node stops.
+constexpr qint64 kEarnedSaveThrottleMs = 5000;
 constexpr int kFailuresBeforeProbe = 3;
 // Start and stop share one deadline because the reasoning is the same: it is a
 // bound on our own patience, not a prediction of the node's workload. The module
@@ -745,7 +785,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         }
         // A missed probe is not a verdict. Only a run of them is, and even then
         // only if no block has arrived to contradict it in the meantime — see
-        // countPowClaims' sibling below, where the block stream resets this.
+        // the processed-block handler, which resets this on every arrival.
         if (++m_livenessMisses < kLivenessMissesBeforeGone) {
             qWarning() << "liveness: probe missed" << m_livenessMisses << "of"
                        << kLivenessMissesBeforeGone << "- the module may just be busy";
@@ -801,6 +841,18 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
             .setValue("deploymentConfigPath", deploymentConfig());
     });
 
+    // A chain id arrives once per run, and a different one means a different
+    // ledger
+    connect(this, &BlockchainBackendSimpleSource::chainIdChanged, this, [this]() {
+        if (chainId().isEmpty())
+            return;
+        m_claimsLoaded = false;
+        m_libSlot = 0;
+        m_pendingEventBlocks.clear();
+        setEarnedTotal(QString());
+        setEarnedClaimCount(0);
+    });
+
     // A node that isn't running has no blend role. Acquiring one is driven from
     // getCryptarchiaInfo, which is where the readiness edge is visible.
     connect(this, &BlockchainBackendSimpleSource::statusChanged, this, [this]() {
@@ -809,6 +861,12 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
             clearStake();
             clearNetwork();
             setChainId(QString());
+            // A queued block is a fact about the chain, not about the run that
+            // happened to notice it — it names a claim that was paid and is
+            // still owed a lookup. Discarding it here lost those rewards for
+            // good, so it is written out instead, and the next run picks the
+            // queue back up where this one left it.
+            saveClaims(/*force=*/true);
             // The sampler only runs from the status poll, so leaving these up
             // would freeze the last reading on screen and present it as live —
             // the same trap the network counters fell into. Disk is deliberately
@@ -826,8 +884,6 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
 
     // The block model parses every incoming block already, so it reports the
     // claims it sees rather than making us walk the same payload twice.
-    connect(m_blockModel, &BlockModel::powClaimsFound,
-            this, &BlockchainBackend::countPowClaims);
 
     if (!m_logosAPI) {
         qWarning() << "BlockchainBackend: constructed without LogosAPI";
@@ -893,9 +949,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
 
         // Fires per block the node *processes*, which includes the blocks it
         // applies while catching up — the phase where get_cryptarchia_info is
-        // most likely to be too busy to answer. Only the arrival is consumed
-        // here; the event's chain-state payload is left unparsed until its
-        // schema is confirmed against the node's /cryptarchia/blocks/stream.
+        // most likely to be too busy to answer.
         m_blockchainClient->onEvent(
             replica, "processedBlock",
             [this](const QString&, const QVariantList& data) {
@@ -938,6 +992,10 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
                 // It also announces its own end, which newBlock never did.
                 m_blockModel->appendRaw(
                     QDateTime::currentDateTime().toString("HH:mm:ss"), raw);
+                // Parses and queues; the module calls the queue needs are the
+                // status poll's job. Issuing one from here would block the
+                // module inside its own delivery path.
+                noteProcessedBlock(raw);
             });
     } else {
         setError(QStringLiteral("Failed to subscribe to events"));
@@ -1214,6 +1272,434 @@ void BlockchainBackend::refreshChainId()
     setChainId(r.value.toString().trimmed());
 }
 
+// ---- Earned ----------------------------------------------------------------
+//
+// wallet_get_claimable_vouchers answers what is *unclaimed*, and drops to zero
+// the moment a claim settles, so there is nothing to ask the node for here. The
+// chain does say it, though: a leader claim emits LeaderRewardClaimed carrying
+// the reward note, which holds both the settled value and the key it paid to.
+// The app follows those, keeps one record per claim, and persists them.
+
+QString BlockchainBackend::claimLedgerPath() const
+{
+    QString base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+    if (base.isEmpty())
+        base = QDir::tempPath();
+
+    QDir dir(base + QStringLiteral("/Logos/BlockchainUI"));
+    if (!dir.exists() && !dir.mkpath(QStringLiteral(".")))
+        return {};
+
+    const QString config = userConfig().trimmed();
+    if (config.isEmpty())
+        return {};
+    const QString id = QString::fromLatin1(
+        QCryptographicHash::hash(config.toUtf8(), QCryptographicHash::Sha256).toHex().left(16));
+
+    return dir.filePath(QStringLiteral("%1-%2.json")
+                            .arg(QLatin1String(kEarnedLedgerFile), id));
+}
+
+void BlockchainBackend::loadClaimLedger()
+{
+    // The chain id is what decides whether last run's records belong to this
+    // chain at all, so there is nothing to trust until the node reports it. The
+    // path itself no longer waits on the node — it is derived from the config
+    // the user chose — but the guard still does.
+    if (m_claimsLoaded || chainId().isEmpty())
+        return;
+    const QString path = claimLedgerPath();
+    if (path.isEmpty())
+        return;
+
+    // Best-effort: a failure here leaves the identity as chain_id alone rather
+    // than blocking the ledger from opening at all.
+    refreshGenesisId();
+    m_claims.load(path, chainIdentity());
+    // Stamped once, on the run that starts the tally, and never moved after —
+    // it is what lets the tiles say what they actually cover.
+    if (m_claims.countingSince().isEmpty())
+        m_claims.setCountingSince(QDateTime::currentDateTime().toString(Qt::ISODate));
+    // What the file remembers is older than anything noticed since this run
+    // started, so it goes in front: the queue stays oldest-first, which is the
+    // order the drain takes it in.
+    QVector<PendingBlock> restored = m_claims.pending();
+    restored += m_pendingEventBlocks;
+    m_pendingEventBlocks = std::move(restored);
+    m_claimsLoaded = true;
+    m_claimsSaved.restart();
+    publishClaims();
+}
+
+void BlockchainBackend::saveClaims(bool force)
+{
+    if (!m_claimsLoaded || claimLedgerPath().isEmpty())
+        return;
+    if (!force && m_claimsSaved.isValid() && m_claimsSaved.elapsed() < kEarnedSaveThrottleMs)
+        return;
+
+    m_claims.setPending(m_pendingEventBlocks);
+    if (m_claims.save(claimLedgerPath()))
+        m_claimsSaved.restart();
+}
+
+void BlockchainBackend::publishClaims()
+{
+    if (!m_claimsLoaded || m_libSlot == 0)
+        return;
+    // Staking is gross: its fee is funded from notes the claim never touches,
+    // so there is no net figure to have.
+    setEarnedTotal(m_claims.confirmedTotal(ClaimLedger::Kind::Staking, m_libSlot));
+    setEarnedClaimCount(m_claims.confirmedCount(ClaimLedger::Kind::Staking, m_libSlot));
+    setPowRewardsLepta(m_claims.confirmedTotal(ClaimLedger::Kind::Mining, m_libSlot));
+    setPowRewardsClaimed(m_claims.confirmedCount(ClaimLedger::Kind::Mining, m_libSlot));
+    setClaimsCountingSince(m_claims.countingSince());
+}
+
+QString BlockchainBackend::chainIdentity()
+{
+    // chain_id on its own is the release string inscribed in genesis —
+    // "0.3.0-rc.3", "standalone/X.Y.Z" — so a devnet rebuilt at the same
+    // release reuses it and the guard would hand the new chain the old chain's
+    // totals. The genesis block id is what actually differs between two chains
+    // built from the same release.
+    //
+    // When it cannot be fetched the identity degrades to chain_id alone, which
+    // is exactly what the guard used to be: weaker, never wrong in a new way,
+    // and it upgrades itself on the next run that can reach the node.
+    if (m_genesisId.isEmpty())
+        return chainId();
+    return chainId() + QLatin1Char('@') + m_genesisId;
+}
+
+void BlockchainBackend::refreshGenesisId()
+{
+    if (!m_genesisId.isEmpty() || !m_blockchainClient || status() != Running)
+        return;
+
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_blocks"), QVariant::fromValue(0),
+        QVariant::fromValue(0)));
+    if (!r.success || !stillRunning())
+        return;
+
+    const QJsonArray blocks = QJsonDocument::fromJson(r.value.toString().toUtf8()).array();
+    if (blocks.isEmpty())
+        return;
+    const QString id = blocks.first()
+                           .toObject()
+                           .value(QStringLiteral("header"))
+                           .toObject()
+                           .value(QStringLiteral("id"))
+                           .toString();
+    if (id.isEmpty())
+        return;
+    m_genesisId = normalizeHex(id);
+}
+
+// Who the leader claims in a block pay, if any.
+//
+// The claim op names its beneficiary, which is the same thing that makes a PoW
+// claim ours (see collectPowClaims in BlockModel.cpp) — but unlike PoW, the op
+// does not carry the amount. The ledger works that out when it applies the
+// claim, and only the resulting event reports it, so a match here buys an event
+// fetch rather than a finished answer.
+//
+// Answering with the keys rather than a yes/no keeps this independent of the
+// wallet: whether a claim is *ours* is a question the caller can postpone, but
+// whether the block holds a claim at all is settled here and for good.
+QHash<QString, BlockchainBackend::PendingBlock::TxClaim>
+BlockchainBackend::claimPayeesByTx(const QJsonObject& block)
+{
+    QHash<QString, PendingBlock::TxClaim> out;
+    const QJsonArray txs = block.value(QStringLiteral("transactions")).toArray();
+
+    for (const QJsonValue txValue : txs) {
+        const QJsonObject tx = txValue.toObject();
+        // `{ id, mantle_tx: { ops: [...] }, ops_proofs }` — the id is flattened
+        // in beside the signed transaction, so the ops sit one level down. That
+        // id is the transaction's own hash, which is what its events are keyed
+        // by, so it is the join between a block and the events fetched for it.
+        const QString txHash = tx.value(QStringLiteral("id")).toString();
+        if (txHash.isEmpty())
+            continue;
+        const QJsonArray ops = tx.value(QStringLiteral("mantle_tx"))
+                                   .toObject()
+                                   .value(QStringLiteral("ops"))
+                                   .toArray();
+
+        bool holdsClaim = false;
+        PendingBlock::TxClaim claim;
+        QStringList transferPayees;
+
+        for (const QJsonValue opValue : ops) {
+            const QJsonObject fields = opValue.toObject();
+            const QJsonObject payload = fields.value(QStringLiteral("payload")).toObject();
+
+            switch (fields.value(QStringLiteral("opcode")).toInt(-1)) {
+            case kLeaderClaimOpcode: {
+                // A staking reward is minted straight to the key the op names,
+                // so the op alone settles whose it is.
+                holdsClaim = true;
+                const QString pk = normalizeHex(payload.value(QStringLiteral("pk")).toString());
+                if (!pk.isEmpty() && !claim.payees.contains(pk))
+                    claim.payees << pk;
+                break;
+            }
+            case kClaimPowRewardOpcode:
+                // A mining reward is minted to the per-ticket puzzle key, which
+                // is generated per solution and never matches a wallet. Nothing
+                // in the op says where it ends up — only the transfer below
+                // does, which is why mining is attributed from the transaction
+                // rather than from its claim.
+                holdsClaim = true;
+                break;
+            case kTransferOpcode:
+                // Payee keys ONLY. What these outputs are worth is not income:
+                // a claim transaction returns change to the same key it pays,
+                // so summing them counts the change as earnings. The old mining
+                // counter did exactly that, which is why its figure ran well
+                // above the wallet balance. The amount comes from the event.
+                for (const QJsonValue outValue :
+                     payload.value(QStringLiteral("outputs")).toArray()) {
+                    const QString pk = normalizeHex(
+                        outValue.toObject().value(QStringLiteral("pk")).toString());
+                    if (!pk.isEmpty() && !transferPayees.contains(pk))
+                        transferPayees << pk;
+                }
+                break;
+            default:
+                break;
+            }
+        }
+
+        if (!holdsClaim)
+            continue;
+        // A transfer riding with a claim is how a mining reward reaches us, so
+        // whoever it pays is a candidate. Change comes back to the claim address
+        // too, so every output is a candidate payee rather than just the first.
+        for (const QString& pk : transferPayees) {
+            if (!claim.payees.contains(pk))
+                claim.payees << pk;
+        }
+        if (!claim.payees.isEmpty())
+            out.insert(txHash, claim);
+    }
+    return out;
+}
+
+void BlockchainBackend::noteProcessedBlock(const QString& eventJson)
+{
+    const QJsonObject event = QJsonDocument::fromJson(eventJson.toUtf8()).object();
+    if (event.isEmpty())
+        return;
+
+    // LIB advances, but the stream can deliver an older event after a newer one
+    // when the node switches forks. Taking the maximum keeps the gate from
+    // walking backwards and un-counting a claim that was already confirmed.
+    m_libSlot = std::max(m_libSlot, jsonUint(event.value(QStringLiteral("lib_slot"))));
+
+    const QJsonObject block = event.value(QStringLiteral("block")).toObject();
+    // Blocks carrying no reward claim of either kind are the overwhelming
+    // majority, and ruling them out needs no wallet keys — only the opcode.
+    // That is what keeps a catch-up replay affordable: a node rebuilding its
+    // chain streams its whole history past here, and all of it but the claims
+    // is dropped on sight.
+    QHash<QString, PendingBlock::TxClaim> claims = claimPayeesByTx(block);
+    if (claims.isEmpty())
+        return;
+
+    // Once the keys are known, somebody else's claim is discarded here rather
+    // than queued. Before they are, the claim is kept: it is a small set, and
+    // the payees ride along so the drain can judge it later without re-reading
+    // the block.
+    if (!m_knownAddresses.isEmpty()) {
+        for (auto it = claims.begin(); it != claims.end();) {
+            const QStringList& payees = it.value().payees;
+            const bool ours =
+                std::any_of(payees.cbegin(), payees.cend(),
+                            [this](const QString& pk) { return m_knownAddresses.contains(pk); });
+            if (ours)
+                ++it;
+            else
+                it = claims.erase(it);
+        }
+        if (claims.isEmpty())
+            return;
+    }
+
+    const QJsonObject header = block.value(QStringLiteral("header")).toObject();
+    const QString id = header.value(QStringLiteral("id")).toString();
+    if (id.isEmpty())
+        return;
+
+    PendingBlock queued;
+    queued.blockId = id;
+    queued.slot = jsonUint(header.value(QStringLiteral("slot")));
+    queued.claims = std::move(claims);
+    m_pendingEventBlocks.append(queued);
+
+    // Reaching this is a real loss of rewards, not housekeeping, so it does not
+    // happen quietly. With the opcode filter above, the queue only holds actual
+    // claims, so the cap is far out of reach of any honest backlog.
+    if (m_pendingEventBlocks.size() > kMaxPendingEventBlocks) {
+        const int dropped = m_pendingEventBlocks.size() - kMaxPendingEventBlocks;
+        qWarning() << "Earned: claim backlog exceeded" << kMaxPendingEventBlocks
+                   << "- dropping" << dropped << "unread block(s); the total will be short";
+        m_pendingEventBlocks.remove(0, dropped);
+    }
+
+    // The queue is only worth anything if it outlives the run that built it —
+    // the whole point of following a re-sync is that the drain happens later.
+    saveClaims();
+}
+
+void BlockchainBackend::drainClaimEvents()
+{
+    if (!m_blockchainClient || !m_claimsLoaded)
+        return;
+
+    // Without the wallet's keys there is no telling our claims from every other
+    // leader's. They arrive with the refreshAccounts fired after a successful
+    // start; if that one call lost a race with a busy node, nothing would ever
+    // match again for the rest of the run, so ask again rather than quietly
+    // counting nothing.
+    if (m_knownAddresses.isEmpty()) {
+        refreshAccounts();
+        if (m_knownAddresses.isEmpty())
+            return;
+    }
+
+    bool changed = false;
+    for (int fetched = 0; fetched < kEventFetchesPerPoll && !m_pendingEventBlocks.isEmpty();) {
+        PendingBlock pending = m_pendingEventBlocks.takeFirst();
+        changed = true;
+
+        // Queued before the keys were known, and now knowable: if none of the
+        // claims in it pays us, it never needed an event fetch. Costs nothing
+        // and does not count against the poll's budget.
+        bool ours = false;
+        for (const PendingBlock::TxClaim& claim : pending.claims) {
+            ours = std::any_of(claim.payees.cbegin(), claim.payees.cend(),
+                               [this](const QString& pk) { return m_knownAddresses.contains(pk); });
+            if (ours)
+                break;
+        }
+        if (!ours)
+            continue;
+
+        ++fetched;
+        ++pending.attempts;
+        const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+            BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_block_events"), pending.blockId));
+        // This call blocks in a nested event loop, so the node can have been
+        // stopped inside it — the same trap refreshStake documents. Put the
+        // block back and leave the rest of the queue for the next poll rather
+        // than reading events out of a node that is going away.
+        if (!stillRunning()) {
+            m_pendingEventBlocks.prepend(pending);
+            saveClaims();
+            return;
+        }
+        if (!r.success) {
+            // A pruned block answers NotFound and will answer it every time, so
+            // retrying is bounded. But a busy node, a timeout or a transport
+            // hiccup answers the same way, and dropping on the first failure
+            // turned every one of those into a lost reward.
+            if (pending.attempts < kMaxEventFetchAttempts) {
+                m_pendingEventBlocks.append(pending);
+            } else {
+                qWarning() << "Earned: giving up on block" << pending.blockId << "after"
+                           << pending.attempts << "attempts -" << r.error.toString();
+            }
+            continue;
+        }
+        recordClaimsFrom(r.value.toString(), pending);
+    }
+
+    // recordClaimsFrom saves when it records something; this covers the rest —
+    // blocks resolved to nothing, discarded, or retried. Without it a restart
+    // would re-fetch everything the poll just settled.
+    if (changed)
+        saveClaims();
+}
+
+void BlockchainBackend::recordClaimsFrom(const QString& eventsJson, const PendingBlock& block)
+{
+    const QJsonArray events = QJsonDocument::fromJson(eventsJson.toUtf8()).array();
+    bool changed = false;
+
+    for (const QJsonValue& entry : events) {
+        // Externally-tagged serde enums all the way down:
+        //   { "Tx": { tx_hash, op_id, payload: { "LeaderRewardClaimed": {...} } } }
+        // Header events sit under "Header" and are somebody else's business.
+        const QJsonObject tx = entry.toObject().value(QStringLiteral("Tx")).toObject();
+        const QJsonObject payload = tx.value(QStringLiteral("payload")).toObject();
+
+        ClaimLedger::Record record;
+        QJsonObject claimed = payload.value(QStringLiteral("LeaderRewardClaimed")).toObject();
+        if (!claimed.isEmpty()) {
+            record.kind = ClaimLedger::Kind::Staking;
+            record.nullifier = claimed.value(QStringLiteral("voucher_nullifier")).toString();
+        } else {
+            claimed = payload.value(QStringLiteral("PoWRewardClaimed")).toObject();
+            if (claimed.isEmpty())
+                continue;
+            record.kind = ClaimLedger::Kind::Mining;
+            record.nullifier = claimed.value(QStringLiteral("pow_nullifier")).toString();
+        }
+
+        const QJsonObject note = claimed.value(QStringLiteral("utxo"))
+                                     .toObject()
+                                     .value(QStringLiteral("note"))
+                                     .toObject();
+        // The note's value IS the reward the chain minted, in full, for both
+        // kinds. What it cost to collect is not on the claim.
+        record.value = QString::number(jsonUint(note.value(QStringLiteral("value"))));
+        record.blockId = block.blockId;
+        record.slot = block.slot;
+        record.txHash = tx.value(QStringLiteral("tx_hash")).toString();
+
+        if (record.kind == ClaimLedger::Kind::Staking) {
+            // Minted straight to the beneficiary, so the note settles whose it
+            // is. Every leader on the network claims into the same blocks we do.
+            const QString pk = normalizeHex(note.value(QStringLiteral("pk")).toString());
+            if (!m_knownAddresses.contains(pk))
+                continue;
+            record.payee = pk;
+            // Gas for a staking claim is funded from the wallet's other notes
+            // and never comes off the reward, so nothing here can say what
+            // arrived net. Left empty; the tile says "before fees".
+        } else {
+            // The note's pk is the per-ticket puzzle key and will never be one
+            // of ours. What makes a mining claim ours is the transfer that
+            // carried it, which was read off the block when it was queued.
+            const PendingBlock::TxClaim* claim = block.claimFor(record.txHash);
+            if (!claim)
+                continue;
+            for (const QString& pk : claim->payees) {
+                if (m_knownAddresses.contains(pk)) {
+                    record.payee = pk;
+                    break;
+                }
+            }
+            if (record.payee.isEmpty())
+                continue;
+        }
+
+        // add() answers false for a claim already held, but it still moves the
+        // record to the block it now sits in — and that move has to reach the
+        // file. Saving only on a new claim left a re-landed one carrying its old
+        // slot on the next start, where the LIB gate could judge it against a
+        // block it is no longer in.
+        m_claims.add(record);
+        changed = true;
+    }
+
+    if (changed)
+        saveClaims();
+}
+
 void BlockchainBackend::clearStake()
 {
     setStakeTotal(QString());
@@ -1291,6 +1777,10 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
             // it cannot block on a busy node the way the calls above can.
             refreshResourceUsage();
             refreshDiskUsage();
+            // Not gated on being online: this is a file read, and opening it
+            // early is what lets a claim found during a catch-up replay be
+            // written down rather than held in memory until the node settles.
+            loadClaimLedger();
             if (modeOnline) {
                 refreshBalancesIfStale();
                 if (blendRole() == Unknown)
@@ -1298,6 +1788,14 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
                 // Unlike the blend role, stake is not acquired once: it moves with
                 // every epoch.
                 refreshStake();
+                // Draining is online-only: a catch-up replay finds claims far
+                // faster than they can be looked up, and competing with the
+                // work that gets the node online would only slow both. The
+                // queue is what absorbs the difference — it is persisted, so a
+                // replay's claims wait there and are resolved afterwards
+                // instead of being watched go past.
+                drainClaimEvents();
+                publishClaims();
             } else {
                 if (blendRole() != Unknown)
                     setBlendRole(Unknown);
@@ -1428,24 +1926,6 @@ QVariantMap BlockchainBackend::powStopAutoClaim()
 //
 // A claim transaction pays one address, so matching any of its payout keys
 // makes the whole batch ours.
-void BlockchainBackend::countPowClaims(
-    const QStringList& payoutKeys, int claimCount, quint64 lepta)
-{
-    if (m_knownAddresses.isEmpty() || claimCount <= 0)
-        return;
-
-    for (const QString& payoutKey : payoutKeys) {
-        if (m_knownAddresses.contains(normalizeHex(payoutKey))) {
-            setPowRewardsClaimed(powRewardsClaimed() + claimCount);
-            m_powRewardsLepta += lepta;
-            setPowRewardsLepta(QString::number(m_powRewardsLepta));
-            // Tokens just landed on a key we track, so the cached balances — and
-            // walletFunded with them — are now wrong.
-            refreshBalancesIfStale();
-            return;
-        }
-    }
-}
 
 // Wallet keys from the config file, with the jobs that config gives each one.
 // From the file rather than the wallet because this also answers before a node
@@ -1792,14 +2272,17 @@ void BlockchainBackend::startBlockchain()
     setLastErrorMessage(QString());
     setNodeRecovering(false);
     // The streams are resubscribed below, so last run's progress and end-of-
-    // stream verdict must not carry over into this one. The reward count is
-    // session-scoped for the same reason: it is built from the blocks this
-    // subscription delivers, which start again from the current tip.
+    // stream verdict must not carry over into this one.
+    //
+    // The reward tallies deliberately do NOT reset. They used to, on the
+    // premise that the subscription "starts again from the current tip" — but
+    // processedBlock replays everything the node applies while catching up, so
+    // after a resync the counter silently refilled with history and the tile
+    // meant something different every run. They live in the ledger now, which
+    // dedupes and persists, so a restart continues the same tally instead of
+    // starting a new one that looks like the old.
     setProcessedBlockCount(0);
     setBlockStreamEnded(false);
-    setPowRewardsClaimed(0);
-    m_powRewardsLepta = 0;
-    setPowRewardsLepta(QString());
     m_diagnosisAge.invalidate();
     // Baseline for nodeLogAdvanced(), so the first verdict of this run has
     // something to compare against instead of having to spend a round

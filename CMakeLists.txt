@@ -20,6 +20,8 @@ logos_module(
         src/AccountsModel.cpp
         src/BlockModel.h
         src/BlockModel.cpp
+        src/ClaimLedger.h
+        src/ClaimLedger.cpp
     # TODO(logos-co/logos-liblogos#219): only for the node module's CPU and
     # memory figures — the library behind liblogos's own host-side stats, used
     # here because those stats are not exposed to modules. Goes with the flake

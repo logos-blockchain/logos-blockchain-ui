@@ -55,14 +55,6 @@ public:
 
 signals:
     void countChanged();
-    // One PoW-reward claim transaction in the block just appended: the keys it
-    // pays, and how many mined tickets it redeems (a claim op redeems exactly
-    // one). Emitted once per claim transaction, so a block carrying several
-    // emits several. The payees come from the transaction's transfer outputs,
-    // not from its claim ops — see collectPowClaims. Emitted from here rather
-    // than recovered in the backend because this is where the block is already
-    // parsed; the alternative is walking every payload a second time.
-    void powClaimsFound(const QStringList& payoutKeys, int claimCount, quint64 lepta);
 
 private:
     struct Entry {
