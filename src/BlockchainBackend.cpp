@@ -705,6 +705,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     , m_accountsModel(new AccountsModel(this))
     , m_blockModel(new BlockModel(this))
     , m_claimsModel(new ClaimsModel(ClaimLedger::Kind::Staking, this))
+    , m_miningClaimsModel(new ClaimsModel(ClaimLedger::Kind::Mining, this))
 {
     setStatus(NotStarted);
     // Nothing has contradicted it yet; only a failed probe may say otherwise.
@@ -1363,6 +1364,11 @@ void BlockchainBackend::setClaimHistoryFilter(int mode)
     m_claimsModel->setFilter(mode == 1 ? ClaimsModel::PendingOnly : ClaimsModel::All);
 }
 
+void BlockchainBackend::setMiningHistoryFilter(int mode)
+{
+    m_miningClaimsModel->setFilter(mode == 1 ? ClaimsModel::PendingOnly : ClaimsModel::All);
+}
+
 void BlockchainBackend::publishClaims()
 {
     if (!m_claimsLoaded)
@@ -1388,11 +1394,13 @@ void BlockchainBackend::publishClaims()
     setPowRewardsClaimed(m_claims.confirmedCount(ClaimLedger::Kind::Mining, m_libSlot));
     setClaimsCountingSince(m_claims.countingSince());
     setEarnedClaimsPending(m_claims.pendingCount(ClaimLedger::Kind::Staking, m_libSlot));
+    setPowClaimsPending(m_claims.pendingCount(ClaimLedger::Kind::Mining, m_libSlot));
 
     // Same source, same moment, same finality gate as the four figures above —
     // so a row can never say something the totals contradict. The model no-ops
     // when nothing moved, which is every poll but the rare one.
     m_claimsModel->setClaims(m_claims.records(), m_libSlot);
+    m_miningClaimsModel->setClaims(m_claims.records(), m_libSlot);
 }
 
 QString BlockchainBackend::chainIdentity()

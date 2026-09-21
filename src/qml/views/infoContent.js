@@ -209,6 +209,31 @@ var readyToClaim = {
 // The Mining tab's counterpart to readyToClaim above: that one is vouchers,
 // this one is tickets. They are deliberately worded apart — a voucher keeps
 // until it is claimed, a ticket expires, which is the whole difference.
+// The Mining page header. Distinct from `mining` above, which is the
+// dashboard tile: that one is what mining has PAID, this is what mining IS.
+var miningOverview = {
+    title: "Mining",
+    what: "Proof-of-work. The node searches for tickets; a ticket pays nothing "
+        + "until it is claimed, and expires if it never is. So the number that "
+        + "matters is not how many are mined but how many get claimed \u2014 what "
+        + "claiming has actually paid is on the dashboard, under Mining Rewards.",
+    calc: "Mining is a way into staking rather than a way to earn. It is the "
+        + "permissionless on-ramp: it needs no tokens to start, so it is how a "
+        + "new wallet gets its first ones, which can then age in and lead "
+        + "blocks. Two things make it a poor long-term income.\n\n"
+        + "It is CPU-intensive. The ticket search is deliberately expensive and "
+        + "runs on every core it is given, so a node left mining costs real "
+        + "electricity and heat for as long as it runs.\n\n"
+        + "And the rewards are funded from transaction fees rather than new "
+        + "issuance, with a claim's own fee taking a significant share of what "
+        + "that claim pays. Expect it to fund a wallet, not to grow one.\n\n"
+        + "Mining only stops when you stop it. Auto-claim stops itself, as soon "
+        + "as every claim target has reached its threshold \u2014 after which "
+        + "tickets keep accumulating and expiring, and the search keeps using "
+        + "every core, for nothing.",
+    docs: "https://docs.logos.co/blockchain/concepts/about-mantle"
+}
+
 var claimableTickets = {
     title: "Ready to Claim",
     what: "Mined tickets the node can still redeem. Mining searches for "

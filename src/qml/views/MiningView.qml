@@ -7,6 +7,7 @@ import QtQuick.Layouts
 import Logos.Theme
 import Logos.Controls
 
+import "../controls"
 import "infoContent.js" as InfoContent
 
 // Proof-of-Work mining and claiming.
@@ -40,6 +41,17 @@ ColumnLayout {
     signal claimRequested(string addressHex)
 
     // From the backend, which watches the claimable count fall.
+    // ---- Claim history ----
+    // Remoted ClaimsModel scoped to mining. Null until the replica resolves.
+    property var claimsModel: null
+    // get_time_info payload; only slot_duration_ms and genesis_time_unix_ms are
+    // read, to turn a claim's slot into a date.
+    property string timeInfoJson: ""
+    property int pendingCount: 0
+
+    signal historyPendingOnlyChanged(bool pendingOnly)
+    signal openInExplorerRequested(string id)
+
     property bool claimsStalled: false
     // The window that flag is measured over. Read rather than restated: a number
     // in this message that disagreed with the rule would be worse than no number.
@@ -51,6 +63,18 @@ ColumnLayout {
         id: d
 
         property string selectedAddress: ""
+
+        function safeParse(text) {
+            try { return text && text.length > 0 ? JSON.parse(text) : null }
+            catch (e) { return null }
+        }
+        readonly property var timeInfo: safeParse(root.timeInfoJson)
+        // Two numbers, not the payload: a delegate should not re-parse this
+        // JSON once per visible row for a value identical on every row.
+        readonly property real slotDurationMs:
+            (timeInfo && timeInfo.slot_duration_ms) ? Number(timeInfo.slot_duration_ms) : 0
+        readonly property real genesisTimeMs:
+            (timeInfo && timeInfo.genesis_time_unix_ms) ? Number(timeInfo.genesis_time_unix_ms) : 0
         readonly property string expiryCaption: {
             if (!root.claimableLoaded || root.soonestExpirySlots < 0)
                 return ""
@@ -83,19 +107,30 @@ ColumnLayout {
         }
     }
 
-    LogosText {
+    // ---- Header ----
+    RowLayout {
         Layout.fillWidth: true
-        wrapMode: Text.WordWrap
-        text: qsTr("Mining searches for tickets. A ticket is only worth something once it is "
-                   + "claimed, and unclaimed tickets expire — so what matters is not how many "
-                   + "are mined but how many get claimed. What claiming has paid is on the "
-                   + "dashboard, under Mining Rewards.\n\n"
-                   + "Mining only stops when you stop it. Auto-claim stops itself, as soon as "
-                   + "every claim target has reached its threshold — after which tickets keep "
-                   + "accumulating and expiring, and the search keeps using every core, for "
-                   + "nothing.")
-        font.pixelSize: Theme.typography.secondaryText
-        color: Theme.palette.textSecondary
+        spacing: Theme.spacing.medium
+
+        LogosText {
+            text: qsTr("Tickets")
+            font.pixelSize: Theme.typography.subtitleText
+            font.weight: Theme.typography.weightMedium
+        }
+
+        LogosText {
+            text: qsTr("Mining searches for tickets; unclaimed tickets expire.")
+            color: Theme.palette.textTertiary
+            font.pixelSize: Theme.typography.secondaryText
+        }
+
+        Item { Layout.fillWidth: true }
+
+        LogosInfoButton {
+            Layout.alignment: Qt.AlignVCenter
+            title: qsTr("Mining")
+            dialogContentItem: InfoSections { info: InfoContent.miningOverview }
+        }
     }
 
     // ---- Counters ----
@@ -309,5 +344,64 @@ ColumnLayout {
         color: Theme.palette.textSecondary
     }
 
-    Item { Layout.fillHeight: true }
+    // ---- Claim history ----
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.topMargin: Theme.spacing.small
+        spacing: Theme.spacing.medium
+
+        LogosText {
+            text: qsTr("History")
+            font.pixelSize: Theme.typography.subtitleText
+            font.weight: Theme.typography.weightMedium
+        }
+        Item { Layout.fillWidth: true }
+
+        LogosCheckbox {
+            id: pendingOnlyCheck
+            Layout.alignment: Qt.AlignVCenter
+            visible: root.pendingCount > 0 || checked
+            text: qsTr("Show only pending")
+            font.pixelSize: Theme.typography.secondaryText
+            onToggled: root.historyPendingOnlyChanged(checked)
+        }
+
+        LogosText {
+            visible: claimsList.count > 0
+            text: qsTr("%n claim(s)", "", claimsList.count)
+            color: Theme.palette.textTertiary
+            font.pixelSize: Theme.typography.secondaryText
+        }
+    }
+
+    LogosText {
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
+        visible: claimsList.count === 0
+        text: root.claimsModel === null
+              ? qsTr("Loading…")
+              : pendingOnlyCheck.checked
+                ? qsTr("Nothing pending — every claim has reached finality.")
+                : qsTr("No claims recorded yet. Rewards appear here once a claim settles.")
+        color: Theme.palette.textSecondary
+        font.pixelSize: Theme.typography.secondaryText
+    }
+
+    ListView {
+        id: claimsList
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        Layout.minimumHeight: 120
+        visible: count > 0
+        clip: true
+        spacing: Theme.spacing.small
+        model: root.claimsModel
+        ScrollBar.vertical: LogosScrollBar { policy: ScrollBar.AsNeeded }
+
+        delegate: ClaimDelegate {
+            slotDurationMs: d.slotDurationMs
+            genesisTimeMs: d.genesisTimeMs
+            onOpenInExplorerRequested: (id) => root.openInExplorerRequested(id)
+        }
+    }
 }

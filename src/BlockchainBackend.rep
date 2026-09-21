@@ -98,6 +98,7 @@ class BlockchainBackend
     PROP(int earnedClaimsSubmitted READONLY)
     PROP(int powClaimsSubmitted READONLY)
     PROP(int earnedClaimsPending READONLY)
+    PROP(int powClaimsPending READONLY)
     // When this tally began, ISO 8601, or empty if it has not started. Both
     // reward tiles are honest only if they say what they cover: nobody hands the
     // app a lifetime total, so "12 vouchers since 14 Mar" is a true statement
@@ -210,6 +211,9 @@ class BlockchainBackend
     // the source side so the remoted model holds only the rows that pass, which
     // keeps ListView.count honest instead of counting hidden rows.
     SLOT(void setClaimHistoryFilter(int mode))
+    // Same, for the mining history. Two lists, two filters: they are
+    // different tabs, and one shared filter would move both.
+    SLOT(void setMiningHistoryFilter(int mode))
     SLOT(void clearBlocks())
     SLOT(void copyToClipboard(QString text))
 }

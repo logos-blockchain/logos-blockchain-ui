@@ -31,13 +31,15 @@ class QTimer;
 // AccountsModel* / BlockModel* are subclass-only Q_PROPERTYs — QAbstractItemModel*
 // can't flow through a .rep, so ui-host auto-remotes each such property as
 // "<module>/<propertyName>" (see logos-view-module-runtime/ui-host/main.cpp).
-// QML acquires them via logos.model("blockchain_ui", "accounts"|"blocks"|"claims").
+// QML acquires them via logos.model("blockchain_ui",
+// "accounts"|"blocks"|"claims"|"miningClaims").
 class BlockchainBackend : public BlockchainBackendSimpleSource
 {
     Q_OBJECT
     Q_PROPERTY(AccountsModel* accounts READ accounts CONSTANT)
     Q_PROPERTY(BlockModel* blocks READ blocks CONSTANT)
     Q_PROPERTY(ClaimsModel* claims READ claims CONSTANT)
+    Q_PROPERTY(ClaimsModel* miningClaims READ miningClaims CONSTANT)
 
 public:
     explicit BlockchainBackend(LogosAPI* logosAPI, QObject* parent = nullptr);
@@ -46,6 +48,7 @@ public:
     AccountsModel* accounts() const { return m_accountsModel; }
     BlockModel* blocks() const { return m_blockModel; }
     ClaimsModel* claims() const { return m_claimsModel; }
+    ClaimsModel* miningClaims() const { return m_miningClaimsModel; }
 
     // One node-log signature and what to tell the user when it is seen.
     // `recovering` marks progress rather than failure (replaying stored
@@ -109,6 +112,7 @@ public slots:
     void refreshAccountRoles();
     QVariantMap powConfigure(QString configPath, QString configJson) override;
     void setClaimHistoryFilter(int mode) override;
+    void setMiningHistoryFilter(int mode) override;
     void clearBlocks() override;
     void copyToClipboard(QString text) override;
 
@@ -263,6 +267,7 @@ private:
     AccountsModel* m_accountsModel = nullptr;
     BlockModel* m_blockModel = nullptr;
     ClaimsModel* m_claimsModel = nullptr;
+    ClaimsModel* m_miningClaimsModel = nullptr;
     // Wallet addresses as the node reports them, normalised for comparison
     // against the claim beneficiaries named in incoming blocks.
     QSet<QString> m_knownAddresses;

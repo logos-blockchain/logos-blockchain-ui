@@ -90,6 +90,7 @@ Rectangle {
     readonly property var accountsModel: logos.model("blockchain_ui", "accounts")
     readonly property var blockModel: logos.model("blockchain_ui", "blocks")
     readonly property var claimsModel: logos.model("blockchain_ui", "claims")
+    readonly property var miningClaimsModel: logos.model("blockchain_ui", "miningClaims")
 
     // Clipboard must be handled here in the UI-host (GUI) process. The backend
     // .rep source runs in a separate, non-GUI ViewModuleHost subprocess where
@@ -695,11 +696,13 @@ Rectangle {
                     objectName: "tabRewards"
                     text: qsTr("Rewards")
                     font.pixelSize: Theme.typography.secondaryText
+                    enabled: opPage.nodeRunning
                 }
                 LogosTabButton {
                     objectName: "tabMining"
                     text: qsTr("Mining")
                     font.pixelSize: Theme.typography.secondaryText
+                    enabled: opPage.nodeRunning
                 }
                 LogosTabButton {
                     objectName: "tabWallet"
@@ -865,6 +868,9 @@ Rectangle {
                     nodeRunning: opPage.nodeRunning
                     autoClaimRunning: root.backend ? root.backend.autoClaimRunning : false
                     submittedCount: root.backend ? root.backend.powClaimsSubmitted : 0
+                    pendingCount: root.backend ? root.backend.powClaimsPending : 0
+                    claimsModel: root.miningClaimsModel
+                    timeInfoJson: monitor.timeInfoJson
                     accounts: root.backend ? root.backend.accountRows : []
 
                     claimsStalled: root.backend ? root.backend.claimsStalled : false
@@ -881,6 +887,16 @@ Rectangle {
 
                     onAutoClaimToggled: function(enabled) { _d.setAutoClaim(enabled) }
                     onClaimRequested: function(addressHex) { _d.claimPowRewards(addressHex) }
+                    onHistoryPendingOnlyChanged: function(pendingOnly) {
+                        if (root.backend)
+                            root.backend.setMiningHistoryFilter(pendingOnly ? 1 : 0)
+                    }
+                    onOpenInExplorerRequested: function(id) {
+                        if (!id || id.length === 0)
+                            return
+                        sectionTabs.currentIndex = 1
+                        explorerView.searchFor(id)
+                    }
                 }
 
                 // ---- Section 4: Wallet ----
