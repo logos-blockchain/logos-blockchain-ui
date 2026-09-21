@@ -13,6 +13,12 @@ RowLayout {
     property var accountsModel: null
     property var accountRows: []
     property bool nodeRunning: false
+    // Why the node cannot answer, or empty when it can. Passed down rather
+    // than re-derived: "start the node" is wrong advice for a node that is
+    // already running and merely catching up.
+    property string nodeOffReason: ""
+    // A LogosNotice.Severity for the banner above.
+    property int nodeOffSeverity: LogosNotice.Info
 
     // ---- Requests out (the host orchestrates these) ----
     signal refreshAccountsRequested()
@@ -39,9 +45,11 @@ RowLayout {
         objectName: "walletNav"
         // Index-for-index with walletStack's children below.
         sections: [
-            { label: qsTr("Accounts"), icon: "", needsNode: true },
-            { label: qsTr("Transfer"), icon: "", needsNode: true },
-            { label: qsTr("Channel Deposit"), icon: "", needsNode: true }
+            // No needsNode: every section states why it cannot answer
+            // rather than being unreachable, same as the tabs above.
+            { label: qsTr("Accounts"), icon: "" },
+            { label: qsTr("Transfer"), icon: "" },
+            { label: qsTr("Channel Deposit"), icon: "" }
         ]
         nodeRunning: root.nodeRunning
         currentIndex: walletStack.currentIndex
@@ -61,6 +69,8 @@ RowLayout {
 
             AccountsView {
                 id: accountsView
+                nodeOffSeverity: root.nodeOffSeverity
+                nodeOffReason: root.nodeOffReason
                 accountsModel: root.accountsModel
                 onRefreshAccountsRequested: root.refreshAccountsRequested()
                 onCopyToClipboard: (text) => root.copyToClipboard(text)
@@ -68,6 +78,9 @@ RowLayout {
 
             TransferView {
                 id: transferView
+                nodeOffSeverity: root.nodeOffSeverity
+                nodeRunning: root.nodeRunning
+                nodeOffReason: root.nodeOffReason
                 accountRows: root.accountRows
                 onTransferRequested: (fromKeyHex, toKeyHex, amount) =>
                     root.transferRequested(fromKeyHex, toKeyHex, amount)
@@ -76,6 +89,8 @@ RowLayout {
 
             ChannelDepositView {
                 id: channelDepositView
+                nodeOffSeverity: root.nodeOffSeverity
+                nodeOffReason: root.nodeOffReason
                 accountRows: root.accountRows
                 nodeRunning: root.nodeRunning
                 onGetNotesRequested: (addressHex, optionalTipHex) =>

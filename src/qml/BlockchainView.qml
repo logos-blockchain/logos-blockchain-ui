@@ -173,6 +173,41 @@ Rectangle {
         root.ready && root.backend
         && root.backend.status === BlockchainBackend.Running
 
+    // Why the node cannot answer right now, or empty when it can. One string,
+    // computed where the status actually lives, so a view does not have to
+    // infer "start the node" from a single boolean and be wrong about it — a
+    // node that is bootstrapping IS running, and one whose module died needs
+    // the app restarted, not the node started.
+    readonly property string nodeOffReason: {
+        if (!root.ready || !root.backend)
+            return qsTr("Connecting to the node service…")
+        if (!root.moduleReachable)
+            return qsTr("The node service stopped responding. Restart the app.")
+        switch (root.backend.status) {
+        case BlockchainBackend.Running:
+            return monitor.synced ? "" : qsTr("The node is still catching up.")
+        case BlockchainBackend.Starting:
+            return qsTr("The node is starting…")
+        case BlockchainBackend.Stopping:
+            return qsTr("The node is stopping…")
+        case BlockchainBackend.Error:
+            return qsTr("The node stopped unexpectedly. Start it again from the Node tab.")
+        default:
+            return qsTr("Start the node from the Node tab.")
+        }
+    }
+
+    // Error only when something is wrong and the user must act; Info for the
+    // transient and the expected. A node that has not been started yet is not
+    // a warning — it is Tuesday.
+    readonly property int nodeOffSeverity: {
+        if (!root.moduleReachable)
+            return LogosNotice.Error
+        if (root.backend && root.backend.status === BlockchainBackend.Error)
+            return LogosNotice.Error
+        return LogosNotice.Info
+    }
+
     readonly property bool moduleReachable:
         !root.backend || root.backend.nodeModuleReachable === undefined
         || root.backend.nodeModuleReachable
@@ -546,15 +581,9 @@ Rectangle {
                 // Whichever way this went, the message belonged to the previous
                 // run of the node and no longer describes anything.
                 _d.miningError = ""
-                // Ask the tab whether it is still usable rather than naming
-                // indices: the set of gated tabs and their positions have both
-                // moved before, and a stale range silently strands the user on
-                // a disabled tab or bounces them off an enabled one.
-                if (!nodeRunning) {
-                    const tab = sectionTabs.itemAt(sectionIndex)
-                    if (tab && !tab.enabled)
-                        sectionTabs.currentIndex = 0
-                }
+                // No tab is gated on the node any more: every view states why
+                // it cannot answer instead of being unreachable. So a stopping
+                // node no longer moves the user off the tab they chose.
             }
 
             // A node module whose process is gone leaves status frozen at Error,
@@ -696,7 +725,6 @@ Rectangle {
                     objectName: "tabRewards"
                     text: qsTr("Rewards")
                     font.pixelSize: Theme.typography.secondaryText
-                    enabled: opPage.nodeRunning
                 }
                 // Ungated: the lookup itself needs a node, but the block table
                 // under it does not, and the view says so in place.
@@ -709,13 +737,11 @@ Rectangle {
                     objectName: "tabWallet"
                     text: qsTr("Wallet")
                     font.pixelSize: Theme.typography.secondaryText
-                    enabled: opPage.nodeRunning
                 }
                 LogosTabButton {
                     objectName: "tabMining"
                     text: qsTr("Mining")
                     font.pixelSize: Theme.typography.secondaryText
-                    enabled: opPage.nodeRunning
                 }
                 LogosTabButton {
                     objectName: "tabSettings"
@@ -781,10 +807,12 @@ Rectangle {
                 // ---- Section 1: Rewards ----
                 LeaderRewardsView {
                     id: leaderRewardsView
+                    nodeOffSeverity: root.nodeOffSeverity
                     vouchersJson: root.claimableVouchersJson
                     submittedCount: root.backend ? root.backend.earnedClaimsSubmitted : 0
                     pendingCount: root.backend ? root.backend.earnedClaimsPending : 0
                     claimsModel: root.claimsModel
+                    nodeOffReason: root.nodeOffReason
                     timeInfoJson: monitor.timeInfoJson
 
                     onClaimLeaderRewardsRequested: function() {
@@ -823,6 +851,8 @@ Rectangle {
                 // ---- Section 2: Explorer (lookup + the blocks this node saw) ----
                 ExplorerView {
                     id: explorerView
+                    nodeOffSeverity: root.nodeOffSeverity
+                    nodeOffReason: root.nodeOffReason
                     nodeRunning: opPage.nodeRunning
                     nodeReportedState: monitor.infoJson.length > 0
                     blockModel: root.blockModel
@@ -872,6 +902,8 @@ Rectangle {
                 // ---- Section 3: Wallet ----
                 WalletView {
                     id: walletView
+                    nodeOffSeverity: root.nodeOffSeverity
+                    nodeOffReason: root.nodeOffReason
                     accountsModel: root.accountsModel
                     accountRows: root.backend ? root.backend.accountRows : []
                     nodeRunning: opPage.nodeRunning
@@ -928,11 +960,13 @@ Rectangle {
                 // ---- Section 4: Mining (PoW tickets and claiming) ----
                 MiningView {
                     id: miningView
+                    nodeOffSeverity: root.nodeOffSeverity
                     nodeRunning: opPage.nodeRunning
                     autoClaimRunning: root.backend ? root.backend.autoClaimRunning : false
                     submittedCount: root.backend ? root.backend.powClaimsSubmitted : 0
                     pendingCount: root.backend ? root.backend.powClaimsPending : 0
                     claimsModel: root.miningClaimsModel
+                    nodeOffReason: root.nodeOffReason
                     timeInfoJson: monitor.timeInfoJson
                     accounts: root.backend ? root.backend.accountRows : []
 

@@ -184,7 +184,7 @@ sections:
               find_by: "objectName"
               find_value: "continueToNodeButton"
 
-            - name: "Dashboard shows the config, node not started"
+            - name: "Node view shows the config, node not started"
               action: wait_for
               texts: ["Not started"]
               timeout: 8000
@@ -201,18 +201,22 @@ sections:
                 lane (**Started → Online**), which lights up one stage at a time
                 as the node comes up.
 
-            - name: "Most sections are gated on a running node"
+            - name: "Every section is reachable without a node"
               action: wait_for
-              texts: ["Dashboard", "Explorer", "Rewards", "Mining", "Wallet", "Settings"]
+              texts: ["Node", "Rewards", "Explorer", "Wallet", "Mining", "Settings"]
               timeout: 6000
               screenshot: "blockchain-ui-nav.png"
               text: |
                 Navigation is a tab bar under the node header, one tab per
-                section. Every tab is rendered, but only **Dashboard**,
-                **Explorer** and **Settings** are usable before the node is up:
-                the rest are disabled until it runs. That is why this doc-test
-                stops here — the wallet, rewards and mining sections cannot be
-                reached without first bootstrapping a node against a live network.
+                section. Every tab is open before the node is up: a section that
+                cannot answer says why, rather than being unreachable. Each one
+                carries the same banner — "Start the node from the Node tab", or
+                "The node is still catching up" when it is already running — so
+                the reason is specific rather than a disabled tab the user has to
+                guess at. The actions inside stay disabled either way.
+
+                This doc-test still stops here, because what the sections would
+                *show* needs a node bootstrapped against a live network.
 
                 **Explorer** is one section holding both halves of reading the
                 chain: a lookup by block id or transaction hash on top, and under
@@ -222,22 +226,111 @@ sections:
 
                 **Wallet** is likewise one section rather than three: a left menu
                 picks between Accounts, Transfer and Channel Deposit, which share
-                the same account list and are all equally dead without a node.
+                the same account list. Without a node each states why it cannot
+                answer instead of presenting a form that would fail on submit.
 
                 Everything up to this point — the chooser, the generate form, the
-                round-trip into `blockchain_module`, and the dashboard — needs no
+                round-trip into `blockchain_module`, and the node view — needs no
                 network at all, which is what makes it reproducible.
+
+            # Each of these clicks a tab and then asserts something only that
+            # tab renders. A disabled tab swallows the click, so the wait_for
+            # that follows is what proves the tab is actually usable — the text
+            # assertion above only proves the labels are drawn.
+            - name: "Rewards opens and explains itself"
+              action: click_object
+              find_by: "objectName"
+              find_value: "tabRewards"
+
+            - name: "Rewards says why it is empty"
+              action: wait_for
+              texts: ["Vouchers", "Ready to claim", "Submitted", "History",
+                      "Start the node from the Node tab."]
+              timeout: 6000
+              screenshot: "blockchain-ui-rewards-empty.png"
+              text: |
+                Leader rewards. The two tiles are the pipeline — vouchers the
+                wallet can claim, and claims sent but not yet seen on chain —
+                over the history of what has settled. With no node all three
+                read empty, and the banner names the reason rather than leaving
+                a page of dashes to interpret.
+
+            - name: "Mining opens"
+              action: click_object
+              find_by: "objectName"
+              find_value: "tabMining"
+
+            - name: "Mining shows tickets and its own history"
+              action: wait_for
+              texts: ["Tickets", "Ready to claim", "Submitted", "History",
+                      "Start the node from the Node tab."]
+              timeout: 6000
+              screenshot: "blockchain-ui-mining-empty.png"
+              text: |
+                Proof-of-work, laid out like Rewards: tickets waiting, claims in
+                flight, and what mining has actually paid. The two tabs share
+                one claim ledger and one delegate — the difference is only which
+                kind of claim each is scoped to.
+
+            - name: "Wallet opens"
+              action: click_object
+              find_by: "objectName"
+              find_value: "tabWallet"
+
+            - name: "Wallet holds three sections behind one tab"
+              action: wait_for
+              texts: ["Accounts", "Transfer", "Channel Deposit",
+                      "Start the node from the Node tab."]
+              timeout: 6000
+              screenshot: "blockchain-ui-wallet-empty.png"
+              text: |
+                One tab, three sections picked from the left menu. All three
+                share the same account list, so all three are equally empty
+                without a node — and each says so rather than offering a form
+                that would fail on submit.
+
+            - name: "Explorer opens"
+              action: click_object
+              find_by: "objectName"
+              find_value: "tabExplorer"
+
+            - name: "Explorer renders its lookup and block table"
+              action: wait_for
+              texts: ["Search a block id or transaction hash",
+                      "Start the node to see blocks arrive."]
+              timeout: 6000
+              screenshot: "blockchain-ui-explorer-empty.png"
+              text: |
+                The lookup is always on top; the block table underneath is the
+                resting state. Both need a node — the lookup to answer, the
+                table to have anything to list — and each says so in its own
+                place rather than through one banner for the page.
+
+            - name: "Back to Settings"
+              action: click_object
+              find_by: "objectName"
+              find_value: "tabSettings"
+
+            - name: "Settings renders without a node at all"
+              action: wait_for
+              texts: ["Node config", "User Config", "Deployment Config"]
+              timeout: 6000
+              screenshot: "blockchain-ui-settings.png"
+              text: |
+                Settings is the one section that needs no node in any state: it
+                edits files on disk, which is what you do *before* starting one.
+                That is why it carries no banner while every other tab does.
 
   - title: "What this does not cover"
     text: |
       This doc-test stops at the node view, because everything past it is gated
       on a running node:
 
-      - **Most sections are disabled until a node is up**: the Rewards, Mining
-        and Wallet tabs are gated on a running node and cannot be opened, which
-        takes Accounts, Transfer and Channel Deposit with them. Dashboard,
-        Explorer and Settings stay reachable throughout — though the Explorer's
-        lookup itself needs a node, so only its block table is exercised here.
+      - **Sections are reachable but have nothing to show**: every tab opens
+        without a node, and each says why it cannot answer. What they would
+        display — balances, vouchers, tickets, claim history — needs a running
+        node, so only the empty states are exercised here. Settings is the
+        exception: it edits config files on disk and needs no node at all.
       - **Bootstrapping and syncing** need reachable peers speaking a matching
         chainsync protocol version. When they do not match the node fails Initial
         Block Download with `AllPeersFailed` — a real failure, but driven by

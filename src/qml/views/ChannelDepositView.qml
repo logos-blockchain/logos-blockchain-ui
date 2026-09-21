@@ -21,6 +21,10 @@ ColumnLayout {
     // so a picker can show what an account IS rather than bare hex.
     property var accountRows: []
     property bool nodeRunning: false
+    // Why the node cannot answer, or empty when it can.
+    property string nodeOffReason: ""
+    // A LogosNotice.Severity for the banner above.
+    property int nodeOffSeverity: LogosNotice.Info
 
     signal getNotesRequested(string addressHex, string optionalTipHex)
     signal submitRequested(string channelIdHex, var inputNoteIdHexes, string metadataBase58, string changePublicKeyHex, var fundingPublicKeyHexes, string maxTxFee, string optionalTipHex)
@@ -280,6 +284,11 @@ ColumnLayout {
         color: Theme.palette.textSecondary
     }
 
+    NodeOffNotice {
+        reason: root.nodeOffReason
+        reasonSeverity: root.nodeOffSeverity
+    }
+
     // ---- Header / step indicator ----
     RowLayout {
         Layout.fillWidth: true
@@ -296,13 +305,6 @@ ColumnLayout {
             Layout.alignment: Qt.AlignVCenter
             text: qsTr("Deposit wallet notes (UTXOs) into a channel. Pick an address to load its notes, select the notes to consume, fill in the channel id, change/funding keys and max fee, then confirm to submit.")
         }
-    }
-
-    LogosNotice {
-        Layout.fillWidth: true
-        severity: LogosNotice.Warning
-        message: qsTr("Start the node before making a deposit.")
-        shown: !root.nodeRunning
     }
 
     StackLayout {

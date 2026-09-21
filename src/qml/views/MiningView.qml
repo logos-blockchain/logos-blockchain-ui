@@ -48,6 +48,10 @@ ColumnLayout {
     // read, to turn a claim's slot into a date.
     property string timeInfoJson: ""
     property int pendingCount: 0
+    // Why the node cannot answer, or empty when it can.
+    property string nodeOffReason: ""
+    // A LogosNotice.Severity for the banner above.
+    property int nodeOffSeverity: LogosNotice.Info
 
     signal historyPendingOnlyChanged(bool pendingOnly)
     signal openInExplorerRequested(string id)
@@ -105,6 +109,11 @@ ColumnLayout {
                                         + "than they can be redeemed — stop mining to let the "
                                         + "backlog clear.")
         }
+    }
+
+    NodeOffNotice {
+        reason: root.nodeOffReason
+        reasonSeverity: root.nodeOffSeverity
     }
 
     // ---- Header ----
@@ -333,15 +342,6 @@ ColumnLayout {
         text: root.claimMessage
         font.pixelSize: Theme.typography.secondaryText
         color: root.claimSuccess ? Theme.palette.success : Theme.palette.error
-    }
-
-    LogosText {
-        Layout.fillWidth: true
-        wrapMode: Text.WordWrap
-        visible: !root.nodeRunning
-        text: qsTr("Start the node to mine and claim.")
-        font.pixelSize: Theme.typography.secondaryText
-        color: Theme.palette.textSecondary
     }
 
     // ---- Claim history ----
