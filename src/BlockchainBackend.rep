@@ -18,6 +18,18 @@ class BlockchainBackend
     PROP(QString generatedUserConfigPath READONLY)
     PROP(QString nodeDataDir READONLY)
     PROP(QString nodeKeystorePath READONLY)
+    // Whether the keystore for the current config has been saved somewhere
+    // else. Set by a successful backupKeystore and by nothing else: the wizard's
+    // checkbox lets you past the step, it does not make a copy exist.
+    PROP(bool keysBackedUp READONLY)
+    // Bootstrap peers for the network this build targets, read from the
+    // module's own metadata.json. generate_user_config writes exactly the list
+    // it is handed and does NOT fall back to the deployment's own peers, so a
+    // config generated without these is a node that never finds the chain.
+    PROP(QStringList bootstrapPeers READONLY)
+
+    // Whether the user is part-way through setup.
+    PROP(bool setupInProgress READWRITE)
     PROP(QVariantList accountRows)
 
     // PoW tickets waiting to be claimed, and when the nearest of them lapses.
@@ -216,6 +228,12 @@ class BlockchainBackend
     // node still needs the original. Answers { success, value, error } with the
     // destination on success.
     SLOT(QVariantMap backupKeystore(QString destinationPath))
+    // Every key the keystore holds, as rows { address, label } — not just the
+    // ones the config wires to a job, which is what getConfigWalletKeys
+    // answers. The setup wizard shows the whole set, because what has to be
+    // backed up is the file, and a list that quietly omitted the blend and
+    // network keys would understate what is at stake.
+    SLOT(QVariantMap getKeystoreKeys(QString configPath))
     SLOT(void setClaimHistoryFilter(int mode))
     // Same, for the mining history. Two lists, two filters: they are
     // different tabs, and one shared filter would move both.

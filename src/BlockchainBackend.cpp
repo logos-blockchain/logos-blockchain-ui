@@ -754,6 +754,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         setUserConfig(restoredUserConfig);
     setNodeDataDir(nodeDatabaseDir());
     setNodeKeystorePath(nodeKeystorePath());
+    refreshKeysBackedUp();
 
     if (!restoredDeploymentConfig.isEmpty())
         setDeploymentConfig(restoredDeploymentConfig);
@@ -841,11 +842,12 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         }
         QSettings("Logos", "BlockchainUI")
             .setValue("userConfigPath", userConfig());
-        // Derived from the config's location, so it moves with it.
+        // Derived from the config's location, so they move with it.
         setNodeDataDir(nodeDatabaseDir());
-    setNodeKeystorePath(nodeKeystorePath());
         setNodeKeystorePath(nodeKeystorePath());
-        // A different config means different keys and different jobs for them.
+        // A different config means different keys and different jobs for them,
+        // and nobody has a copy of the new keystore yet.
+        refreshKeysBackedUp();
         refreshAccountRoles();
     });
     connect(this, &BlockchainBackendSimpleSource::deploymentConfigChanged, this, [this]() {
@@ -1235,19 +1237,146 @@ QString BlockchainBackend::nodeDatabaseDir() const
     return {};
 }
 
-// The node writes its keystore beside its data, under the default name the
-// CLI uses (keys.rs: default_value = "keystore.yaml"). Reported only when it is
-// actually there — offering to back up a file that does not exist is worse than
-// saying nothing.
+// The keystore, under the default name the CLI uses (keys.rs: default_value =
+// "keystore.yaml"). Reported only when it is actually there — offering to back
+// up a file that does not exist is worse than saying nothing.
 QString BlockchainBackend::nodeKeystorePath() const
 {
-    const QString base = nodeDataDir();
-    if (base.isEmpty())
-        return {};
-    const QDir dir(base);
-    if (!dir.exists(QStringLiteral("keystore.yaml")))
-        return {};
-    return QDir::toNativeSeparators(dir.filePath(QStringLiteral("keystore.yaml")));
+    const auto keystoreIn = [](const QString& base) -> QString {
+        if (base.isEmpty())
+            return {};
+        const QDir dir(base);
+        if (!dir.exists(QStringLiteral("keystore.yaml")))
+            return {};
+        return QDir::toNativeSeparators(dir.filePath(QStringLiteral("keystore.yaml")));
+    };
+
+    const QString cfg = userConfig().trimmed();
+    if (!cfg.isEmpty()) {
+        const QString local = toLocalPath(cfg);
+        const QString besideConfig =
+            keystoreIn(QFileInfo(local.isEmpty() ? cfg : local).absolutePath());
+        if (!besideConfig.isEmpty())
+            return besideConfig;
+    }
+
+    return keystoreIn(nodeDataDir());
+}
+
+// Bootstrap peers, from this module's own metadata.json.
+void BlockchainBackend::loadBootstrapPeers(const QVariantMap& metadata)
+{
+    QStringList peers;
+    const QVariantList raw = metadata.value(QStringLiteral("bootstrap_peers")).toList();
+    for (const QVariant& v : raw) {
+        const QString peer = v.toString().trimmed();
+        if (!peer.isEmpty())
+            peers << peer;
+    }
+    setBootstrapPeers(peers);
+}
+
+void BlockchainBackend::setModuleContext(const QString& modulePath)
+{
+    if (modulePath.isEmpty()) {
+        qWarning() << "BlockchainBackend: no module path from the host, so"
+                   << "bootstrap peers cannot be read and first-run Quick start"
+                   << "will be hidden. Needs a ui-host that calls"
+                   << "initModuleContext (logos-view-module-runtime).";
+        return;
+    }
+
+    const QString path = QDir(modulePath).filePath(QStringLiteral("metadata.json"));
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) {
+        qWarning() << "BlockchainBackend: could not open" << path
+                   << "- bootstrap peers unavailable.";
+        return;
+    }
+
+    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+    if (!doc.isObject()) {
+        qWarning() << "BlockchainBackend:" << path << "is not a JSON object.";
+        return;
+    }
+    loadBootstrapPeers(doc.object().toVariantMap());
+}
+
+// Which config the keystore was last saved for, rather than a bare "done"
+// flag.
+QString BlockchainBackend::keysBackedUpSettingsKey()
+{
+    return QStringLiteral("keystoreBackedUpFor");
+}
+
+// Two paths naming the same file.
+static bool sameFilePath(const QString& a, const QString& b)
+{
+    const auto resolve = [](const QString& raw) -> QString {
+        const QString trimmed = raw.trimmed();
+        if (trimmed.isEmpty())
+            return {};
+        const QString local = toLocalPath(trimmed);
+        const QFileInfo fi(local.isEmpty() ? trimmed : local);
+        const QString canonical = fi.canonicalFilePath();
+        return canonical.isEmpty() ? QDir::cleanPath(fi.absoluteFilePath()) : canonical;
+    };
+    const QString ra = resolve(a);
+    return !ra.isEmpty() && ra == resolve(b);
+}
+
+void BlockchainBackend::refreshKeysBackedUp()
+{
+    const QString cfg = userConfig().trimmed();
+    if (cfg.isEmpty()) {
+        setKeysBackedUp(false);
+        return;
+    }
+    const QString saved =
+        QSettings("Logos", "BlockchainUI").value(keysBackedUpSettingsKey()).toString();
+    setKeysBackedUp(!saved.isEmpty() && sameFilePath(saved, cfg));
+}
+
+void BlockchainBackend::markKeysBackedUp()
+{
+    const QString cfg = userConfig().trimmed();
+    if (cfg.isEmpty())
+        return;
+    const QString local = toLocalPath(cfg);
+    QSettings("Logos", "BlockchainUI").setValue(keysBackedUpSettingsKey(),
+                                                local.isEmpty() ? cfg : local);
+    setKeysBackedUp(true);
+}
+
+// Every key in the keystore, titles and all, as rows the wizard's table can
+// render. Unlike readAccountRoles this does not cross-reference the config:
+// the keystore holds keys the config never names (blend signing, network
+// swarm), and those are exactly the ones a user would not think to save.
+QVariantMap BlockchainBackend::getKeystoreKeys(QString configPath)
+{
+    const QHash<QString, QString> titles = readKeyTitles(configPath);
+    if (titles.isEmpty()) {
+        return result::toVariantMap(
+            result::err(QStringLiteral("Could not read the keystore.")));
+    }
+
+    QVariantList rows;
+    rows.reserve(titles.size());
+    for (auto it = titles.constBegin(); it != titles.constEnd(); ++it) {
+        QVariantMap row;
+        row.insert(QStringLiteral("address"), it.key());
+        row.insert(QStringLiteral("label"), it.value());
+        rows.append(row);
+    }
+
+    // Stable order: the same config must produce the same table every time it
+    // is opened, and a QHash gives no order at all.
+    std::sort(rows.begin(), rows.end(), [](const QVariant& a, const QVariant& b) {
+        return a.toMap().value(QStringLiteral("label")).toString()
+             < b.toMap().value(QStringLiteral("label")).toString();
+    });
+
+    return result::toVariantMap(LogosResult{true, rows, QVariant()});
 }
 
 // Copy, not move. The node reads this file on every start, so a "backup" that
@@ -1273,6 +1402,8 @@ QVariantMap BlockchainBackend::backupKeystore(QString destinationPath)
         return result::toVariantMap(
             result::err(QStringLiteral("Could not write %1.").arg(target)));
     }
+    // The copy landed, so the reminder is answered.
+    markKeysBackedUp();
     return result::toVariantMap(LogosResult{true, target, QVariant()});
 }
 

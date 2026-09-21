@@ -9,6 +9,7 @@
   "icon": "src/icons/blockchain.png",
   "view": "qml/BlockchainView.qml",
   "dependencies": ["blockchain_module"],
+  "bootstrap_peers": [],
   "nix": {
     "packages": {
       "build": [],

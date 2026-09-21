@@ -33,10 +33,8 @@ Rectangle {
         function onViewModuleReadyChanged(moduleName, isReady) {
             if (moduleName === "blockchain_ui") {
                 root.ready = isReady && root.backend !== null
-                if (root.ready) {
+                if (root.ready)
                     root.refreshPeerId()
-                    root._applyInitialRoute()
-                }
             }
         }
     }
@@ -45,10 +43,10 @@ Rectangle {
         // Cover the case where the replica is already Valid by the time
         // we attach the Connections handler.
         root.ready = root.backend !== null && logos.isViewModuleReady("blockchain_ui")
-        if (root.ready) {
+        if (root.ready)
             root.refreshPeerId()
-            root._applyInitialRoute()
-        }
+        if (root.needsSetup)
+            root.openSetup()
     }
 
     // Graceful shutdown: if the window is closed while the node is running,
@@ -130,15 +128,31 @@ Rectangle {
     // node required). Refreshed when ready and whenever the config changes.
     property string peerId: ""
 
-    // Skip the first-run chooser when a config already exists. One-shot, so it
-    // never overrides a later manual return to the chooser.
-    function _applyInitialRoute() {
-        if (_d.initialRouted || !root.ready || !root.backend)
-            return
-        _d.initialRouted = true
-        if (root.backend.userConfig && root.backend.userConfig.length > 0)
-            _d.currentPage = 1
-    }
+    // Whether the app has a config to run a node from. Everything about which
+    // screen shows follows from this rather than from a flag set once at
+    // startup: same state, same screen, every time.
+    readonly property bool hasConfig: root.ready && !!root.backend
+        && root.backend.userConfig.length > 0
+
+    // Setup is open. Held on the backend rather than here: this view is
+    // destroyed and rebuilt when the shell switches away from the app, and a
+    // QML property would come back false, dropping anyone mid-setup onto the
+    // dashboard.
+    readonly property bool setupOpen: !!root.backend && root.backend.setupInProgress
+    function openSetup() { if (root.backend) root.backend.setupInProgress = true }
+    function closeSetup() { if (root.backend) root.backend.setupInProgress = false }
+
+    // A node with no config cannot do anything else, so setup opens itself.
+    // Re-armed rather than one-shot: if the config ever goes away, this is true
+    // again and setup comes back, instead of leaving the user on a node screen
+    // that can only fail.
+    readonly property bool needsSetup: root.ready && !!root.backend && !root.hasConfig
+    onNeedsSetupChanged: if (root.needsSetup) root.openSetup()
+
+    // Every route into setup lands here — first run, and Settings' Change
+    // config. The flow resets itself and reloads what its later steps read;
+    // this view no longer knows what those are.
+    onSetupOpenChanged: if (root.setupOpen) onboardingFlow.begin()
 
     function refreshPeerId() {
         if (!root.backend || !root.backend.userConfig) {
@@ -311,68 +325,9 @@ Rectangle {
             return qsTr("Error: %1").arg(message)
         }
 
-        property int currentPage: 0
-
-        // Guards the one-time startup route (see root._applyInitialRoute):
-        // it must fire once when the module first becomes ready, and never
-        // fight the user's later navigation (e.g. the node view's "Change"
-        // button, which deliberately returns to the chooser at page 0).
-        property bool initialRouted: false
-
-        // The config the PoW step edits, captured when the step opens. Held here
-        // rather than read back from backend.userConfig at each use: that is a
-        // replica property, so it lags a write by a round trip.
-        property string powConfigPath: ""
-
-        // Show the PoW step and fill its account picker from the config that was
-        // just written. The accounts come from the file rather than the wallet:
-        // the node has not started yet, and wallet_get_known_addresses needs one
-        // that has. Failing to read them is not fatal — the step still offers
-        // "continue without auto-claim", which is a valid configuration.
-        function showPowStep(configPath) {
-            _d.powConfigPath = configPath || ""
-            console.log("[BlockchainView] showPowStep: configPath=", _d.powConfigPath)
-            // Cleared before the read, not after it: re-entering the wizard must
-            // not offer the previous config's accounts while this one loads.
-            configChoiceView.powAccounts = []
-            configChoiceView.powBusy = false
-            configChoiceView.powResultSuccess = false
-            configChoiceView.powResultMessage = ""
-            configChoiceView.showPowConfig()
-
-            if (!root.backend || _d.powConfigPath === "") {
-                // Say so rather than showing an empty picker: without a path
-                // there is nothing to read accounts from and nothing to write
-                // back to, and a silent return looks like a config with no keys.
-                configChoiceView.powResultMessage =
-                    qsTr("Could not tell which config file was written, so accounts cannot be "
-                         + "listed. Set the config path and configure PoW from there.")
-                return
-            }
-
-            logos.watch(
-                root.backend.getConfigWalletKeys(_d.powConfigPath),
-                function(result) {
-                    if (!result.success) {
-                        configChoiceView.powResultMessage =
-                            qsTr("Could not read accounts from the config: %1").arg(result.error)
-                        return
-                    }
-                    configChoiceView.powAccounts = result.value || []
-                    const configured = configChoiceView.powAccounts.length
-                    console.log("[BlockchainView] showPowStep: accounts=", configured)
-                    if (configured === 0) {
-                        configChoiceView.powResultMessage =
-                            qsTr("The config lists no wallet keys, so there is nothing to claim "
-                                 + "into. Continue without auto-claim, or check wallet.known_keys.")
-                    }
-                },
-                function(error) {
-                    configChoiceView.powResultMessage =
-                        qsTr("Could not read accounts from the config: %1").arg(error)
-                }
-            )
-        }
+        // Page 0 is setup, page 1 is the node. Derived, never assigned — see
+        // root.setupOpen for the two events that move it.
+        readonly property int currentPage: root.setupOpen ? 0 : 1
 
         // Runtime override on the node's own default — nothing is written to the
         // config, so this is undone by a node restart rather than by editing the
@@ -423,35 +378,6 @@ Rectangle {
             )
         }
 
-        // The whole PoW section goes in one call, so the wizard never leaves the
-        // file partly configured. The operator chose these, so a rejection stops
-        // the wizard here rather than being warned about and dropped — and since
-        // the module validates before writing, a failure means nothing changed.
-        function savePowConfig(configJson) {
-            if (!root.backend)
-                return
-            configChoiceView.powBusy = true
-            configChoiceView.powResultSuccess = false
-            configChoiceView.powResultMessage = ""
-            logos.watch(
-                root.backend.powConfigure(_d.powConfigPath, configJson),
-                function(result) {
-                    configChoiceView.powBusy = false
-                    configChoiceView.powResultSuccess = result.success
-                    if (result.success)
-                        configChoiceView.showSetConfigPath()
-                    else
-                        configChoiceView.powResultMessage =
-                            qsTr("Could not save the PoW settings: %1").arg(result.error)
-                },
-                function(error) {
-                    configChoiceView.powBusy = false
-                    configChoiceView.powResultSuccess = false
-                    configChoiceView.powResultMessage =
-                        qsTr("Could not save the PoW settings: %1").arg(error)
-                }
-            )
-        }
     }
 
     color: Theme.palette.background
@@ -471,85 +397,25 @@ Rectangle {
 
     StackLayout {
         anchors.fill: parent
-        anchors.margins: Theme.spacing.large
         currentIndex: _d.currentPage
         visible: root.ready
 
-        // Page 1: Config choice
-        LogosScrollView {
-            id: configChoiceScrollView
-            ConfigChoiceView {
-                id: configChoiceView
-                objectName: "configChoiceView"
-                width: configChoiceScrollView.availableWidth
-                userConfigPath: root.backend ? root.backend.userConfig : ""
-                deploymentConfigPath: root.backend ? root.backend.deploymentConfig : ""
-                generatedUserConfigPath: root.backend ? root.backend.generatedUserConfigPath : ""
-                onUserConfigPathSelected: function(path) {
-                    if (root.backend) root.backend.userConfig = path
-                }
-                onDeploymentConfigPathSelected: function(path) {
-                    if (root.backend) root.backend.deploymentConfig = path
-                }
-                onSetPathToConfigsRequested: function() {
-                    if (root.backend) root.backend.useGeneratedConfig = false
-                    _d.currentPage = 1
-                }
-                onPowConfirmRequested: function(configJson) {
-                    _d.savePowConfig(configJson)
-                }
-                onGenerateRequested: function(outputPath, initialPeers, netPort, blendPort, httpAddr, externalAddress, noPublicIpCheck, deploymentMode, deploymentConfigPath, statePath) {
-                    if (!root.backend) return
-                    console.log("[BlockchainView] generateRequested: outputPath=", outputPath,
-                                "initialPeers=", JSON.stringify(initialPeers),
-                                "netPort=", netPort, "blendPort=", blendPort,
-                                "httpAddr=", httpAddr, "externalAddress=", externalAddress,
-                                "noPublicIpCheck=", noPublicIpCheck, "deploymentMode=", deploymentMode,
-                                "deploymentConfigPath=", deploymentConfigPath, "statePath=", statePath)
-                    configChoiceView.generateResultSuccess = false
-                    configChoiceView.generateResultMessage = ""
-                    logos.watch(
-                        root.backend.generateConfig(
-                            outputPath, initialPeers, netPort, blendPort,
-                            httpAddr, externalAddress, noPublicIpCheck,
-                            deploymentMode, deploymentConfigPath, statePath),
-                        function(result) {
-                            console.log("[BlockchainView] generateConfig success callback: result=", JSON.stringify(result))
-                            configChoiceView.generateResultSuccess = result.success
-                            configChoiceView.generateResultMessage =
-                                result.success
-                                    ? qsTr("Config generated successfully.")
-                                    : qsTr("Generate failed: %1").arg(result.error)
-                            if (result.success) {
-                                // The module writes the config and returns the
-                                // absolute path it used; use that for start().
-                                // Resolved once into a local because userConfig
-                                // is a replica property: the write below is a
-                                // round trip to the source, so reading it back
-                                // on this same tick still yields the old value.
-                                const resolvedConfigPath =
-                                    (result.value !== undefined && result.value !== "")
-                                        ? result.value
-                                        : (outputPath !== "" ? outputPath : root.backend.generatedUserConfigPath)
-                                root.backend.userConfig = resolvedConfigPath
-                                root.backend.deploymentConfig =
-                                    (deploymentMode === 1 && deploymentConfigPath !== "")
-                                        ? deploymentConfigPath : ""
-                                root.backend.useGeneratedConfig = true
-                                // The config exists now, so PoW can be set up
-                                // against it. That step ends on the "set path"
-                                // window, which shows the resolved config path
-                                // and continues to starting the node.
-                                _d.showPowStep(resolvedConfigPath)
-                            }
-                        },
-                        function(error) {
-                            console.log("[BlockchainView] generateConfig error callback: error=", error)
-                            configChoiceView.generateResultSuccess = false
-                            configChoiceView.generateResultMessage =
-                                qsTr("Generate failed: %1").arg(error)
-                        }
-                    )
+        OnboardingFlow {
+            id: onboardingFlow
+            objectName: "onboardingFlow"
+            backend: root.backend
+            // Nothing to exit to until a config exists.
+            canExit: root.hasConfig
+
+            onKeystoreSaved: function(path) {
+                keystoreBackupToast.show(qsTr("Keystore saved"), path)
+            }
+            onExitRequested: root.closeSetup()
+            onFinished: function(startNode) {
+                root.closeSetup()
+                if (startNode && root.backend
+                        && root.backend.status !== BlockchainBackend.Running) {
+                    root.backend.startBlockchain()
                 }
             }
         }
@@ -557,8 +423,11 @@ Rectangle {
         // Page 2: the node itself — a persistent header (identity, the Fund
         // mining toggle and the start/stop control) over a tab bar, one tab per
         // section.
+        Item {
         ColumnLayout {
             id: opPage
+            anchors.fill: parent
+            anchors.margins: Theme.spacing.large
             spacing: Theme.spacing.medium
 
             // Selected section. The tab bar and the StackLayout's children are
@@ -811,6 +680,8 @@ Rectangle {
                     claimableTickets: root.backend ? root.backend.claimableTickets : 0
                     claimsStalled: root.backend ? root.backend.claimsStalled : false
                     powActive: root.backend ? root.backend.powActive : false
+                    keystorePresent: !!root.backend && root.backend.nodeKeystorePath.length > 0
+                    keysBackedUp: !!root.backend && root.backend.keysBackedUp
                 }
 
                 // ---- Section 1: Rewards ----
@@ -1040,7 +911,8 @@ Rectangle {
                         )
                     }
                     autoClaimRunning: root.backend ? root.backend.autoClaimRunning : false
-                    onChangeConfigRequested: _d.currentPage = 0
+                    keysBackedUp: !!root.backend && root.backend.keysBackedUp
+                    onChangeConfigRequested: root.openSetup()
                     onAutoClaimToggled: function(enabled) { _d.setAutoClaim(enabled) }
                     }
                 }
@@ -1070,6 +942,7 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
             }
+        }
         }
     }
 

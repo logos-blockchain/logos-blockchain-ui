@@ -27,8 +27,9 @@ ColumnLayout {
     // Where the node keeps db/, state/ and logs/. Empty when no config is set
     // or the node has not run yet.
     property string nodeDataDir: ""
-    // The keystore, or empty when the node has not written one yet.
+    // The keystore, or empty when there is none for this config yet.
     property string nodeKeystorePath: ""
+    property bool keysBackedUp: false
     // Why the last backup failed, or empty. Successes are announced by the
     // host as a toast rather than kept here.
     property string backupError: ""
@@ -158,12 +159,26 @@ ColumnLayout {
         contentItem: ColumnLayout {
             spacing: Theme.spacing.small
 
-            LogosText {
+            RowLayout {
+                Layout.fillWidth: true
                 Layout.bottomMargin: Theme.spacing.small
-                text: qsTr("Back up your keys")
-                color: Theme.palette.text
-                font.pixelSize: Theme.typography.panelTitleText
-                font.weight: Theme.typography.weightMedium
+                spacing: Theme.spacing.small
+
+                LogosText {
+                    text: qsTr("Back up your keys")
+                    color: Theme.palette.text
+                    font.pixelSize: Theme.typography.panelTitleText
+                    font.weight: Theme.typography.weightMedium
+                }
+
+                LogosBadge {
+                    objectName: "keysBackedUpBadge"
+                    visible: root.keysBackedUp
+                    text: qsTr("Done")
+                    color: Theme.palette.success
+                }
+
+                Item { Layout.fillWidth: true }
             }
 
             LogosText {
@@ -267,6 +282,7 @@ ColumnLayout {
                 LogosBadge {
                     objectName: "autoClaimRecommendedBadge"
                     text: qsTr("Recommended")
+                    color: Theme.palette.success
                 }
 
                 Item { Layout.fillWidth: true }

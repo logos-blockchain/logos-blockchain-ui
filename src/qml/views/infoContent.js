@@ -711,3 +711,67 @@ var explorer = {
     ],
     docs: ""
 }
+
+// ---- Setup wizard -------------------------------------------------------
+//
+// These were plain `text:` strings on their LogosInfoButtons, which is the
+// minority form in this app — everything on the dashboard, in Settings and in
+// Rewards renders through InfoSections, so a dialog opened from the wizard
+// looked nothing like one opened anywhere else. Same shape now: WHAT IS IT,
+// HOW IT'S CALCULATED where there is a rule, and a copyable DOCS link.
+
+var bootstrapPeers = {
+    title: "Bootstrap peers",
+    what: "The addresses your node dials when it starts, so it can find other "
+        + "nodes and begin syncing the chain. One multiaddr per line.",
+    calc: "They are written into your config exactly as entered, and they are "
+        + "the only peers the node dials \u2014 choosing a deployment above does "
+        + "not supply any.\n\n"
+        + "Leaving this empty writes an empty list, and a node with no peers "
+        + "never finds the chain.",
+    docs: "https://docs.logos.co/blockchain/get-started/run-a-logos-blockchain-node-from-basecamp"
+}
+
+var powSearchThreads = {
+    title: "Search threads",
+    what: "Worker threads the ticket search may use.",
+    calc: "Left uncapped the node takes one thread per logical CPU, which makes "
+        + "the machine unusable while mining. The default of 1 is what a "
+        + "desktop node wants.",
+    docs: "https://docs.logos.co/blockchain/concepts/proof-of-work-mining"
+}
+
+var powTicketsPerBlock = {
+    title: "Tickets in flight per block",
+    what: "How many mined tickets the node carries into one block.",
+    calc: "Each ticket\u2019s claim carries its own proof, so raising this costs "
+        + "twice over.\n\n"
+        + "The whole batch has to fit a single Blend payload, and the node\u2019s "
+        + "own default overruns it \u2014 claims are then rejected and the tickets "
+        + "expire unclaimed.\n\n"
+        + "Every extra ticket is also another proof to build, and that work "
+        + "lands on the CPU on top of the ticket search itself.",
+    docs: "https://docs.logos.co/blockchain/concepts/proof-of-work-mining"
+}
+
+var powClaimPeriod = {
+    title: "Claim attempt period",
+    what: "How often the node tries to pay an auto-claim target.",
+    calc: "On each attempt it pays the one target holding the least value among "
+        + "those still below their threshold.",
+    docs: "https://docs.logos.co/blockchain/concepts/proof-of-work-mining"
+}
+
+var powAutoClaimTargets = {
+    title: "Auto-claim targets",
+    what: "Accounts mined rewards are paid into, without you asking.",
+    calc: "Adding at least one turns auto-claim on: the node arms it at startup "
+        + "whenever the list is not empty. Leave the list empty and rewards are "
+        + "only claimed when you press Claim yourself.\n\n"
+        + "An account must be one the config already tracks, or the node "
+        + "refuses to start.\n\n"
+        + "Threshold is the balance an account should reach \u2014 not an amount "
+        + "to pay. Once an account is at or above it, the node stops paying "
+        + "that one.",
+    docs: "https://docs.logos.co/blockchain/concepts/proof-of-work-mining"
+}
