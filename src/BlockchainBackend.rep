@@ -83,6 +83,23 @@ class BlockchainBackend
     // total-balance call, so it costs one request per key, and it answers a
     // question that changes rarely.
     PROP(bool walletFunded READONLY)
+    // What this node has actually earned leading blocks, accumulated by the app
+    // from LeaderRewardClaimed events and persisted — see EarnedLedger. The
+    // node has no lifetime total to ask for: wallet_get_claimable_vouchers is
+    // what is *unclaimed*, and goes to zero the moment a claim settles.
+    //
+    // Gross: the reward note carries the full amount, and the claim's gas comes
+    // out of other notes, so no fee is netted off here.
+    //
+    // An empty total is "not counted yet" — the ledger cannot be opened before
+    // the node reports which chain it is on. A reported "0" is a real reading.
+    PROP(QString earnedTotal READONLY)
+    PROP(int earnedClaimCount READONLY)
+    // When this tally began, ISO 8601, or empty if it has not started. Both
+    // reward tiles are honest only if they say what they cover: nobody hands the
+    // app a lifetime total, so "12 vouchers since 14 Mar" is a true statement
+    // where a bare "12 vouchers" is a guess about everything before that.
+    PROP(QString claimsCountingSince READONLY)
     // The notes this node can lead with, from wallet_get_leader_aged_notes
     PROP(QString stakeTotal READONLY)
     PROP(int stakeNoteCount READONLY)
@@ -113,14 +130,20 @@ class BlockchainBackend
     // which way the button toggles, which call to send — and powActive where
     // proof is, because that one is measured rather than assumed.
     PROP(bool miningRequested READONLY)
-    // PoW reward claims paid to one of this wallet's keys, counted from the
-    // blocks seen since the node started. Lives here rather than in QML for the
-    // same reason processedBlockCount does: it has to survive a view reload.
+    // PoW reward claims paid to one of this wallet's keys, all-time for this
+    // chain — not per session. They used to reset on every start, on the premise
+    // that the block stream resumed at the tip; it does not, it replays whatever
+    // the node applies while catching up, so the counter silently refilled with
+    // history after a resync and meant something different every run. Both now
+    // come from ClaimLedger, which dedupes, gates on finality and persists.
     PROP(int powRewardsClaimed READONLY)
-    // What those claims actually paid, in lepta, as a decimal string. The value
-    // is summed from the claim transactions' transfer outputs rather than from a
-    // ticket count times an assumed rate — the reward per ticket is the node's
-    // epoch_reward() and is not published anywhere the app can read it.
+    // What those claims minted, in lepta, as a decimal string. GROSS, from the
+    // PoWRewardClaimed event's own note.
+    //
+    // This figure CHANGED: it used to be summed from the claim transaction's
+    // transfer outputs, which includes the change paid back to the claim key, so
+    // it counted the change as income and ran above the wallet balance without
+    // bound. The event's note is the minted reward and nothing else.
     PROP(QString powRewardsLepta READONLY)
     // Whether auto-claim was last started from here. Optimistic for the same
     // reason `mining` is — there is no pow_is_auto_claim() to read it back.

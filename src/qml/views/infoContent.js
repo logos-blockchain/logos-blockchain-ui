@@ -91,9 +91,10 @@ var blend = {
           meaning: "A declared blend node. It mixes traffic for others as well "
                  + "as itself, and earns rewards for doing so." },
         { label: "—",
-          meaning: "The node is not running, or blend has not reported yet. "
-                 + "The role is cleared rather than remembered, because a node "
-                 + "that is off is mixing nothing." }
+          meaning: "The node is not running, is still catching up, or blend "
+                 + "has not reported yet. The role is cleared rather than "
+                 + "remembered, because a node that is not following the chain "
+                 + "is mixing nothing." }
     ],
     docs: "https://docs.logos.co/blockchain/concepts/about-the-blend-network"
 }
@@ -138,32 +139,36 @@ var peers = {
 // for why that is a session figure rather than a total.
 var mining = {
     title: "Mining Rewards",
-    what: "What proof-of-work claims have paid this wallet, after fees. Mining "
-        + "searches for tickets; a ticket pays nothing until it is claimed, and "
-        + "expires if it never is. So this is the value that actually arrived, "
-        + "not what was mined — the tickets still waiting are the line beneath.",
-    calc: "Summed from the claim transactions in blocks seen since the node "
-        + "started, taking the transfer outputs that pay a key this wallet "
-        + "tracks. The reward per ticket is the node's and is not published, so "
-        + "nothing here multiplies a count by an assumed rate.\n\n"
-        + "It is a session figure, not a lifetime total, and nothing on the "
-        + "node keeps one: claims settled before this session are not counted, "
-        + "a reorganisation can unwind one that is, and blocks missed while the "
-        + "node was catching up are lost to it. The wallet balance is the "
-        + "authoritative figure — this one only describes what this session "
-        + "watched arrive.",
+    what: "What proof-of-work claims have paid this wallet, before fees. "
+        + "Mining searches for tickets; a ticket pays nothing until it is "
+        + "claimed, and expires if it never is. So this is what claiming has "
+        + "actually minted \u2014 the tickets still waiting are the line "
+        + "beneath.",
+    calc: "Every settled claim paid to a key this wallet tracks is added up "
+        + "here, taken from the amount the chain minted for it.\n\n"
+        + "Expect it to read a little above the wallet balance. It is before "
+        + "fees: a reward is minted whole and the fee for moving it into the "
+        + "wallet comes off separately, so the balance gains slightly less "
+        + "than this shows. A claim is also counted only once its block is "
+        + "settled beyond reversal, which can leave it a few slots behind.\n\n"
+        + "The total is kept across restarts and covers this chain from the "
+        + "date shown on the tile \u2014 claims settled before the app started "
+        + "counting are in the wallet but not in this figure. It starts over if "
+        + "the chain is rebuilt, since the old chain\u2019s rewards no longer "
+        + "exist. The wallet balance is the authoritative figure; this says how "
+        + "much of it was mined.",
     states: [
         { label: "Value",
-          meaning: "What claims have paid this session, with the tickets "
+          meaning: "Total claimed in LGO, before fees, with the tickets "
                  + "claimed and still waiting beneath it." },
         { label: "0 LGO with tickets waiting",
           meaning: "Tickets are being mined but nothing is being redeemed. "
-                 + "Auto-claim may have stopped — it does that on its own once "
-                 + "every claim target reaches its threshold. The Mining tab "
-                 + "says more." },
+                 + "Auto-claim may have stopped \u2014 it does that on its own "
+                 + "once every claim target reaches its threshold. The Mining "
+                 + "tab says more." },
         { label: "0 LGO",
-          meaning: "Nothing claimed this session. Normal on a node that has "
-                 + "not mined, or has only just started." }
+          meaning: "Nothing claimed yet on this chain. Normal on a node that "
+                 + "has not mined, or has only just started." }
     ],
     docs: "https://docs.logos.co/get-started/glossary"
 }
@@ -262,9 +267,52 @@ var stake = {
                  + "they just are not in an epoch snapshot yet, so the node "
                  + "cannot win a slot with them." },
         { label: "—",
-          meaning: "The node is not running, or has not reported yet." }
+          meaning: "The node is not running, is still catching up, or has not "
+                 + "reported yet. A node only knows what it can lead with once "
+                 + "it is following the chain." }
     ],
     docs: "https://docs.logos.co/blockchain/concepts/about-cryptarchia#leadership-election"
+}
+
+// The prototype's copy for this tile promises a NET figure — "each settled
+// claim's reward minus its fee", with "Fees this epoch: N%" beneath. The reward
+// note carries the full amount and the claim's gas is funded from the wallet's
+// other notes, so the fee is nowhere in what the chain reports about the claim:
+// deriving it means tracking the whole UTXO set to learn what the inputs were
+// worth. Until that exists this counts the gross and says so, rather than
+// showing a net figure it cannot actually compute.
+var earned = {
+    title: "Earned",
+    what: "What this node has been paid for the blocks it led — the leader "
+        + "rewards it has claimed, and how many vouchers that took. The "
+        + "counterpart to Ready to Claim: that one is what is still owed, this "
+        + "is what has already arrived.",
+    calc: "Every reward this node claims is added up here, along with how many "
+        + "vouchers they came from. Expect it to read a little differently "
+        + "from the wallet balance, for three reasons. It is before fees — a "
+        + "reward arrives whole, and the fee for claiming it comes out of the "
+        + "wallet separately, so the balance gains slightly less than this "
+        + "shows. It only counts claims made while the app was keeping track, "
+        + "so rewards claimed before the date shown on the tile are in the "
+        + "wallet but not in this figure. And a claim is counted only once its "
+        + "block is settled beyond reversal, which can leave it a few slots "
+        + "behind the balance. The tally survives a restart, but starts over if "
+        + "the chain is rebuilt, since the old chain's rewards no longer exist. "
+        + "The wallet balance is the authoritative figure; this says how much "
+        + "of it was earned leading blocks.",
+    states: [
+        { label: "Amount",
+          meaning: "Total claimed in LGO, before fees, with the number of "
+                 + "vouchers it took beneath." },
+        { label: "0",
+          meaning: "Nothing claimed yet. Either the node has not led a block, "
+                 + "or it has led one and not claimed the voucher — see Ready "
+                 + "to Claim." },
+        { label: "—",
+          meaning: "The node is not running, or is still catching up. Counting "
+                 + "resumes once it is online." }
+    ],
+    docs: "https://docs.logos.co/blockchain/node-app/claim-leader-rewards-in-logos-blockchain-ui-app"
 }
 
 // The prototype's calc for this tile describes a different implementation: it

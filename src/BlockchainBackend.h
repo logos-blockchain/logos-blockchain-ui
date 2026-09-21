@@ -15,9 +15,11 @@
 
 #include "AccountsModel.h"
 #include "BlockModel.h"
+#include "ClaimLedger.h"
 
 class LogosAPI;
 class LogosAPIClient;
+class QJsonObject;
 class QTimer;
 
 // Source-side implementation of the BlockchainBackend .rep interface.
@@ -120,6 +122,41 @@ private:
     void refreshNetwork();
     void clearNetwork();
     void refreshChainId();
+
+    // ---- Claims: the app's own tally of settled rewards, staking and mining ----
+    // A block the processed-block stream delivered that might carry a claim,
+    // waiting for its events to be fetched. Lives in the ledger so it survives
+    // a stop.
+    using PendingBlock = ClaimLedger::Pending;
+    // What each claim in a block could pay, keyed by transaction. Empty if the
+    // block holds no claim of either kind. Finding claims needs only the opcode
+    // — no wallet keys — which is what lets a block be judged the moment it
+    // arrives rather than kept on the chance it might matter.
+    [[nodiscard]] static QHash<QString, PendingBlock::TxClaim> claimPayeesByTx(
+        const QJsonObject& block);
+    // Parses one processed-block event and queues the block if it could hold a
+    // claim. Parsing ONLY: this runs inside the module's own delivery path, so
+    // it must not make a module call.
+    void noteProcessedBlock(const QString& eventJson);
+    // Fetches events for queued blocks and records the claims that are ours.
+    // Driven from the status poll for the same reason refreshStake is.
+    void drainClaimEvents();
+    void recordClaimsFrom(const QString& eventsJson, const PendingBlock& block);
+    // Opens the ledger once the node has said which chain it is on — the file
+    // is discarded when that disagrees with what it was written against.
+    void loadClaimLedger();
+    void publishClaims();
+    // Writes records and the pending queue together — they are one state, and a
+    // queue that outlived its records would re-count what they already hold.
+    // Throttled unless forced; force on the way out of Running.
+    void saveClaims(bool force = false);
+    [[nodiscard]] QString claimLedgerPath() const;
+    // The chain this ledger belongs to. chain_id alone is a release string —
+    // "0.3.0-rc.3" — so a devnet rebuilt at the same release would inherit the
+    // previous chain's totals. Pairing it with the genesis block id makes the
+    // identity actually unique to a chain.
+    [[nodiscard]] QString chainIdentity();
+    void refreshGenesisId();
     // TODO(logos-co/logos-liblogos#219): both of these go away when liblogos
     // publishes its per-module stats to modules. It already measures them — the
     // same figures Basecamp's Core Inspector shows — but only a host can read
@@ -135,11 +172,6 @@ private:
     // definition: the sync call spins a nested event loop, so a stop can run to
     // completion while the reply is in flight.
     [[nodiscard]] bool stillRunning() const;
-    void countPowClaims(const QStringList& payoutKeys, int claimCount, quint64 lepta);
-    // Running total behind powRewardsLepta. Kept as a u64 here and published as
-    // a decimal string: lepta run past what a double holds exactly, and every
-    // consumer formats from the string anyway.
-    quint64 m_powRewardsLepta = 0;
     const Rule* diagnoseNode() const; // cached; call this
     bool moduleIsAlive();
     // True when the node's log has been written to since the last look, which
@@ -225,6 +257,20 @@ private:
     // Wallet addresses as the node reports them, normalised for comparison
     // against the claim beneficiaries named in incoming blocks.
     QSet<QString> m_knownAddresses;
+
+    ClaimLedger m_claims;
+    bool m_claimsLoaded = false;
+    // When the ledger last reached disk. Throttles the rewrite-whole save so a
+    // replay that finds many claims does not pay for one write per claim.
+    QElapsedTimer m_claimsSaved;
+    // Genesis block id, fetched once per run. Empty when the node could not be
+    // asked — the guard then falls back to chain_id alone, which is what it
+    // used to be, rather than refusing to open the ledger at all.
+    QString m_genesisId;
+    QVector<PendingBlock> m_pendingEventBlocks;
+    // The last irreversible slot, straight off the processed-block stream. What
+    // decides whether a recorded claim is counted yet.
+    quint64 m_libSlot = 0;
 
     static const QString BLOCKCHAIN_MODULE_NAME;
     // TODO(logos-co/logos-liblogos#219): only reached for the PID behind the

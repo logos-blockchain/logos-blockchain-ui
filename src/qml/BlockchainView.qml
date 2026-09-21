@@ -735,6 +735,9 @@ Rectangle {
                     vouchersJson: root.claimableVouchersJson
                     stakeTotal: root.backend ? root.backend.stakeTotal : ""
                     stakeNoteCount: root.backend ? root.backend.stakeNoteCount : 0
+                    earnedTotal: root.backend ? root.backend.earnedTotal : ""
+                    earnedClaimCount: root.backend ? root.backend.earnedClaimCount : 0
+                    claimsCountingSince: root.backend ? root.backend.claimsCountingSince : ""
                     walletFunded: !!root.backend && root.backend.walletFunded
                     stakeAddresses: root.backend ? root.backend.stakeAddresses : []
                     peerId: root.peerId

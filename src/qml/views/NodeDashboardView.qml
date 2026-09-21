@@ -38,6 +38,14 @@ Item {
     // Empty total means "not reported"; a reported "0" means nothing has aged.
     property string stakeTotal: ""
     property int stakeNoteCount: 0
+    // What this node has earned leading blocks, tallied by the backend from the
+    // chain's own claim events — see EarnedLedger. Empty total means "not
+    // counted yet"; a reported "0" means nothing has been claimed.
+    property string earnedTotal: ""
+    property int earnedClaimCount: 0
+    // ISO 8601 date the tally began, or empty. Neither reward figure is a
+    // lifetime total — nothing hands the app one — so both say what they cover.
+    property string claimsCountingSince: ""
     // Any known address holds tokens. Drives the lane's Funded stage only —
     // the figure itself belongs to the Accounts view.
     property bool walletFunded: false
@@ -109,8 +117,12 @@ Item {
             if (root.claimableTickets > 0)
                 return qsTr("%1 claimed \u00b7 %2 waiting")
                            .arg(root.powRewardsClaimed).arg(root.claimableTickets)
-            if (root.powRewardsClaimed > 0)
-                return qsTr("from %1 tickets").arg(root.powRewardsClaimed)
+            if (root.powRewardsClaimed > 0) {
+                var mined = [qsTr("%n ticket(s)", "", root.powRewardsClaimed)]
+                if (d.countingSince.length > 0)
+                    mined.push(d.countingSince)
+                return mined.join(" \u00b7 ")
+            }
             return root.miningRequested ? qsTr("no tickets claimed") : ""
         }
 
@@ -221,6 +233,33 @@ Item {
             if (root.stakeAddresses.length > 1)
                 parts.push(qsTr("%n key(s)", "", root.stakeAddresses.length))
             return parts.join(" · ")
+        }
+
+        // ---- Rewards -------------------------------------------------------
+        // "since 14 Mar", or empty while the date is unknown. Both reward tiles
+        // carry it: they count claims the app saw settle, and a figure that
+        // cannot say when it started counting is implying it counted everything.
+        readonly property string countingSince: {
+            if (root.claimsCountingSince.length === 0)
+                return ""
+            var d = new Date(root.claimsCountingSince)
+            if (isNaN(d.getTime()))
+                return ""
+            return qsTr("since %1").arg(d.toLocaleDateString(Qt.locale(), Locale.ShortFormat))
+        }
+
+        readonly property string earnedCaption: {
+            if (root.earnedTotal.length === 0)
+                return ""
+            if (root.earnedClaimCount === 0)
+                return qsTr("No rewards claimed yet")
+            // "before fees" lives in the info dialog, not here: three segments
+            // elide on a tile this wide, and the segment that gets cut is the
+            // date — which is the one thing the caption exists to say.
+            var parts = [qsTr("%n voucher(s)", "", root.earnedClaimCount)]
+            if (d.countingSince.length > 0)
+                parts.push(d.countingSince)
+            return parts.join(" \u00b7 ")
         }
 
         // ---- Stopping ------------------------------------------------------
@@ -698,6 +737,23 @@ Item {
                             visible: root.stakeAddresses.length === 1
                             value: root.stakeAddresses.length === 1
                                    ? root.stakeAddresses[0] : ""
+                        }
+                    ]
+                }
+
+                LogosStatCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
+                    label: qsTr("Earned")
+                    value: root.earnedTotal.length > 0
+                           ? Units.format(root.earnedTotal) : qsTr("—")
+                    valueFontSizeMode: Text.HorizontalFit
+                    caption: d.earnedCaption
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("Earned")
+                            dialogContentItem: InfoSections { info: InfoContent.earned }
                         }
                     ]
                 }
