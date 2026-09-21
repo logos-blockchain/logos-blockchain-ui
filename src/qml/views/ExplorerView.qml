@@ -159,6 +159,11 @@ ColumnLayout {
     // so a lookup that never answers would have nothing to report against.
     property string _pendingId: ""
 
+    function searchFor(id) {
+        idField.text = id || ""
+        root.doSearch()
+    }
+
     function doSearch() {
         var id = idField.text.trim()
         if (id.length === 0) return

@@ -7,7 +7,7 @@ import QtQuick.Layouts
 import Logos.Theme
 import Logos.Controls
 
-import "../Units.js" as Units
+import "infoContent.js" as InfoContent
 
 // Proof-of-Work mining and claiming.
 //
@@ -22,8 +22,9 @@ ColumnLayout {
 
     property bool nodeRunning: false
     property bool autoClaimRunning: false
-    property int rewardsClaimed: 0
-    property string rewardsLepta: ""
+    // Claims sent from here that have not been seen on chain yet. Auto-claim
+    // does not pass through the app, so a zero is not "nothing is happening".
+    property int submittedCount: 0
     property int claimableTickets: 0
     property int soonestExpirySlots: -1
     property int soonestExpiryCount: 0
@@ -87,7 +88,8 @@ ColumnLayout {
         wrapMode: Text.WordWrap
         text: qsTr("Mining searches for tickets. A ticket is only worth something once it is "
                    + "claimed, and unclaimed tickets expire — so what matters is not how many "
-                   + "are mined but how many get claimed.\n\n"
+                   + "are mined but how many get claimed. What claiming has paid is on the "
+                   + "dashboard, under Mining Rewards.\n\n"
                    + "Mining only stops when you stop it. Auto-claim stops itself, as soon as "
                    + "every claim target has reached its threshold — after which tickets keep "
                    + "accumulating and expiring, and the search keeps using every core, for "
@@ -106,18 +108,15 @@ ColumnLayout {
             Layout.fillWidth: true
             Layout.preferredWidth: 1
             objectName: "claimableTicketsCard"
-            label: qsTr("Claimable now")
+            label: qsTr("Ready to claim")
             value: root.claimableLoaded ? String(root.claimableTickets) : "—"
             flashOnChange: root.visible
             valueColor: root.claimsStalled ? Theme.palette.warning : Theme.palette.text
             caption: d.expiryCaption
             labelTrailing: [
                 LogosInfoButton {
-                    title: qsTr("Claimable now")
-                    text: qsTr("Mined tickets the node can still redeem. This is not a balance — "
-                               + "a ticket is anchored to a recent block and expires if it is not "
-                               + "claimed in time, so this number falls on its own as well as "
-                               + "when rewards are paid.")
+                    title: qsTr("Ready to claim")
+                    dialogContentItem: InfoSections { info: InfoContent.claimableTickets }
                 }
             ]
         }
@@ -125,27 +124,15 @@ ColumnLayout {
         LogosStatCard {
             Layout.fillWidth: true
             Layout.preferredWidth: 1
-            objectName: "miningRewardsClaimedCard"
-            label: qsTr("Claimed this session")
-            value: root.rewardsLepta.length > 0 ? Units.format(root.rewardsLepta)
-                                                : Units.format("0")
-            caption: root.rewardsClaimed > 0
-                     ? qsTr("from %1 tickets").arg(root.rewardsClaimed)
-                     : qsTr("no tickets claimed")
+            objectName: "submittedClaimsCard"
+            label: qsTr("Submitted")
+            value: String(root.submittedCount)
+            caption: root.submittedCount > 0 ? qsTr("waiting to land") : ""
             flashOnChange: root.visible
-            flashColor: Theme.palette.success
             labelTrailing: [
                 LogosInfoButton {
-                    title: qsTr("Claimed this session")
-                    text: qsTr("What proof-of-work claims have paid this wallet, after fees, "
-                               + "summed from the blocks seen since the node started.\n\n"
-                               + "It resets every time the node starts, and it is not a "
-                               + "lifetime total: nothing on the node keeps one. Claims "
-                               + "settled before this session began are not counted, a "
-                               + "reorganisation can unwind one that is, and blocks missed "
-                               + "while the node was catching up are lost to it. Your wallet "
-                               + "balance is the figure that is actually authoritative — this "
-                               + "one only describes what this session watched arrive.")
+                    title: qsTr("Submitted")
+                    dialogContentItem: InfoSections { info: InfoContent.submitted }
                 }
             ]
         }

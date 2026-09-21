@@ -16,6 +16,7 @@
 #include "AccountsModel.h"
 #include "BlockModel.h"
 #include "ClaimLedger.h"
+#include "ClaimsModel.h"
 
 class LogosAPI;
 class LogosAPIClient;
@@ -30,12 +31,13 @@ class QTimer;
 // AccountsModel* / BlockModel* are subclass-only Q_PROPERTYs — QAbstractItemModel*
 // can't flow through a .rep, so ui-host auto-remotes each such property as
 // "<module>/<propertyName>" (see logos-view-module-runtime/ui-host/main.cpp).
-// QML acquires them via logos.model("blockchain_ui", "accounts"|"blocks").
+// QML acquires them via logos.model("blockchain_ui", "accounts"|"blocks"|"claims").
 class BlockchainBackend : public BlockchainBackendSimpleSource
 {
     Q_OBJECT
     Q_PROPERTY(AccountsModel* accounts READ accounts CONSTANT)
     Q_PROPERTY(BlockModel* blocks READ blocks CONSTANT)
+    Q_PROPERTY(ClaimsModel* claims READ claims CONSTANT)
 
 public:
     explicit BlockchainBackend(LogosAPI* logosAPI, QObject* parent = nullptr);
@@ -43,6 +45,7 @@ public:
 
     AccountsModel* accounts() const { return m_accountsModel; }
     BlockModel* blocks() const { return m_blockModel; }
+    ClaimsModel* claims() const { return m_claimsModel; }
 
     // One node-log signature and what to tell the user when it is seen.
     // `recovering` marks progress rather than failure (replaying stored
@@ -105,6 +108,7 @@ public slots:
     QVariantMap getConfigWalletKeys(QString configPath) override;
     void refreshAccountRoles();
     QVariantMap powConfigure(QString configPath, QString configJson) override;
+    void setClaimHistoryFilter(int mode) override;
     void clearBlocks() override;
     void copyToClipboard(QString text) override;
 
@@ -142,6 +146,10 @@ private:
     // Driven from the status poll for the same reason refreshStake is.
     void drainClaimEvents();
     void recordClaimsFrom(const QString& eventsJson, const PendingBlock& block);
+    // Notes a claim this app just sent, so the views can say it is in flight
+    // before the chain has anything to say about it. Takes the module's reply
+    // verbatim; a reply that is not a transaction hash is ignored.
+    void noteSubmittedClaim(ClaimLedger::Kind kind, const QVariantMap& reply);
     // Opens the ledger once the node has said which chain it is on — the file
     // is discarded when that disagrees with what it was written against.
     void loadClaimLedger();
@@ -254,6 +262,7 @@ private:
 
     AccountsModel* m_accountsModel = nullptr;
     BlockModel* m_blockModel = nullptr;
+    ClaimsModel* m_claimsModel = nullptr;
     // Wallet addresses as the node reports them, normalised for comparison
     // against the claim beneficiaries named in incoming blocks.
     QSet<QString> m_knownAddresses;

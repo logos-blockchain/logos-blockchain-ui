@@ -179,7 +179,10 @@ var readyToClaim = {
         + "the node leads mints one; claiming redeems it into spendable "
         + "balance. The voucher is the receipt, not the money — the reward "
         + "itself lives on the ledger until it is claimed.",
-    calc: "Only vouchers the wallet can currently prove are counted. Ones "
+    calc: "Claiming submits a transaction and the protocol picks which voucher "
+        + "it consumes — the list is informational, not a queue you choose "
+        + "from.\n\n"
+        + "Only vouchers the wallet can currently prove are counted. Ones "
         + "already being claimed, or not yet provable, are left out — so this "
         + "can read lower than the number of blocks the node has led. The line "
         + "beneath is what they are worth: one voucher's payout right now, "
@@ -201,6 +204,80 @@ var readyToClaim = {
                  + "is an answer." }
     ],
     docs: "https://docs.logos.co/blockchain/node-app/claim-leader-rewards-in-logos-blockchain-ui-app"
+}
+
+// The Mining tab's counterpart to readyToClaim above: that one is vouchers,
+// this one is tickets. They are deliberately worded apart — a voucher keeps
+// until it is claimed, a ticket expires, which is the whole difference.
+var claimableTickets = {
+    title: "Ready to Claim",
+    what: "Mined tickets the node can still redeem. Mining searches for "
+        + "tickets; a ticket pays nothing until it is claimed. This is not a "
+        + "balance — it is work that has not been turned into money yet.",
+    calc: "The node is asked what it can still redeem, every few seconds. The "
+        + "number falls for two quite different reasons: because tickets were "
+        + "claimed, or because they expired. A ticket is anchored to a recent "
+        + "block and stops being claimable once the chain moves far enough "
+        + "past it, so this can drop without anything having been paid. The "
+        + "line beneath says how soon the nearest ones lapse.",
+    states: [
+        { label: "Number",
+          meaning: "Tickets claimable now, with the nearest expiry beneath. "
+                 + "Claim them below, or leave auto-claim to do it." },
+        { label: "Number, in amber",
+          meaning: "Tickets are accumulating and the count is not coming down. "
+                 + "They are being mined faster than they are being claimed, "
+                 + "and the surplus will expire unredeemed. The notice beneath "
+                 + "says what to check." },
+        { label: "0",
+          meaning: "Nothing waiting. Either nothing has been mined, or "
+                 + "everything mined has been claimed." },
+        { label: "—",
+          meaning: "Nothing reported yet — the node is off, or has not "
+                 + "answered since the app started. Different from 0, which "
+                 + "is an answer." }
+    ],
+    // "Mining notes" on this page is the mechanism these tickets come from —
+    // the threshold, the claim, the shared reward pool. The glossary only
+    // defines the word and points here anyway.
+    docs: "https://docs.logos.co/blockchain/concepts/about-mantle"
+}
+
+// Shared by the Rewards and Mining tabs. Deliberately generic about which total
+// it sits beside: the caveats are identical for both kinds, and two near-copies
+// of this text would drift apart.
+var submitted = {
+    title: "Submitted",
+    what: "Claims sent from this app that have not been seen in a block yet. "
+        + "The step between pressing Claim and the reward showing up — proof "
+        + "the request went somewhere, while the chain decides what to do "
+        + "with it.",
+    calc: "It goes up the moment the node accepts the claim and hands back a "
+        + "transaction, and comes down when that transaction is seen in a "
+        + "block. That is why it can move while the reward totals have not: "
+        + "those wait for the block to settle beyond reversal, which is "
+        + "several slots later.\n\n"
+        + "It counts what this app sent. Auto-claim runs inside the node and "
+        + "never passes through here, so a zero does not mean nothing is in "
+        + "flight — only that nothing was sent from this screen.\n\n"
+        + "A claim that is never seen is dropped once the chain has settled "
+        + "well past it. Submitting is not the same as succeeding, and this "
+        + "figure only ever claimed the first: whether a claim was included, "
+        + "and what it paid, is what the reward totals answer.",
+    states: [
+        { label: "Number",
+          meaning: "Claims sent and not yet seen on chain. It should fall to "
+                 + "zero within a few blocks." },
+        { label: "0",
+          meaning: "Nothing in flight from here. Normal — it is what this "
+                 + "reads between claims, and while auto-claim is doing the "
+                 + "work instead." }
+    ],
+    // Nothing published covers the gap between submitting a claim and seeing
+    // it land — it is an app-side idea, not a protocol one. Empty rather than
+    // pointed at something that does not answer it; InfoSections hides the
+    // section, as it does for cpu, ram, disk and explorer.
+    docs: ""
 }
 
 var peerId = {

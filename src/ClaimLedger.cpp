@@ -87,6 +87,7 @@ void ClaimLedger::load(const QString& path, const QString& chainId)
 {
     m_records.clear();
     m_byKey.clear();
+    m_submissions.clear();
     m_pending.clear();
     m_countingSince.clear();
     m_chainId = chainId;
@@ -131,6 +132,20 @@ void ClaimLedger::load(const QString& path, const QString& chainId)
         record.txHash = o.value(QStringLiteral("tx")).toString();
         record.slot = static_cast<quint64>(o.value(QStringLiteral("slot")).toInteger());
         add(record);
+    }
+
+    // Absent in files written before submissions were tracked, which is why the
+    // format version does not move: an older build ignores the key, a newer one
+    // reads an empty list, and neither loses a tally over it.
+    const QJsonArray submissions = root.value(QStringLiteral("submissions")).toArray();
+    for (const QJsonValue& entry : submissions) {
+        const QJsonObject o = entry.toObject();
+        Submission submission;
+        submission.kind = kindFromString(o.value(QStringLiteral("kind")).toString());
+        submission.txHash = o.value(QStringLiteral("tx")).toString();
+        submission.libSlotAtSubmit =
+            static_cast<quint64>(o.value(QStringLiteral("lib_slot")).toInteger());
+        addSubmission(submission);
     }
 
     const QJsonArray pending = root.value(QStringLiteral("pending")).toArray();
@@ -182,6 +197,15 @@ bool ClaimLedger::save(const QString& path) const
         records.append(o);
     }
 
+    QJsonArray submissions;
+    for (const Submission& submission : m_submissions) {
+        QJsonObject o;
+        o[QStringLiteral("kind")] = kindToString(submission.kind);
+        o[QStringLiteral("tx")] = submission.txHash;
+        o[QStringLiteral("lib_slot")] = static_cast<qint64>(submission.libSlotAtSubmit);
+        submissions.append(o);
+    }
+
     QJsonArray pending;
     for (const Pending& block : m_pending) {
         QJsonObject o;
@@ -208,6 +232,7 @@ bool ClaimLedger::save(const QString& path) const
     if (!m_countingSince.isEmpty())
         root[QStringLiteral("counting_since")] = m_countingSince;
     root[QStringLiteral("records")] = records;
+    root[QStringLiteral("submissions")] = submissions;
     root[QStringLiteral("pending")] = pending;
 
     QSaveFile file(path);
@@ -244,11 +269,86 @@ bool ClaimLedger::add(const Record& record)
     return true;
 }
 
+bool ClaimLedger::addSubmission(const Submission& submission)
+{
+    if (submission.txHash.isEmpty())
+        return false;
+    // The node can answer one claim call with a hash it has already given us —
+    // a retry of the same transaction. Counting it twice would report two
+    // claims in flight where there is one.
+    for (const Submission& existing : m_submissions) {
+        if (existing.kind == submission.kind && existing.txHash == submission.txHash)
+            return false;
+    }
+    m_submissions.append(submission);
+    return true;
+}
+
+bool ClaimLedger::clearSubmission(Kind kind, const QString& txHash)
+{
+    if (txHash.isEmpty())
+        return false;
+    for (int i = 0; i < m_submissions.size(); ++i) {
+        if (m_submissions[i].kind == kind && m_submissions[i].txHash == txHash) {
+            m_submissions.remove(i);
+            return true;
+        }
+    }
+    return false;
+}
+
+int ClaimLedger::expireSubmissions(quint64 libSlot, quint64 windowSlots)
+{
+    // Before the first block event LIB is unknown, and every submission would
+    // look infinitely old against a zero. Nothing expires until we know where
+    // the chain is.
+    if (libSlot == 0)
+        return 0;
+
+    int dropped = 0;
+    for (int i = m_submissions.size() - 1; i >= 0; --i) {
+        const quint64 sent = m_submissions[i].libSlotAtSubmit;
+        // A submission recorded before LIB was known carries a zero. Adopt the
+        // current LIB as its start rather than expiring it on sight.
+        if (sent == 0) {
+            m_submissions[i].libSlotAtSubmit = libSlot;
+            continue;
+        }
+        if (libSlot > sent && libSlot - sent > windowSlots) {
+            qWarning() << "ClaimLedger: giving up on submitted claim" << m_submissions[i].txHash
+                       << "- not seen within" << windowSlots << "slots of finality";
+            m_submissions.remove(i);
+            ++dropped;
+        }
+    }
+    return dropped;
+}
+
+int ClaimLedger::submittedCount(Kind kind) const
+{
+    int count = 0;
+    for (const Submission& submission : m_submissions) {
+        if (submission.kind == kind)
+            ++count;
+    }
+    return count;
+}
+
 int ClaimLedger::confirmedCount(Kind kind, quint64 libSlot) const
 {
     int count = 0;
     for (const Record& record : m_records) {
         if (record.kind == kind && record.slot <= libSlot)
+            ++count;
+    }
+    return count;
+}
+
+int ClaimLedger::pendingCount(Kind kind, quint64 libSlot) const
+{
+    int count = 0;
+    for (const Record& record : m_records) {
+        if (record.kind == kind && record.slot > libSlot)
             ++count;
     }
     return count;
