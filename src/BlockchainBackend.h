@@ -111,6 +111,7 @@ public slots:
     QVariantMap getConfigWalletKeys(QString configPath) override;
     void refreshAccountRoles();
     QVariantMap powConfigure(QString configPath, QString configJson) override;
+    QVariantMap backupKeystore(QString destinationPath) override;
     void setClaimHistoryFilter(int mode) override;
     void setMiningHistoryFilter(int mode) override;
     void clearBlocks() override;
@@ -179,6 +180,11 @@ private:
     // Disk is NOT part of that TODO: nothing in the stack measures it, so this
     // stays once liblogos exposes CPU and memory.
     [[nodiscard]] QString nodeDataDir() const;
+    // The directory the chain database actually sits in, which is not the same
+    // place in both layouts — see the .cpp.
+    [[nodiscard]] QString nodeDatabaseDir() const;
+    // The keystore beside the node's data, or empty when there is none.
+    [[nodiscard]] QString nodeKeystorePath() const;
     void refreshDiskUsage();
     // Re-checked AFTER every blocking module call, not just before one. See the
     // definition: the sync call spins a nested event loop, so a stop can run to

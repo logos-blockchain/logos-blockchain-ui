@@ -22,7 +22,6 @@ ColumnLayout {
     // --- Public API ---
 
     property bool nodeRunning: false
-    property bool autoClaimRunning: false
     // Claims sent from here that have not been seen on chain yet. Auto-claim
     // does not pass through the app, so a zero is not "nothing is happening".
     property int submittedCount: 0
@@ -37,7 +36,6 @@ ColumnLayout {
     property bool claimSuccess: false
     property string claimMessage: ""
 
-    signal autoClaimToggled(bool enabled)
     signal claimRequested(string addressHex)
 
     // From the backend, which watches the claimable count fall.
@@ -202,80 +200,6 @@ ColumnLayout {
         severity: LogosNotice.Warning
         title: qsTr("Can't read claimable tickets")
         message: root.claimableError
-    }
-
-    // ---- Auto-claim ----
-    Rectangle {
-        Layout.fillWidth: true
-        Layout.topMargin: Theme.spacing.small
-        implicitHeight: autoClaimColumn.implicitHeight + Theme.spacing.medium * 2
-        color: Theme.palette.backgroundSecondary
-        border.color: Theme.palette.border
-        border.width: 1
-        radius: Theme.spacing.radiusLarge
-
-        ColumnLayout {
-            id: autoClaimColumn
-            anchors.fill: parent
-            anchors.margins: Theme.spacing.medium
-            spacing: Theme.spacing.small
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: Theme.spacing.small
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Theme.spacing.small
-
-                        LogosText {
-                            text: qsTr("Auto-claim")
-                            font.pixelSize: Theme.typography.primaryText
-                        }
-                        LogosBadge {
-                            objectName: "autoClaimRecommendedBadge"
-                            text: qsTr("Recommended")
-                        }
-                        Item { Layout.fillWidth: true }
-                    }
-
-                    LogosText {
-                        Layout.fillWidth: true
-                        wrapMode: Text.WordWrap
-                        text: root.autoClaimRunning
-                              ? qsTr("The node claims mined rewards on its own. It does not "
-                                     + "report this back — if nothing is being claimed, trust "
-                                     + "the ticket count over this switch.")
-                              : qsTr("Tickets accumulate until you claim them below, and expire "
-                                     + "if you do not.")
-                        font.pixelSize: Theme.typography.secondaryText
-                        color: Theme.palette.textSecondary
-                    }
-                }
-
-                LogosSwitch {
-                    objectName: "autoClaimSwitch"
-                    checked: root.autoClaimRunning
-                    enabled: root.nodeRunning && !root.claimBusy
-                    onToggled: root.autoClaimToggled(checked)
-                }
-            }
-
-            LogosText {
-                Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-                text: qsTr("Unattended claiming only works if the config file lists claim "
-                           + "targets. Add one during onboarding or by editing the config "
-                           + "directly — without one the node has nowhere to pay, and tickets "
-                           + "expire however this switch is set.")
-                font.pixelSize: Theme.typography.secondaryText
-                color: Theme.palette.textTertiary
-            }
-        }
     }
 
     // ---- Manual claim ----

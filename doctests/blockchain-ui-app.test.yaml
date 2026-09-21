@@ -313,7 +313,8 @@ sections:
 
             - name: "Settings renders without a node at all"
               action: wait_for
-              texts: ["Node config", "User Config", "Deployment Config"]
+              texts: ["Node", "Back up your keys", "Mining", "Reset the database",
+                      "User Config", "Deployment Config"]
               timeout: 6000
               screenshot: "blockchain-ui-settings.png"
               text: |

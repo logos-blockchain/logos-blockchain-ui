@@ -211,6 +211,84 @@ var readyToClaim = {
 // until it is claimed, a ticket expires, which is the whole difference.
 // The Mining page header. Distinct from `mining` above, which is the
 // dashboard tile: that one is what mining has PAID, this is what mining IS.
+var autoClaim = {
+    title: "Auto-claim",
+    // No `calc`: InfoSections titles that section "HOW IT'S CALCULATED", and a
+    // switch is not a calculation. The metric tiles keep it — deriving Earned
+    // or Peers is exactly what a reader needs — but a behaviour belongs under
+    // "what". Same reasoning as nodeConfig.
+    what: "Whether the node redeems mined tickets on its own. A ticket pays "
+        + "nothing until it is claimed and expires if it never is, so without "
+        + "this every ticket has to be claimed by hand from the Mining tab "
+        + "before its window closes.\n\n"
+        + "This switch applies to the RUNNING node only. It is not written "
+        + "back to the config, so a restart puts it back to whatever the file "
+        + "says \u2014 which is why it can read differently after a restart "
+        + "than when you left it.\n\n"
+        + "What actually arms it at startup is the config\u2019s list of claim "
+        + "targets: the node turns auto-claim on when the network pays rewards "
+        + "and that list is not empty. Without a target the node has nowhere to "
+        + "pay, and tickets expire however this switch is set. Add one during "
+        + "onboarding, or by editing the config directly.\n\n"
+        + "The node does not report back that it is claiming. If nothing is "
+        + "being redeemed, trust the ticket count on the Mining tab over this "
+        + "switch.",
+    states: [
+        { label: "On",
+          meaning: "The node claims mined rewards unattended \u2014 provided "
+                 + "the config lists a claim target." },
+        { label: "Off",
+          meaning: "Tickets accumulate until claimed from the Mining tab, and "
+                 + "expire if they are not." },
+        { label: "Unavailable",
+          meaning: "The node is not running. Auto-claim is a live setting on a "
+                 + "running node, not a stored one." }
+    ],
+    docs: "https://docs.logos.co/blockchain/concepts/about-mantle"
+}
+
+var nodeConfig = {
+    title: "Node config",
+    // No `calc` section: InfoSections titles that one "HOW IT'S CALCULATED",
+    // and nothing here is calculated. It is all what these files are and what
+    // you can do with them, so it belongs under "what".
+    what: "The two files the node is started from. The user config holds this "
+        + "node\u2019s own settings and the keys it runs with; the deployment "
+        + "config describes the network it joins, and defaults to the one built "
+        + "into the app.\n\n"
+        + "Both are plain YAML. Copy the path above and edit either in any "
+        + "text editor \u2014 the node reads "
+        + "these when it next starts, so a change needs a restart to take "
+        + "effect.\n\n"
+        + "Editing by hand is how the advanced settings are reached, because "
+        + "the app has no forms for them: the mining section under `pow` "
+        + "(threads, claim targets and their thresholds), and the bootstrap "
+        + "peers the node dials on start. Those cannot be changed from this "
+        + "screen \u2014 the node can only be told about one section of this "
+        + "file programmatically, nothing can be read back out of it, and the "
+        + "peer list cannot be altered on a config that already exists.\n\n"
+        + "Change goes back to the setup chooser, which does two things: "
+        + "generate a fresh user config along with new keys, or point the app "
+        + "at config files you already have. It is unavailable while the node "
+        + "is running, because changing the files underneath it would leave the "
+        + "two disagreeing.",
+    states: [
+        { label: "A path",
+          meaning: "The file in use. Copy it with the button beside the "
+                 + "label." },
+        { label: "(Generated)",
+          meaning: "This user config was produced by the app rather than "
+                 + "supplied by you." },
+        { label: "Default",
+          meaning: "No deployment config was chosen, so the app\u2019s built-in "
+                 + "network settings are used." },
+        { label: "No file selected",
+          meaning: "Nothing is set. Use Change to generate a config or point "
+                 + "at an existing one." }
+    ],
+    docs: "https://docs.logos.co/blockchain/get-started/run-a-logos-blockchain-node-from-basecamp"
+}
+
 var miningOverview = {
     title: "Mining",
     what: "Proof-of-work. The node searches for tickets; a ticket pays nothing "
