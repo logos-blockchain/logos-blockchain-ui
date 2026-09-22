@@ -12,7 +12,7 @@ intro: |
   auto-loads the backend module tree. This doc-test launches that app **headless**
   (`QT_QPA_PLATFORM=offscreen`) and drives it through the QML inspector with
   [`logos-qt-mcp`](https://github.com/logos-co/logos-qt-mcp): it walks the
-  first-run config chooser, generates a node config from the UI, and reaches the
+  first-run setup wizard, generates a node config from the UI, and reaches the
   dashboard, capturing screenshots along the way.
 
   > This doc-test deliberately **does not start a node**. Starting one means
@@ -27,7 +27,7 @@ what_you_build: "The `logos-blockchain-ui` standalone app, launched headless and
 what_you_learn:
   - How a QML-only Logos UI exposes a runnable standalone app that bundles its backend
   - How to drive a headless Qt/QML app with logos-qt-mcp (wait, click, type, assert)
-  - How the first-run chooser routes between generating a config and pointing at an existing one
+  - How the setup wizard routes between generating a config and pointing at an existing one
   - How a UI action round-trips into `blockchain_module` over the Logos bridge
   - How to capture screenshots of the running UI for documentation and CI
 
@@ -56,15 +56,15 @@ sections:
       and the native node library it links, so the first launch builds a lot —
       hence the generous timeouts.
 
-      On first run the app opens on the **config chooser**: a node needs a config
-      before it can start, and the chooser is where you either generate one or
-      point at a file you already have.
+      On first run the app opens on the **setup wizard's welcome screen**: a node
+      needs a config before it can start, and the welcome screen is where you
+      choose how to get one.
     steps:
       - title: "Launch and drive the app"
         ui_test:
           # Taller than the 1024x768 default: logos-qt-mcp drives by clicking an
           # element's scene position and cannot scroll, so a generous window keeps
-          # the generate form's fields on-screen. --height is exposed by
+          # each setup step's controls on-screen. --height is exposed by
           # logos-standalone-app. Timeouts are large because the app bundle (UI
           # plugin + blockchain_module + the node library) builds during launch.
           launch: "nix run github:logos-blockchain/logos-blockchain-ui{release} --no-write-lock-file -- --height 1000"
@@ -72,117 +72,168 @@ sections:
           build_timeout: 3600
           launch_timeout: 3600
           tests:
-            # The view routes straight to the node page when a config is already
-            # saved in QSettings (see _applyInitialRoute), so on a machine that
-            # has run the app before, the chooser is not what opens. "Change" is
-            # the real route back; it lives on the Settings tab, so open that
-            # first. Both steps are harmless on a first run, where the chooser
-            # is already showing and neither object is hit.
+            # Setup shows itself when there is no config, so on a machine that
+            # has run the app before the welcome screen is not what opens.
+            # "Change config" is the real route back; it lives on the Settings
+            # tab, so open that first. Both steps are harmless on a first run,
+            # where setup is already showing and neither object is hit.
             - name: "Open the Settings tab"
               action: click_object
               find_by: "objectName"
               find_value: "tabSettings"
 
-            - name: "Go to the config chooser"
+            - name: "Go back into setup"
               action: click_object
               find_by: "objectName"
               find_value: "changeConfigButton"
 
-            - name: "Chooser is shown"
+            - name: "Welcome screen is shown"
               action: wait_for
-              texts: ["Choose how to set up your node config", "Generate config", "Set path to config"]
+              texts: ["Blockchain Node", "Set up your node"]
               timeout: 10000
-              screenshot: "blockchain-ui-chooser.png"
+              screenshot: "blockchain-ui-welcome.png"
               text: |
-                The chooser is where a node config is generated or selected. On a
-                first run the app lands here by itself; once a config has been
-                saved it opens on the node view instead, and this is the route
-                back — the same one the node view's **Change** button takes.
+                The landing screen: the shared onboarding photo over the app's
+                name and its entry points. It is deliberately not step 1 of
+                anything — a first screen that already looks like step 1 of 5
+                has spent the user's patience before asking them anything.
 
-            - name: "Open the generate-config form"
+                It shows **one** button here, not two. **Quick start** appears
+                only when the module's `metadata.json` lists at least one
+                entry under `bootstrap_peers`: quick start has no screen on which to ask for
+                peers, and `generate_user_config` writes exactly the list it is
+                handed, so with none configured the only node it could produce
+                is one that never finds the chain. With peers configured the
+                screen offers **Quick start** and **Advanced**; without them the
+                single remaining route reads **Set up your node**, because
+                there is nothing for it to be advanced relative to.
+
+            - name: "Enter the setup stepper"
               action: click_object
               find_by: "objectName"
-              find_value: "chooserGenerateButton"
+              find_value: "advancedSetupButton"
 
-            - name: "Generate form is rendered"
+            - name: "Step 1 asks where the config comes from"
+              action: wait_for
+              texts: ["Set up your node", "1. Setup", "How do you want to start?"]
+              timeout: 8000
+              screenshot: "blockchain-ui-setup-step1.png"
+              text: |
+                The stepper pins its chrome and its Back/Continue footer, and
+                scrolls only the step content between them — a wizard whose
+                Back button can be scrolled off the bottom of a short window is
+                a wizard you can get stuck in.
+
+            - name: "Step 1 offers the two routes"
               action: wait_for
               texts:
-                - "Generate user config"
-                - "All fields are optional. Values are passed as args to generate config."
-                - "Initial peers (one per line)"
-                - "Net port"
-                - "Blend port"
+                - "Generate a new node"
+                - "Use an existing config"
               timeout: 8000
-              screenshot: "blockchain-ui-generate.png"
               text: |
-                Every field here maps to an argument of the module's
-                `generate_user_config` call. Leaving the output path empty is the
-                safe default — the module then writes the config, and the node's
-                state, database and log directories, under its own per-instance
-                directory, which is always writable.
+                One decision per screen, and this is the one that decides how
+                many screens follow. Generating writes a fresh config and
+                keystore and walks all five steps.
 
-            - name: "Set the HTTP address"
-              action: set_text
-              find_by: "placeholderText"
-              find_value: "HTTP address (e.g. 0.0.0.0:8080)"
-              value: "0.0.0.0:18080"
+                Bringing your own ends the wizard here: the primary button
+                becomes **Start node**. Every remaining step asks about
+                something that config already answers — its network settings
+                and its `pow` section are written, and its keystore is one the
+                operator already has, because they carried the files here.
+                Asking would mean either ignoring the answers or rewriting a
+                file we were only pointed at.
 
-            # The form's submit button and the chooser button that opens the
-            # form share the caption "Generate config", so they are addressed by
-            # objectName rather than by text.
+            - name: "Choose to generate"
+              action: click_object
+              find_by: "objectName"
+              find_value: "setupGenerateCard"
+
+            - name: "Continue to the network step"
+              action: click_object
+              find_by: "objectName"
+              find_value: "onboardingAdvanceButton"
+
+            - name: "Step 2 is network and peers only"
+              action: wait_for
+              texts:
+                - "Network"
+                - "2. Network"
+                - "Default (public testnet)"
+                - "Custom deployment file"
+                - "Bootstrap peers"
+              timeout: 8000
+              screenshot: "blockchain-ui-setup-network.png"
+              text: |
+                Two questions, and nothing else. Ports, NAT, external address
+                and storage paths are not on this screen at all: every one has
+                a working default, none is a decision a first-time operator is
+                equipped to make, and the config file still holds them all.
+
+                Bootstrap peers are written into the config exactly as entered
+                — an empty list is an empty list, not a fallback to the
+                deployment's own peers.
+
             - name: "Generate the config"
               action: click_object
               find_by: "objectName"
-              find_value: "generateSubmitButton"
+              find_value: "onboardingAdvanceButton"
 
-            - name: "Generate succeeded and routed to the PoW step"
+            - name: "Generate succeeded and routed to the keys step"
               action: wait_for
-              texts: ["Proof of Work"]
-              timeout: 10000
-              screenshot: "blockchain-ui-pow.png"
+              texts: ["Back up your keys", "3. Keys", "Download keystore.yaml",
+                      "I've backed up my keys somewhere safe"]
+              timeout: 15000
+              screenshot: "blockchain-ui-setup-keys.png"
               text: |
-                Generating does not go straight to the node. A config exists
-                now, so the wizard offers the one thing that can only be set up
-                against a written config: **Proof of Work**. On a testnet this
-                is how a node funds itself, so it is asked once, here, rather
-                than left to be discovered in Settings later.
+                Reaching this step *is* the assertion: the wizard only advances
+                when `generate_user_config` returns success, so arriving here
+                proves the round-trip into `blockchain_module` worked.
 
-                Auto-claim targets are picked from the accounts the config
-                already tracks — which is why this step comes after generate and
-                not before it. Leaving the list empty is a legitimate answer,
-                and the button says so: **Continue without auto-claim**.
+                This is the one step that refuses to be skipped. Generating a
+                config also generated every key the node will ever use, nothing
+                can reissue them, and this is the single point in the flow where
+                a user can lose something irreplaceable by clicking past it — so
+                **Continue** stays disabled until the checkbox is ticked.
 
-            - name: "Continue past the PoW step"
+                The keystore is found beside the config, which is why it is
+                offered here at all: it exists from the moment the config is
+                written, long before the node has run.
+
+            - name: "Acknowledge the keys are saved"
               action: click_object
               find_by: "objectName"
-              find_value: "powConfirmButton"
+              find_value: "keysAcknowledgeCheckbox"
 
-            - name: "PoW settings saved, routed to the set-path view"
-              action: wait_for
-              texts: ["Select your config files, then continue to the node."]
-              timeout: 10000
-              screenshot: "blockchain-ui-generated.png"
-              text: |
-                Reaching this view *is* the assertion: the UI only calls
-                `showSetConfigPath()` when `powConfigure` returns success, which
-                in turn only runs against the config `generate_user_config`
-                wrote. Arriving here proves both round-trips into
-                `blockchain_module` worked.
-
-                The resolved path is displayed here, but it is machine-specific
-                and text matching is exact, so it is not asserted directly.
-
-                It is rendered as selectable text so a failure here — a parse
-                error, or a path that is not writable — can be copied out of the
-                UI rather than retyped from a screenshot.
-
-            # A successful generate does not jump to the node view: it lands on
-            # the set-path sub-view with the resolved path filled in. "Continue"
-            # is the operator's next step, and the doc-test takes the same one.
-            - name: "Continue to the dashboard"
+            - name: "Continue to the mining step"
               action: click_object
               find_by: "objectName"
-              find_value: "continueToNodeButton"
+              find_value: "onboardingAdvanceButton"
+
+            - name: "Step 4 is one toggle"
+              action: wait_for
+              texts: ["Fund your node", "4. Fund", "Claim mined rewards automatically"]
+              timeout: 8000
+              screenshot: "blockchain-ui-setup-mining.png"
+              text: |
+                The node reads its whole `pow` section once, when its PoW
+                service starts, so this is the last moment before the first
+                start when any of it can be set without a restart — which is the
+                only reason it is in the wizard at all.
+
+                One toggle carries the step. The full form — threads, tickets
+                per block, claim period, auto-claim targets — is behind
+                **Mining settings**, because its defaults are what a desktop
+                node wants.
+
+            - name: "Save the mining settings"
+              action: click_object
+              find_by: "objectName"
+              find_value: "onboardingAdvanceButton"
+
+            - name: "Finish setup"
+              action: click_object
+              find_by: "objectName"
+              find_value: "onboardingAdvanceButton"
 
             - name: "Node view shows the config, node not started"
               action: wait_for
@@ -229,9 +280,10 @@ sections:
                 the same account list. Without a node each states why it cannot
                 answer instead of presenting a form that would fail on submit.
 
-                Everything up to this point — the chooser, the generate form, the
-                round-trip into `blockchain_module`, and the node view — needs no
-                network at all, which is what makes it reproducible.
+                Everything up to this point — the welcome screen, the five setup
+                steps, the round-trip into `blockchain_module`, and the node
+                view — needs no network at all, which is what makes it
+                reproducible.
 
             # Each of these clicks a tab and then asserts something only that
             # tab renders. A disabled tab swallows the click, so the wait_for
@@ -347,8 +399,9 @@ sections:
       doc-test does — at which point the operation panels become reachable and
       assertable.
 
-      Navigation here goes through `call_method` on `objectName` handles
-      (`blockchainRoot`, `configChoiceView`, `generateConfigView`) rather than by
-      clicking captions. That is deliberate: the chooser's "Generate config"
-      button and the form's submit button share a caption, so click-by-text
-      cannot address them unambiguously.
+      Navigation here goes through `objectName` handles (`onboardingView`,
+      `onboardingAdvanceButton`, the per-step cards) rather than by clicking
+      captions. That is deliberate: the wizard's primary button is one control
+      whose caption changes per step, so addressing it by text would mean a
+      different selector on every screen — and the step cards repeat words the
+      body copy also uses.

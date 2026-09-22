@@ -99,6 +99,17 @@ Item {
     // Lepta, decimal string. The value those claims paid; powRewardsClaimed is
     // only how many tickets produced it.
     property string powRewardsLepta: ""
+    // The keystore exists and whether a copy of it has been saved. Together
+    // they drive the reminder banner — see the top of the layout.
+    property bool keystorePresent: false
+    property bool keysBackedUp: false
+    // "Not now", not "done". Local to this view on purpose: dismissing hides
+    // the reminder, it does not record anything, so the reminder is back next
+    // time you open the dashboard and Settings still says nothing.
+    property bool keysNoticeDismissed: false
+
+    // Take the user to where the backup is done, which is Settings.
+    // The user says the keystore is safe without downloading it here.
 
     QtObject {
         id: d
@@ -566,6 +577,30 @@ Item {
         ColumnLayout {
             width: scrollView.availableWidth
             spacing: Theme.spacing.large
+
+            // ---- Back up your keys ----
+            LogosNotice {
+                objectName: "keysBackupBanner"
+                Layout.fillWidth: true
+                shown: root.keystorePresent && !root.keysBackedUp
+                       && !root.keysNoticeDismissed
+                closable: true
+                // hide() assigns shown, which would destroy the binding above
+                // and wedge the notice hidden even once a new config needs it.
+                onDismissed: {
+                    root.keysNoticeDismissed = true
+                    shown = Qt.binding(function () {
+                        return root.keystorePresent && !root.keysBackedUp
+                               && !root.keysNoticeDismissed
+                    })
+                }
+                severity: LogosNotice.Error
+                title: qsTr("Back up your keys")
+                message: qsTr("Your keystore has not been saved anywhere else. Nothing can "
+                              + "reissue these keys, and the rewards this node earns are only "
+                              + "reachable with them. Settings → Back up your keys has the "
+                              + "download.")
+            }
 
             // ---- Node hero: status headline + lifecycle lane ----
             // Deliberately NOT a LogosStatCard. The headline is larger than a

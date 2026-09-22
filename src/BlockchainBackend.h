@@ -112,6 +112,11 @@ public slots:
     void refreshAccountRoles();
     QVariantMap powConfigure(QString configPath, QString configJson) override;
     QVariantMap backupKeystore(QString destinationPath) override;
+    QVariantMap getKeystoreKeys(QString configPath) override;
+
+
+public:
+    void setModuleContext(const QString& modulePath);
     void setClaimHistoryFilter(int mode) override;
     void setMiningHistoryFilter(int mode) override;
     void clearBlocks() override;
@@ -183,8 +188,20 @@ private:
     // The directory the chain database actually sits in, which is not the same
     // place in both layouts — see the .cpp.
     [[nodiscard]] QString nodeDatabaseDir() const;
-    // The keystore beside the node's data, or empty when there is none.
+    // The keystore for the current config, or empty when there is none. Looks
+    // beside the config before it looks beside the node's data: the file is
+    // written when the config is generated, and the data directory only exists
+    // once the node has run — waiting for that would put the backup out of
+    // reach for the whole of setup, which is when it matters most.
     [[nodiscard]] QString nodeKeystorePath() const;
+    // Re-derives keysBackedUp from what was persisted for the current config.
+    void refreshKeysBackedUp();
+    [[nodiscard]] static QString keysBackedUpSettingsKey();
+    void markKeysBackedUp();
+    // Fills bootstrapPeers from the module's own metadata. Quiet on failure —
+    // an empty list is a state the UI already handles (it drops Quick start),
+    // and is not worth refusing to start over.
+    void loadBootstrapPeers(const QVariantMap& metadata);
     void refreshDiskUsage();
     // Re-checked AFTER every blocking module call, not just before one. See the
     // definition: the sync call spins a nested event loop, so a stop can run to

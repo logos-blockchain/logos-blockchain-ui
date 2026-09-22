@@ -3,11 +3,18 @@ AccountsView 1.0 AccountsView.qml
 TransferView 1.0 TransferView.qml
 LeaderRewardsView 1.0 LeaderRewardsView.qml
 ExplorerView 1.0 ExplorerView.qml
-GenerateConfigView 1.0 GenerateConfigView.qml
 PowConfigView 1.0 PowConfigView.qml
+PowAutoClaimTargets 1.0 PowAutoClaimTargets.qml
 MiningView 1.0 MiningView.qml
-ConfigChoiceView 1.0 ConfigChoiceView.qml
-SetConfigPathView 1.0 SetConfigPathView.qml
+singleton OnboardingText 1.0 OnboardingText.qml
+OnboardingFlow 1.0 OnboardingFlow.qml
+OnboardingView 1.0 OnboardingView.qml
+OnboardingWelcome 1.0 OnboardingWelcome.qml
+OnboardingChoiceCard 1.0 OnboardingChoiceCard.qml
+OnboardingSetupStep 1.0 OnboardingSetupStep.qml
+OnboardingNetworkStep 1.0 OnboardingNetworkStep.qml
+OnboardingKeysStep 1.0 OnboardingKeysStep.qml
+OnboardingMiningStep 1.0 OnboardingMiningStep.qml
 ChannelDepositView 1.0 ChannelDepositView.qml
 WalletView 1.0 WalletView.qml
 NodeDashboardView 1.0 NodeDashboardView.qml

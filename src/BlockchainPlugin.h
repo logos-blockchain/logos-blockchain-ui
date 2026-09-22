@@ -31,8 +31,14 @@ public:
     // it up with the provided LogosAPI.
     Q_INVOKABLE void initLogos(LogosAPI* api);
 
+    // Where this module is installed. Optional, and called BEFORE initLogos —
+    // the backend does not exist yet, so it is held here and handed over when
+    // it is built.
+    Q_INVOKABLE void initModuleContext(const QString& modulePath);
+
 private:
     BlockchainBackend* m_backend = nullptr;
+    QString m_modulePath;
 };
 
 #endif // BLOCKCHAIN_PLUGIN_H
