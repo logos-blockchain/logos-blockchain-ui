@@ -36,16 +36,31 @@ ColumnLayout {
     property int maxThreads: 1
     property int maxTicketsPerBlock: 2
     property int claimTickSeconds: 300
-    readonly property int ticketsPerBlockSafeMax: 2
 
     property bool embedded: false
     readonly property bool valid: d.miningSettingsValid()
     function configJson() { return d.buildConfigJson() }
+    function loadFrom(section) {
+        if (!section)
+            return
+        if (section.max_threads === null || section.max_threads === undefined) {
+            d.autoThreads = true
+        } else {
+            d.autoThreads = false
+            maxThreadsField.text = String(section.max_threads)
+        }
+        if (section.max_tickets_per_block)
+            maxTicketsField.text = String(section.max_tickets_per_block)
+        if (section.tick_seconds)
+            claimTickField.text = String(section.tick_seconds)
+    }
 
     spacing: Theme.spacing.medium
 
     QtObject {
         id: d
+
+        property bool autoThreads: false
 
 
         // The validator is the rule; acceptableInput is it being asked. The node
@@ -53,7 +68,7 @@ ColumnLayout {
         // deserialization error it only reports at startup — IntValidator's
         // bottom catches it here instead.
         function miningSettingsValid() {
-            return maxThreadsField.textInput.acceptableInput
+            return (d.autoThreads || maxThreadsField.textInput.acceptableInput)
                 && maxTicketsField.textInput.acceptableInput
                 && claimTickField.textInput.acceptableInput
         }
@@ -65,7 +80,7 @@ ColumnLayout {
         // cannot drift apart.
         function buildConfigJson() {
             return JSON.stringify({
-                max_threads: parseInt(maxThreadsField.text),
+                max_threads: d.autoThreads ? null : parseInt(maxThreadsField.text),
                 max_tickets_per_block: parseInt(maxTicketsField.text),
                 tick_seconds: parseInt(claimTickField.text),
                 auto_claim_targets: []
@@ -122,10 +137,21 @@ ColumnLayout {
             color: Theme.palette.textSecondary
         }
         Item { Layout.fillWidth: true }
+        LogosText {
+            text: qsTr("Auto")
+            font.pixelSize: Theme.typography.secondaryText
+            color: Theme.palette.textSecondary
+        }
+        LogosSwitch {
+            objectName: "powAutoThreadsSwitch"
+            checked: d.autoThreads
+            onToggled: d.autoThreads = checked
+        }
         LogosTextField {
             id: maxThreadsField
             objectName: "powMaxThreadsField"
             Layout.preferredWidth: 90.
+            visible: !d.autoThreads
             Component.onCompleted: text = String(root.maxThreads)
             validator: IntValidator { bottom: 1 }
         }
@@ -155,24 +181,6 @@ ColumnLayout {
             title: qsTr("Tickets in flight per block")
             dialogContentItem: InfoSections { info: InfoContent.powTicketsPerBlock }
         }
-    }
-
-    // Negative top margin so the caution stays attached to the field it is about,
-    // rather than floating at the form's own row spacing between two settings.
-    LogosText {
-        Layout.fillWidth: true
-        Layout.minimumWidth: 0
-        Layout.topMargin: -Theme.spacing.small
-        objectName: "powTicketsPerBlockWarning"
-        visible: maxTicketsField.textInput.acceptableInput
-                 && parseInt(maxTicketsField.text) > root.ticketsPerBlockSafeMax
-        text: qsTr("Above %1 the claim batch is likely to exceed what one Blend payload "
-                   + "can carry, in which case every claim is rejected and the tickets "
-                   + "expire. Measured from a single failure, so it is a caution rather "
-                   + "than a known limit.").arg(root.ticketsPerBlockSafeMax)
-        font.pixelSize: Theme.typography.secondaryText
-        color: Theme.palette.warning
-        wrapMode: Text.WordWrap
     }
 
     RowLayout {

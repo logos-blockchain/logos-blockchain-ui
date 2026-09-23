@@ -109,6 +109,7 @@ public slots:
     QVariantMap powStartAutoClaim() override;
     QVariantMap powStopAutoClaim() override;
     QVariantMap getConfigWalletKeys(QString configPath) override;
+    QVariantMap getPowConfig(QString configPath) override;
     void refreshAccountRoles();
     QVariantMap powConfigure(QString configPath, QString configJson) override;
     QVariantMap backupKeystore(QString destinationPath) override;
@@ -278,7 +279,6 @@ private:
     QVariantMap readAccountRoles(const QString& configPath);
     // Public-half keystore titles, or empty. Never fails loudly: titles are
     // decoration and the keystore is expected to become password-protected.
-    QHash<QString, QString> readKeyTitles(const QString& configPath);
     // Republishes accountRows from the model. Called after anything that
     // changes which addresses exist or what they are called.
     void publishAccountRows();

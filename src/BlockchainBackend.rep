@@ -16,6 +16,7 @@ class BlockchainBackend
     PROP(QString deploymentConfig READWRITE)
     PROP(bool useGeneratedConfig READWRITE)
     PROP(QString generatedUserConfigPath READONLY)
+    PROP(QVariantMap configPowSection READONLY)
     PROP(QString nodeDataDir READONLY)
     PROP(QString nodeKeystorePath READONLY)
     // Whether the keystore for the current config has been saved somewhere
@@ -216,6 +217,7 @@ class BlockchainBackend
     // getConfigWalletKeys reads the accounts out of that file rather than the
     // wallet, which needs a running node the wizard does not have yet.
     SLOT(QVariantMap getConfigWalletKeys(QString configPath))
+    SLOT(QVariantMap getPowConfig(QString configPath))
     // Every PoW setting in one call. Deliberately not one call per field: the
     // module validates the whole object against the file before writing any of
     // it, so a rejected target cannot leave the mining knobs applied and the

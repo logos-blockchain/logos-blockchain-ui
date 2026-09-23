@@ -22,6 +22,8 @@ ColumnLayout {
     property var keystoreKeys: []
     // Rows { address, roles, roleLabel, label } for the mining step's picker.
     property var powAccounts: []
+    // The pow section the config already holds, so the step opens pre-filled.
+    property var powSection: ({})
     // A usable config already exists, so setup can be abandoned. False on a
     // genuine first run, where there is nothing to go back to.
     property bool canExit: false
@@ -392,6 +394,7 @@ ColumnLayout {
             id: miningStep
             objectName: "onboardingMiningStep"
             accounts: root.powAccounts
+            powSection: root.powSection
             busy: root.busy
             errorMessage: d.step === "fund" ? root.errorMessage : ""
             onSubmitted: function(configJson) { root.powConfigureRequested(configJson) }
