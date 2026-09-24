@@ -10,12 +10,17 @@ class BlockchainBackend
     // node can say "off" this becomes one branch in refreshBlendRole().
     ENUM BlendRole { Unknown=0, Edge=1, Core=2, Inactive=3 }
 
+    ENUM ConfigState { ConfigUnknown=0, ConfigOk=1, ConfigStale=2, ConfigUnreadable=3, ConfigUpgraded=4 }
+
     PROP(BlockchainStatus status READONLY)
     PROP(BlendRole blendRole READONLY)
     PROP(QString userConfig READWRITE)
     PROP(QString deploymentConfig READWRITE)
     PROP(bool useGeneratedConfig READWRITE)
     PROP(QString generatedUserConfigPath READONLY)
+    PROP(ConfigState configState READONLY)
+    PROP(QStringList configDropped READONLY)
+    PROP(QString configBackupPath READONLY)
     PROP(QVariantMap configPowSection READONLY)
     PROP(QString nodeDataDir READONLY)
     PROP(QString nodeKeystorePath READONLY)
@@ -190,6 +195,7 @@ class BlockchainBackend
     SLOT(QVariantMap getPeerId())
     SLOT(QVariantMap getClaimableVouchers())
     SLOT(QVariantMap generateConfig(QString outputPath, QStringList initialPeers, int netPort, int blendPort, QString httpAddr, QString externalAddress, bool noPublicIpCheck, int deploymentMode, QString deploymentConfigPath, QString statePath))
+    SLOT(QVariantMap upgradeConfig())
     SLOT(QVariantMap getNotes(QString walletAddressHex, QString optionalTipHex))
     SLOT(QVariantMap channelDepositWithNotes(QString channelIdHex, QStringList inputNoteIdHexes, QString metadataBase58, QString changePublicKeyHex, QStringList fundingPublicKeyHexes, QString maxTxFee, QString optionalTipHex))
     // A stop the user asked for was refused. Deliberately a signal, not a state:
