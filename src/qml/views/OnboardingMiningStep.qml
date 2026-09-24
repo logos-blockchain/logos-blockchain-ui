@@ -12,6 +12,9 @@ ColumnLayout {
     id: root
 
     property var accounts: []
+    property var powSection: ({})
+    readonly property var existingTargets:
+        (powSection && powSection.auto_claim_targets) ? powSection.auto_claim_targets : []
     property bool busy: false
     property string errorMessage: ""
     readonly property bool configureMining: true
@@ -79,7 +82,18 @@ ColumnLayout {
                 LogosSwitch {
                     id: autoClaimSwitch
                     objectName: "autoClaimSwitch"
+                    property bool userDecided: false
+
                     checked: true
+                    onToggled: userDecided = true
+                }
+
+                Connections {
+                    target: root
+                    function onExistingTargetsChanged() {
+                        if (!autoClaimSwitch.userDecided)
+                            autoClaimSwitch.checked = root.existingTargets.length > 0
+                    }
                 }
             }
 
@@ -108,6 +122,7 @@ ColumnLayout {
 
             PowAutoClaimTargets {
                 id: targetsView
+                initialTargets: root.existingTargets
                 objectName: "autoClaimTargets"
                 Layout.fillWidth: true
                 Layout.topMargin: Theme.spacing.small
@@ -131,6 +146,11 @@ ColumnLayout {
             accounts: root.accounts
             busy: root.busy
         }
+    }
+
+    Connections {
+        target: root
+        function onPowSectionChanged() { powForm.loadFrom(root.powSection) }
     }
 
     LogosText {

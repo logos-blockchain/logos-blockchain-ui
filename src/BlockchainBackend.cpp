@@ -1354,18 +1354,31 @@ void BlockchainBackend::markKeysBackedUp()
 // swarm), and those are exactly the ones a user would not think to save.
 QVariantMap BlockchainBackend::getKeystoreKeys(QString configPath)
 {
-    const QHash<QString, QString> titles = readKeyTitles(configPath);
-    if (titles.isEmpty()) {
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("read_accounts"),
+        toLocalPath(configPath.trimmed())));
+    if (!r.success)
+        return result::toVariantMap(r);
+
+    const QJsonArray keys = QJsonDocument::fromJson(r.value.toString().toUtf8())
+                                .object()
+                                .value(QStringLiteral("keystore_keys"))
+                                .toArray();
+    if (keys.isEmpty()) {
         return result::toVariantMap(
             result::err(QStringLiteral("Could not read the keystore.")));
     }
 
     QVariantList rows;
-    rows.reserve(titles.size());
-    for (auto it = titles.constBegin(); it != titles.constEnd(); ++it) {
+    rows.reserve(keys.size());
+    for (const QJsonValue& entry : keys) {
+        const QJsonObject key = entry.toObject();
         QVariantMap row;
-        row.insert(QStringLiteral("address"), it.key());
-        row.insert(QStringLiteral("label"), it.value());
+        row.insert(QStringLiteral("address"), key.value(QStringLiteral("key_id")).toString());
+        row.insert(QStringLiteral("label"), key.value(QStringLiteral("title")).toString());
         rows.append(row);
     }
 
@@ -2212,35 +2225,6 @@ QVariantMap BlockchainBackend::powStopAutoClaim()
 //
 // Key titles, from the module's one keystore-reading call. Public half only.
 //
-// Optional by design: titles are decoration, and the keystore is expected to
-// become password-protected. A failure here is not reported — every caller
-// renders without titles, falling back to the config's roles and then to the
-// address itself. When the file locks, the labels quietly stop appearing and
-// nothing else changes.
-QHash<QString, QString> BlockchainBackend::readKeyTitles(const QString& configPath)
-{
-    QHash<QString, QString> namesByAddress;
-    if (!m_blockchainClient)
-        return namesByAddress;
-
-    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_key_titles"),
-        toLocalPath(configPath.trimmed())));
-    if (!r.success)
-        return namesByAddress;
-
-    const QJsonDocument doc = QJsonDocument::fromJson(r.value.toString().toUtf8());
-    if (!doc.isObject())
-        return namesByAddress;
-
-    const QJsonObject titles = doc.object();
-    for (auto it = titles.constBegin(); it != titles.constEnd(); ++it) {
-        const QString name = it.value().toString();
-        if (!name.isEmpty())
-            namesByAddress.insert(normalizeHex(it.key()), name);
-    }
-    return namesByAddress;
-}
 
 // Returns rows: { address, roles, roleLabel, label }.
 QVariantMap BlockchainBackend::readAccountRoles(const QString& configPath)
@@ -2249,7 +2233,7 @@ QVariantMap BlockchainBackend::readAccountRoles(const QString& configPath)
         return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
 
     const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, QStringLiteral("config_get_wallet_keys"),
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("read_accounts"),
         toLocalPath(configPath.trimmed())));
     if (!r.success)
         return result::toVariantMap(r);
@@ -2260,29 +2244,24 @@ QVariantMap BlockchainBackend::readAccountRoles(const QString& configPath)
             result::err(QStringLiteral("Could not read accounts from the config.")));
     const QJsonObject obj = doc.object();
 
-    const QJsonArray knownKeys = obj.value(QStringLiteral("known_keys")).toArray();
     QHash<QString, QStringList> rolesByAddress;
-    for (const QJsonValue& keyValue : knownKeys) {
-        const QString key = keyValue.toString();
+    QHash<QString, QString> namesByAddress;
+    for (const QJsonValue& entry : obj.value(QStringLiteral("accounts")).toArray()) {
+        const QJsonObject account = entry.toObject();
+        const QString key = account.value(QStringLiteral("public_key")).toString();
         if (key.isEmpty())
             continue;
-        const QString normalized = normalizeHex(key);
 
         QStringList roles;
-        for (auto field = obj.constBegin(); field != obj.constEnd(); ++field) {
-            if (field.key() == QLatin1String("known_keys") || !field.value().isString())
-                continue;
-            const QString holder = field.value().toString();
-            if (!holder.isEmpty() && normalizeHex(holder) == normalized)
-                roles << field.key();
-        }
+        for (const QJsonValue& role : account.value(QStringLiteral("roles")).toArray())
+            roles << role.toString();
         roles.sort();
         rolesByAddress.insert(key, roles);
-    }
 
-    // Titles come from their own call — see readKeyTitles. Kept separate so a
-    // keystore that cannot be read never disturbs the config read.
-    const QHash<QString, QString> namesByAddress = readKeyTitles(configPath);
+        const QString title = account.value(QStringLiteral("title")).toString();
+        if (!title.isEmpty())
+            namesByAddress.insert(normalizeHex(key), title);
+    }
 
     // Both, from one composition. The model is what AccountsView renders and
     // what a later node refresh keeps roles on; the returned rows are what a
@@ -2299,6 +2278,24 @@ QVariantMap BlockchainBackend::readAccountRoles(const QString& configPath)
     // now the superset — and it is the only side that carries balances. Building
     // them twice is how the picker ended up showing a name with no figure.
     return result::toVariantMap(LogosResult{true, accountRows(), QVariant()});
+}
+
+// The pow section the config already holds.
+QVariantMap BlockchainBackend::getPowConfig(QString configPath)
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("read_pow_config"),
+        toLocalPath(configPath.trimmed())));
+    if (!r.success)
+        return result::toVariantMap(r);
+
+    const QVariantMap section =
+        QJsonDocument::fromJson(r.value.toString().toUtf8()).object().toVariantMap();
+    setConfigPowSection(section);
+    return result::toVariantMap(LogosResult{true, section, QVariant()});
 }
 
 // The wizard's entry point: the same read, with the rows handed back.

@@ -43,6 +43,8 @@ Item {
             onboardingView.powAccounts = []
             if (!root.backend || d.powConfigPath === "")
                 return
+            logos.watch(root.backend.getPowConfig(d.powConfigPath),
+                        function(result) {}, function(error) {})
             logos.watch(
                 root.backend.getConfigWalletKeys(d.powConfigPath),
                 function(result) {
@@ -146,6 +148,7 @@ Item {
         anchors.fill: parent
 
         userConfigPath: root.backend ? root.backend.userConfig : ""
+        powSection: root.backend ? root.backend.configPowSection : ({})
         deploymentConfigPath: root.backend ? root.backend.deploymentConfig : ""
         nodeKeystorePath: root.backend ? root.backend.nodeKeystorePath : ""
         keysBackedUp: !!root.backend && root.backend.keysBackedUp
