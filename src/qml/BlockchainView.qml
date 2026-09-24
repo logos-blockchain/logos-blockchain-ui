@@ -11,6 +11,7 @@ import Logos.Controls
 import Logos.BlockchainBackend 1.0
 
 import "controls"
+import "dialogs"
 import "views"
 
 Rectangle {
@@ -124,6 +125,23 @@ Rectangle {
         anchors.bottomMargin: Theme.spacing.large
     }
 
+    ConfigUpgradeDialog {
+        id: configUpgradeDialog
+        objectName: "configUpgradeDialog"
+
+        configState: root.backend ? root.backend.configState
+                                  : BlockchainBackend.ConfigUnknown
+        configDropped: root.backend ? root.backend.configDropped : []
+        configBackupPath: root.backend ? root.backend.configBackupPath : ""
+        hasKeystore: !!root.backend && root.backend.nodeKeystorePath.length > 0
+        refusalReason: root.backend ? root.backend.lastErrorMessage : ""
+        busy: _d.configUpgradeBusy
+
+        onUpgradeRequested: _d.upgradeConfig()
+        onStartNodeRequested: if (root.backend) root.backend.startBlockchain()
+        onStartFreshRequested: root.openSetup()
+    }
+
     // Self libp2p peer id, derived from the selected user config (no running
     // node required). Refreshed when ready and whenever the config changes.
     property string peerId: ""
@@ -181,6 +199,14 @@ Rectangle {
         // Ticks per block the node processes, including while it catches up.
         // The count itself is meaningless; the change is the proof of life.
         function onProcessedBlockCountChanged() { monitor.nodeProvedAlive() }
+
+        function onStatusChanged() {
+            if (!root.backend)
+                return
+            if (root.backend.status === BlockchainBackend.Stopped
+                    || root.backend.status === BlockchainBackend.Error)
+                configUpgradeDialog.rearm()
+        }
     }
 
     // Node status. Owns its own timers, backoff, sync debounce and progress
@@ -206,6 +232,10 @@ Rectangle {
             return qsTr("Connecting to the node service…")
         if (!root.moduleReachable)
             return qsTr("The node service stopped responding. Restart the app.")
+        if (root.backend.configState === BlockchainBackend.ConfigStale)
+            return qsTr("This config needs updating before the node can start.")
+        if (root.backend.configState === BlockchainBackend.ConfigUnreadable)
+            return qsTr("This config can't be read, so the node can't start.")
         switch (root.backend.status) {
         case BlockchainBackend.Running:
             return monitor.synced ? "" : qsTr("The node is still catching up.")
@@ -225,6 +255,10 @@ Rectangle {
     // a warning — it is Tuesday.
     readonly property int nodeOffSeverity: {
         if (!root.moduleReachable)
+            return LogosNotice.Error
+        if (root.backend && root.backend.configState === BlockchainBackend.ConfigStale)
+            return LogosNotice.Info
+        if (root.backend && root.backend.configState === BlockchainBackend.ConfigUnreadable)
             return LogosNotice.Error
         if (root.backend && root.backend.status === BlockchainBackend.Error)
             return LogosNotice.Error
@@ -316,6 +350,37 @@ Rectangle {
         property bool claimBusy: false
         property bool claimSuccess: false
         property string claimMessage: ""
+
+        // The upgrade is two disk-touching module calls behind one button, so
+        // the dialog has to be able to say it is working. Only the dialog can
+        // start one, so a single flag keeps it to one at a time.
+        property bool configUpgradeBusy: false
+
+        // migrate + merge + swap, in the backend. A failure here leaves the
+        // config untouched, so there is nothing to undo — the dialog just stays
+        // on the offer with the reason attached.
+        function upgradeConfig() {
+            if (!root.backend || _d.configUpgradeBusy)
+                return
+            _d.configUpgradeBusy = true
+            logos.watch(
+                root.backend.upgradeConfig(),
+                function(result) {
+                    _d.configUpgradeBusy = false
+                    if (!result.success) {
+                        // configState is still Stale, so the dialog stays up and
+                        // the toast says why this attempt didn't take.
+                        stopFailedToast.show(qsTr("Couldn't update the config"),
+                                             _d.errorText(result.error))
+                    }
+                },
+                function(error) {
+                    _d.configUpgradeBusy = false
+                    stopFailedToast.show(qsTr("Couldn't update the config"),
+                                         _d.errorText(error))
+                }
+            )
+        }
 
         // For one-shot results (a failed claim, an explorer lookup) that have no
         // surrounding state to frame them. Deliberately not used for the status
@@ -581,10 +646,16 @@ Rectangle {
                     onClicked: {
                         if (!root.backend)
                             return
-                        if (opPage.canStop)
+                        if (opPage.canStop) {
                             root.backend.stopBlockchain()
-                        else
-                            root.backend.startBlockchain()
+                            return
+                        }
+                        if (root.backend.configState === BlockchainBackend.ConfigStale
+                                || root.backend.configState === BlockchainBackend.ConfigUnreadable) {
+                            configUpgradeDialog.rearm()
+                            return
+                        }
+                        root.backend.startBlockchain()
                     }
                 }
             }

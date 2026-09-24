@@ -41,12 +41,44 @@ const QString BlockchainBackend::BLOCKCHAIN_MODULE_NAME =
 const QString BlockchainBackend::MODULES_STATE_MODULE_NAME =
     QStringLiteral("modules_state");
 
+// What the node said about a config it refused. `message` empty means the error
+// was not about the config at all, which leaves the rest of setError's handling
+// untouched. classifyConfigError is defined beside kRules, where the node's
+// other error signatures live; the type lives here because setError needs it
+// complete.
+struct ConfigVerdict {
+    QString message;
+    QStringList dropped;
+    bool upgradeable = false;
+};
+
+static ConfigVerdict classifyConfigError(const QString& message);
+
 void BlockchainBackend::setError(const QString& message)
 {
-    // If the SDK handed us the opaque no-reply string ("Call failed."), ask the
-    // node's own log why, so the UI shows a real cause instead of a dead end.
-    if (message.contains(QStringLiteral("Call failed"), Qt::CaseInsensitive)) {
+    qWarning().noquote() << "BlockchainBackend: node error:" << message;
+
+    // A config the node refused comes back on the *reply*, so the log scan
+    // below cannot diagnose it. Read the message itself first, or serde's raw
+    // wording reaches the user under a bare "Error".
+    const ConfigVerdict verdict = classifyConfigError(message);
+    if (!verdict.message.isEmpty()) {
+        qWarning().noquote() << "BlockchainBackend: -> config rejected:" << verdict.message;
+        setConfigDropped(verdict.dropped);
+        setConfigState(verdict.upgradeable ? ConfigStale : ConfigUnreadable);
+        setLastErrorMessage(verdict.message);
+        setNodeRecovering(false);
+        setStatus(Error);
+        return;
+    }
+
+    const bool causeIsInTheLog =
+        message.contains(QStringLiteral("Call failed"), Qt::CaseInsensitive)
+        || message.contains(QStringLiteral("Could not start services"), Qt::CaseInsensitive);
+    if (causeIsInTheLog) {
         if (const Rule* cause = diagnoseNode()) {
+            qWarning().noquote() << "BlockchainBackend: -> diagnosed from the node log:"
+                                 << tr(cause->message);
             setLastErrorMessage(tr(cause->message));
             setNodeRecovering(cause->recovering);
             // A recovering node is coming up, not broken.
@@ -292,6 +324,11 @@ const BlockchainBackend::Rule kRules[] = {
                                                                                           false, P::RootCause},
     {"Storage backend error",  QT_TR_NOOP("Chain database corrupted. Reset chain state."), false, P::RootCause},
     {"Storage request failed", QT_TR_NOOP("Chain database corrupted. Reset chain state."), false, P::RootCause},
+    {"Failed to create the initial state",
+                               QT_TR_NOOP("Stored chain state couldn't be read. Reset chain state."),
+                                                                                          false, P::RootCause},
+    {"Recovery backend error", QT_TR_NOOP("Stored chain state couldn't be read. Reset chain state."),
+                                                                                          false, P::RootCause},
     {"AddrInUse",              QT_TR_NOOP("Port already in use."),                        false, P::RootCause},
     {"address already in use", QT_TR_NOOP("Port already in use."),                        false, P::RootCause},
     {"failed to bind",         QT_TR_NOOP("Port already in use."),                        false, P::RootCause},
@@ -300,6 +337,7 @@ const BlockchainBackend::Rule kRules[] = {
     {"missing field",          QT_TR_NOOP("Config couldn't be parsed. Regenerate it."),   false, P::RootCause},
     {"failed to parse",        QT_TR_NOOP("Config couldn't be parsed. Regenerate it."),   false, P::RootCause},
     {"deserialize",            QT_TR_NOOP("Config couldn't be parsed. Regenerate it."),   false, P::RootCause},
+    {"Unrecognized fields",    QT_TR_NOOP("Config couldn't be parsed. Regenerate it."),   false, P::RootCause},
 
     // A roll-up: it says every peer failed, not why. Beaten by any root cause.
     {"AllPeersFailed",         QT_TR_NOOP("Can't reach the configured peers."),           false, P::Summary},
@@ -322,6 +360,71 @@ bool isFailureLine(const QString& line)
 }
 
 } // namespace
+
+// The field list out of serde's Debug-formatted vector:
+//   Unrecognized fields in value: ["cryptarchia.old_key", "sdp.legacy_mode"]
+// Unquoted and in file order, or empty when the shape is not what we expect —
+// the caller then falls back to a message without a list rather than printing a
+// mangled one.
+static QStringList unknownConfigFields(const QString& detail)
+{
+    const int open = detail.indexOf(QLatin1Char('['));
+    const int close = detail.lastIndexOf(QLatin1Char(']'));
+    if (open < 0 || close <= open)
+        return {};
+
+    QStringList fields;
+    const QStringList raw = detail.mid(open + 1, close - open - 1)
+                                .split(QLatin1Char(','), Qt::SkipEmptyParts);
+    for (const QString& field : raw) {
+        QString name = field;
+        name.remove(QLatin1Char('"'));
+        name = name.trimmed();
+        if (!name.isEmpty())
+            fields << name;
+    }
+    return fields;
+}
+
+// An error a module call RETURNED, as opposed to a line the node wrote to its
+// log. start() refuses an unusable config on the reply and logs nothing, so
+// scanNodeLog() never sees these and they reached the user verbatim.
+static ConfigVerdict classifyConfigError(const QString& message)
+{
+    static const QLatin1String kParseFailed("Could not parse config file:");
+    const int at = message.indexOf(kParseFailed);
+    if (at < 0)
+        return {};
+
+    const QString detail = message.mid(at + kParseFailed.size()).trimmed();
+
+    if (detail.startsWith(QLatin1String("Unrecognized fields"))) {
+        const QStringList fields = unknownConfigFields(detail);
+        if (fields.isEmpty()) {
+            return {QObject::tr("This config was written for an older version and has settings "
+                                "this one no longer recognises."),
+                    {}, true};
+        }
+        return {QObject::tr("This config was written for an older version. These settings no "
+                            "longer exist: %1").arg(fields.join(QStringLiteral(", "))),
+                fields, true};
+    }
+
+    if (detail.startsWith(QLatin1String("missing field"))) {
+        return {QObject::tr("This config is missing a setting this version requires: %1")
+                    .arg(detail),
+                {}, true};
+    }
+    if (detail.startsWith(QLatin1String("invalid type"))) {
+        return {QObject::tr("A setting in this config has the wrong type for this version: %1")
+                    .arg(detail),
+                {}, true};
+    }
+
+    // Not a version mismatch: hand-edited, truncated, or a stale !include.
+    // Not upgradeable — merge_user_config parses its source and would refuse it.
+    return {QObject::tr("This config file could not be read: %1").arg(detail), {}, false};
+}
 
 // The module routes logs to "<persistence>/logs" while the config goes to
 // "<persistence>/<output>", so the log dir is a sibling of the config only when
@@ -732,6 +835,9 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     setNodeDiskFreeMb(-1.0);
     setCpuCount(QThread::idealThreadCount());
     setUseGeneratedConfig(false);
+    setConfigState(ConfigUnknown);
+    setConfigDropped({});
+    setConfigBackupPath(QString());
     setGeneratedUserConfigPath(
         QDir::currentPath() + QStringLiteral("/user_config.yaml"));
 
@@ -860,6 +966,9 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         // and nobody has a copy of the new keystore yet.
         refreshKeysBackedUp();
         refreshAccountRoles();
+        setConfigState(ConfigUnknown);
+        setConfigDropped({});
+        setConfigBackupPath(QString());
     });
     connect(this, &BlockchainBackendSimpleSource::deploymentConfigChanged, this, [this]() {
         const QString p = deploymentConfig();
@@ -2648,6 +2757,8 @@ void BlockchainBackend::startBlockchain()
             const LogosResult r = result::toLogosResult(reply);
             if (r.success) {
                 self->setNodeRecovering(false);
+                self->setConfigState(ConfigOk);
+                self->setConfigDropped({});
                 self->setStatus(Running);
                 QTimer::singleShot(500, self.data(), [self]() {
                     if (!self)
@@ -2657,6 +2768,10 @@ void BlockchainBackend::startBlockchain()
                 });
             } else {
                 self->setError(r.error.toString());
+                if (self->configState() == ConfigStale
+                        || self->configState() == ConfigUnreadable) {
+                    self->stopBlockchain();
+                }
             }
         },
         Timeout(kNodeCallTimeoutMs));
@@ -2912,6 +3027,93 @@ QVariantMap BlockchainBackend::generateConfig(
     // what that step edits.
     return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, "generate_user_config", jsonToSend)));
+}
+
+// The node reports conflicts one per line. Split here rather than in the view so
+// QML renders rows instead of picking a blob apart, the way every other
+// structured payload on this source already arrives.
+static QStringList splitConflictsReport(const QString& report)
+{
+    return report.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+}
+
+QVariantMap BlockchainBackend::upgradeConfig()
+{
+    const auto fail = [](const QString& why) {
+        return result::toVariantMap(result::err(why));
+    };
+
+    if (!m_blockchainClient)
+        return fail(tr("Module not initialized."));
+
+    if (status() == Running || status() == Starting || status() == Stopping)
+        return fail(tr("Wait for the node to stop before updating its config."));
+
+    const QString configPath = toLocalPath(userConfig().trimmed());
+    if (configPath.isEmpty() || !QFile::exists(configPath))
+        return fail(tr("There is no config to update."));
+
+    const QString keystorePath = nodeKeystorePath();
+    if (keystorePath.isEmpty()) {
+        return fail(tr("No keystore was found beside this config, so a new one cannot be "
+                       "built from your keys."));
+    }
+
+    const QString newPath = configPath + QStringLiteral(".new");
+    const QString backupPath = configPath + QStringLiteral(".bak");
+
+    if (QFile::exists(newPath) && !QFile::remove(newPath))
+        return fail(tr("Could not clear a leftover file at %1.").arg(newPath));
+
+    const LogosResult migrated = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("migrate_user_config"), newPath, keystorePath));
+    if (!migrated.success) {
+        QFile::remove(newPath);
+        return fail(migrated.error.toString());
+    }
+
+    const LogosResult merged = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("merge_user_config"),
+        QVariantList{configPath, newPath, QString(), false, false}));
+    if (!merged.success) {
+        QFile::remove(newPath);
+        return fail(merged.error.toString());
+    }
+
+    // Conflicts are not failure: the merge wrote the destination either way, and
+    // each line names a value that could not come across.
+    const QStringList dropped = splitConflictsReport(merged.value.toString());
+
+    // Swap last, so every failure above leaves the user's config untouched. The
+    // path never changes — see the .rep note on upgradeConfig.
+    QFile::remove(backupPath);
+    if (!QFile::rename(configPath, backupPath)) {
+        QFile::remove(newPath);
+        return fail(tr("Could not back up the current config to %1.").arg(backupPath));
+    }
+    if (!QFile::rename(newPath, configPath)) {
+        QFile::rename(backupPath, configPath);
+        QFile::remove(newPath);
+        return fail(tr("Could not put the updated config in place."));
+    }
+
+    if (!dropped.isEmpty()) {
+        const QString reportPath =
+            QFileInfo(configPath).absolutePath() + QStringLiteral("/user_config-migration-report.txt");
+        QFile report(reportPath);
+        if (report.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+            report.write(dropped.join(QLatin1Char('\n')).toUtf8() + '\n');
+        else
+            qWarning().noquote() << "upgradeConfig: could not write the report to" << reportPath;
+    }
+
+    qWarning().noquote() << "upgradeConfig: replaced" << configPath << "- backup at" << backupPath
+                         << "-" << dropped.size() << "setting(s) not carried over";
+
+    setConfigDropped(dropped);
+    setConfigBackupPath(backupPath);
+    setConfigState(ConfigUpgraded);
+    return result::toVariantMap(LogosResult{true, backupPath, QVariant()});
 }
 
 QVariantMap BlockchainBackend::getNotes(QString walletAddressHex, QString optionalTipHex)
