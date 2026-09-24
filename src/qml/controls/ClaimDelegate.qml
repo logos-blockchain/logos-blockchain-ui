@@ -17,12 +17,27 @@ Rectangle {
     required property string blockId
     required property var slot
     required property bool confirmed
+    required property int slotsToFinality
 
     // ---- Slot → date. Zero for either means "not reported yet" ----
     property real slotDurationMs: 0
     property real genesisTimeMs: 0
 
     signal openInExplorerRequested(string id)
+
+    readonly property string finalityText: {
+        if (root.slotsToFinality <= 0)
+            return qsTr("Finalizing")
+        if (root.slotDurationMs <= 0)
+            return qsTr("Finalizes in %n slot(s)", "", root.slotsToFinality)
+        const seconds = Math.round(root.slotsToFinality * root.slotDurationMs / 1000)
+        if (seconds < 90)
+            return qsTr("Finalizes in ~%n second(s)", "", seconds)
+        const minutes = Math.round(seconds / 60)
+        if (minutes < 90)
+            return qsTr("Finalizes in ~%n minute(s)", "", minutes)
+        return qsTr("Finalizes in ~%n hour(s)", "", Math.round(minutes / 60))
+    }
 
     // A slot is only a date once genesis and the slot length are both known.
     // Without them the row says nothing rather than inventing one.
@@ -78,7 +93,7 @@ Rectangle {
 
             LogosBadge {
                 visible: !root.confirmed
-                text: qsTr("Pending")
+                text: root.finalityText
                 backgroundColor: Theme.palette.backgroundTertiary
                 borderColor: Theme.palette.warning
                 labelItem.color: Theme.palette.warning

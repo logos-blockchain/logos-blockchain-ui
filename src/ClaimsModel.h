@@ -36,6 +36,7 @@ public:
         // seen but not yet final — which is why it can be on this list while
         // the tile totals have not moved.
         ConfirmedRole,
+        SlotsToFinalityRole,
     };
 
     // Scoped to one kind at construction. Staking and mining are shown on
@@ -89,5 +90,9 @@ private:
     Filter m_filter = All;
     QVector<ClaimLedger::Record> m_source;
     quint64 m_libSlot = 0;
+    // The LIB the current rows' SlotsToFinality was computed against. Separate
+    // from m_libSlot so rebuild() can tell "LIB moved but no row crossed the
+    // line" — which changes that role without changing any Row.
+    quint64 m_rowsLibSlot = 0;
     QVector<Row> m_rows;
 };

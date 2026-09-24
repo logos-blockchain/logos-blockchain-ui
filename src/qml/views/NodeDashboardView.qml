@@ -70,6 +70,9 @@ Item {
     // The status poll has gone quiet. Modifies the hero; never replaces a state.
     property bool statusStale: false
     property int statusNextPollSeconds: 0
+    // Seconds since the status RPC last answered. Sizes the gap in the stale
+    // sub-line; never a verdict on the node's health.
+    property int statusSilentSeconds: 0
     // Catching up but demonstrably not progressing, or the push stream died.
     // Unlike statusStale these are substantiated, and the user has to act.
     property bool syncStalled: false
@@ -84,12 +87,10 @@ Item {
     // stopped it if there was one.
     property bool miningRequested: false
     property string miningError: ""
-    // Tickets mined and not yet claimed, and whether they have stopped being
-    // claimed at all. Both sit under the reward figure rather than replacing it:
-    // a ticket is not a reward until it is claimed, and a large number here with
-    // a zero above it is the symptom, not the achievement.
+    // Tickets mined and not yet claimed. Sits under the reward figure rather than
+    // replacing it: a ticket is not a reward until it is claimed, and a large
+    // number here with a zero above it is the symptom, not the achievement.
     property int claimableTickets: 0
-    property bool claimsStalled: false
     // The node is demonstrably doing PoW work — the claimable count moved
     // recently. Not `mining`, which is only what was last asked for.
     property bool powActive: false
@@ -99,6 +100,7 @@ Item {
     // Lepta, decimal string. The value those claims paid; powRewardsClaimed is
     // only how many tickets produced it.
     property string powRewardsLepta: ""
+    property int powClaimsPending: 0
     // The keystore exists and whether a copy of it has been saved. Together
     // they drive the reminder banner — see the top of the layout.
     property bool keystorePresent: false
@@ -117,14 +119,15 @@ Item {
         readonly property bool running: root.status === BlockchainBackend.Running
 
         // Under the reward count, in order of how much the user needs to know it:
-        // a mining failure, then claiming having stopped, then the plain backlog.
-        // "Mining" alone only when there is nothing yet to say about it.
+        // a mining failure, then claims settling, then the plain backlog.
         readonly property string miningCaption: {
             if (root.miningError.length > 0)
                 return root.miningError
-            if (root.claimsStalled)
-                return qsTr("%1 waiting, outrunning claims")
-                           .arg(root.claimableTickets)
+            if (root.powClaimsPending > 0)
+                return root.claimableTickets > 0
+                    ? qsTr("%1 settling \u00b7 %2 waiting")
+                          .arg(root.powClaimsPending).arg(root.claimableTickets)
+                    : qsTr("%n claim(s) settling", "", root.powClaimsPending)
             if (root.claimableTickets > 0)
                 return qsTr("%1 claimed \u00b7 %2 waiting")
                            .arg(root.powRewardsClaimed).arg(root.claimableTickets)
@@ -236,7 +239,7 @@ Item {
             if (root.stakeTotal.length === 0)
                 return ""
             if (root.stakeNoteCount === 0)
-                return qsTr("Nothing has aged in yet")
+                return qsTr("Nothing has aged yet")
             const parts = []
             if (root.stakeAddresses.length === 1)
                 parts.push(shorten(root.stakeAddresses[0]))
@@ -387,8 +390,7 @@ Item {
                              color: Theme.palette.error, dots: false, isError: true }
                 return { label: qsTr("Bootstrapping"),
                          sub: root.nodeRecovering
-                              ? (root.statusMessage
-                                 || qsTr("Catching up — replaying stored blocks."))
+                              ? qsTr("Catching up — replaying stored blocks.")
                               // Same `mode` from the node either way; only we
                               // know it was caught up a moment ago, and that
                               // changes the diagnosis entirely.
@@ -422,14 +424,27 @@ Item {
         // knowledge, not a change in the node's: it can be perfectly alive and
         // merely too busy to answer. So keep the last known headline, grey it,
         // stop the pulse, and say so underneath — never replace it with a scarier
-        // one. A diagnosed recovery outranks it: "replaying stored blocks" is a
-        // reason for the silence, and beats reporting no reason at all.
-        readonly property var display: (!root.statusStale || root.nodeRecovering)
+        // one.
+        readonly property var display: !root.statusStale
             ? state
             : ({ label: state.label,
-                 sub: qsTr("Status unavailable — retrying in %1s")
-                          .arg(root.statusNextPollSeconds),
+                 sub: root.statusSilentSeconds >= d.longSilenceSeconds
+                      ? qsTr("No response from the node for %1 — it may be busy replaying, or the connection may have dropped.")
+                            .arg(d.silenceText(root.statusSilentSeconds))
+                      : qsTr("Status unavailable — retrying in %1s")
+                            .arg(root.statusNextPollSeconds),
                  color: Theme.palette.textSecondary, dots: false, isError: false })
+
+        readonly property int longSilenceSeconds: 120
+
+        function silenceText(seconds) {
+            if (seconds < 120)
+                return qsTr("%1 seconds").arg(seconds)
+            const minutes = Math.floor(seconds / 60)
+            if (minutes < 120)
+                return qsTr("%1 minutes").arg(minutes)
+            return qsTr("%1 hours").arg(Math.floor(minutes / 60))
+        }
 
         // ---- Lifecycle -----------------------------------------------------
         // LogosStageLane's position model: stages before `currentIndex` are
@@ -464,10 +479,10 @@ Item {
 
         property int walletHighWater: 2
 
+        // Stake going away pulls the mark down; anything else only pushes it up.
         function advanceWallet() {
-            if (stakeReportedGone) {
-                if (walletStage < walletHighWater)
-                    walletHighWater = walletStage
+            if (stakeReportedGone && walletStage < walletHighWater) {
+                walletHighWater = walletStage
                 return
             }
             if (walletStage > walletHighWater)
@@ -887,10 +902,10 @@ Item {
                     Layout.minimumWidth: d.minTileWidth
                     label: qsTr("Mining Rewards")
                     value: root.powRewardsLepta.length > 0
-                           ? Units.format(root.powRewardsLepta) : Units.format("0")
+                           ? Units.compact(root.powRewardsLepta) : Units.compact("0")
                     flashOnChange: true
                     flashColor: Theme.palette.success
-                    severity: (root.miningError.length > 0 || root.claimsStalled)
+                    severity: root.miningError.length > 0
                               ? LogosStatCard.Warning : LogosStatCard.None
                     caption: d.miningCaption
                     captionTrailing: [

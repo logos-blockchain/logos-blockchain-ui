@@ -346,6 +346,69 @@ var claimableTickets = {
     docs: "https://docs.logos.co/blockchain/concepts/about-mantle"
 }
 
+// The Mining tab's replacement for Submitted, which could only ever read zero
+// under auto-claim. Kept separate from `submitted` rather than retitling it: the
+// Rewards tab still has a Submitted card of its own, and that text is right for
+// it.
+var awaitingPayout = {
+    title: "Awaiting payout",
+    what: "Claims on their way — sent and not yet seen in a block, plus seen in "
+        + "a block and not yet beyond reversal. Everything between asking for a "
+        + "reward and being able to spend it.",
+    calc: "The two stages are added together because they are consecutive: a "
+        + "claim leaves the first the moment it enters the second, when its "
+        + "transaction is first seen on chain. The caption splits them, and they "
+        + "are worth different amounts of trust — 'sent' is only this app's "
+        + "word for it, 'settling' has been seen by the chain.\n\n"
+        + "Both auto-claim and manual claims land here, but not equally. "
+        + "Auto-claim submits inside the node and never passes through this app, "
+        + "so its claims appear only once they reach a block — they are counted "
+        + "as settling, never as sent. A manual claim is counted from the moment "
+        + "the node accepts it.\n\n"
+        + "A sent claim that is never seen is dropped once the chain has settled "
+        + "well past it, and that is the one case worth watching: it means the "
+        + "claim never arrived, and the tickets it was for expire unpaid.",
+    states: [
+        { label: "Number",
+          meaning: "Claims on their way. It should drain into Mining Rewards "
+                 + "within a few blocks." },
+        { label: "0",
+          meaning: "Nothing on its way. Expected when there is nothing to "
+                 + "claim — but 0 while tickets keep expiring means claiming is "
+                 + "not reaching the chain." }
+    ],
+    docs: "https://docs.logos.co/blockchain/concepts/about-mantle"
+}
+
+// The reward total the card above drains into.
+var miningRewards = {
+    title: "Mining Rewards",
+    what: "What mining has actually been paid, for this chain, all time. The "
+        + "same figure as the Mining Rewards tile on the node dashboard — one "
+        + "source, so the two cannot disagree.",
+    calc: "Summed from the reward note on each PoW claim the chain settled, "
+        + "gross: the fee the claim paid to collect it is not deducted, and "
+        + "the change returned to the claim address is not added.\n\n"
+        + "It counts claims that LANDED. Tickets that expired before a claim "
+        + "reached a block are counted nowhere, by anything — so this figure "
+        + "sitting still while Ready to claim churns is the shape of claiming "
+        + "that is not keeping up, and the warning above says so.\n\n"
+        + "A claim has to settle beyond reversal before it lands here, several "
+        + "slots after the block that carried it. Until then it is counted as "
+        + "not yet final, in the caption.",
+    states: [
+        { label: "Amount",
+          meaning: "Paid and settled. It only ever grows, and survives a "
+                 + "restart." },
+        { label: "0",
+          meaning: "Nothing has been claimed and settled yet on this chain. "
+                 + "With tickets waiting and mining on, give it a few blocks; "
+                 + "if it stays at zero while tickets keep expiring, claiming "
+                 + "is not reaching the chain in time." }
+    ],
+    docs: "https://docs.logos.co/blockchain/concepts/about-mantle"
+}
+
 // Shared by the Rewards and Mining tabs. Deliberately generic about which total
 // it sits beside: the caveats are identical for both kinds, and two near-copies
 // of this text would drift apart.
@@ -443,7 +506,7 @@ var stake = {
           meaning: "The address drops off once the notes span more than one "
                  + "key, because no single one of them describes the stake." },
         { label: "0",
-          meaning: "Nothing has aged in. The wallet may well hold tokens — "
+          meaning: "Nothing has aged yet. The wallet may well hold tokens — "
                  + "they just are not in an epoch snapshot yet, so the node "
                  + "cannot win a slot with them." },
         { label: "—",

@@ -8,14 +8,17 @@ import Logos.Theme
 import Logos.Controls
 
 import "../controls"
+import "../Units.js" as Units
 import "infoContent.js" as InfoContent
 
 // Proof-of-Work mining and claiming.
 //
-// The counts here are the only place an operator can see that claiming is not
-// working. Auto-claim runs unattended and reports failures to the node log,
-// which the app does not surface — so a claimable count that climbs while
-// nothing is ever claimed is the symptom, and this view is where it shows.
+// The counts here are the only place an operator can see whether claiming is
+// working, because auto-claim runs unattended and reports its failures to the
+// node log, which the app does not surface. Three measured figures carry that:
+// tickets Ready to claim with how soon they expire, claims Awaiting payout, and
+// Mining Rewards once they settle. Tickets climbing while the other two stay at
+// zero is the symptom — stated by the numbers rather than by a verdict.
 ColumnLayout {
     id: root
 
@@ -23,8 +26,11 @@ ColumnLayout {
 
     property bool nodeRunning: false
     // Claims sent from here that have not been seen on chain yet. Auto-claim
-    // does not pass through the app, so a zero is not "nothing is happening".
+    // does not pass through the app, so this counts only manual claims — it is
+    // added to pendingCount rather than shown alone, which is what makes the
+    // figure mean the same thing in both modes.
     property int submittedCount: 0
+    property string powRewardsLepta: ""
     property int claimableTickets: 0
     property int soonestExpirySlots: -1
     property int soonestExpiryCount: 0
@@ -38,7 +44,6 @@ ColumnLayout {
 
     signal claimRequested(string addressHex)
 
-    // From the backend, which watches the claimable count fall.
     // ---- Claim history ----
     // Remoted ClaimsModel scoped to mining. Null until the replica resolves.
     property var claimsModel: null
@@ -53,11 +58,6 @@ ColumnLayout {
 
     signal historyPendingOnlyChanged(bool pendingOnly)
     signal openInExplorerRequested(string id)
-
-    property bool claimsStalled: false
-    // The window that flag is measured over. Read rather than restated: a number
-    // in this message that disagreed with the rule would be worse than no number.
-    property int claimStallSeconds: 0
 
     spacing: Theme.spacing.medium
 
@@ -85,27 +85,15 @@ ColumnLayout {
                        .arg(root.soonestExpirySlots)
         }
 
-        // How long a ticket lives is the node's `slot_window`, which nothing
-        // reports to us — so the deadline is stated only where the node gives us
-        // a real one, in slots, from slots_until_expiry. Everything else here is
-        // either counted or published by the backend; no interval is invented.
-        readonly property string stallMessage: {
-            const minutes = Math.max(1, Math.round(root.claimStallSeconds / 60))
-            let text = qsTr("%1 tickets are waiting and the count has not gone down in "
-                            + "%2 minutes. They are accumulating faster than they are "
-                            + "being claimed, and unclaimed tickets expire and cannot "
-                            + "be recovered.")
-                           .arg(root.claimableTickets)
-                           .arg(minutes)
-            if (root.soonestExpirySlots >= 0)
-                text += "\n\n" + qsTr("%1 of them expire in %2 slots.")
-                                     .arg(root.soonestExpiryCount)
-                                     .arg(root.soonestExpirySlots)
-            return text + "\n\n" + qsTr("Check that auto-claim is on and that your claim "
-                                        + "threshold is above the target's current balance. "
-                                        + "If it is, mining is simply producing tickets faster "
-                                        + "than they can be redeemed — stop mining to let the "
-                                        + "backlog clear.")
+        readonly property string awaitingPayoutCaption: {
+            if (root.submittedCount > 0 && root.pendingCount > 0)
+                return qsTr("%1 sent · %2 settling")
+                           .arg(root.submittedCount).arg(root.pendingCount)
+            if (root.pendingCount > 0)
+                return qsTr("%n settling", "", root.pendingCount)
+            if (root.submittedCount > 0)
+                return qsTr("%n sent, not seen yet", "", root.submittedCount)
+            return ""
         }
     }
 
@@ -153,7 +141,6 @@ ColumnLayout {
             label: qsTr("Ready to claim")
             value: root.claimableLoaded ? String(root.claimableTickets) : "—"
             flashOnChange: root.visible
-            valueColor: root.claimsStalled ? Theme.palette.warning : Theme.palette.text
             caption: d.expiryCaption
             labelTrailing: [
                 LogosInfoButton {
@@ -166,30 +153,34 @@ ColumnLayout {
         LogosStatCard {
             Layout.fillWidth: true
             Layout.preferredWidth: 1
-            objectName: "submittedClaimsCard"
-            label: qsTr("Submitted")
-            value: String(root.submittedCount)
-            caption: root.submittedCount > 0 ? qsTr("waiting to land") : ""
+            objectName: "awaitingPayoutCard"
+            label: qsTr("Awaiting payout")
+            value: String(root.submittedCount + root.pendingCount)
+            caption: d.awaitingPayoutCaption
             flashOnChange: root.visible
             labelTrailing: [
                 LogosInfoButton {
-                    title: qsTr("Submitted")
-                    dialogContentItem: InfoSections { info: InfoContent.submitted }
+                    title: qsTr("Awaiting payout")
+                    dialogContentItem: InfoSections { info: InfoContent.awaitingPayout }
                 }
             ]
         }
-    }
 
-    // The whole point of the view, when it fires: tickets are being mined into
-    // nothing. Above the poll error because this is the one the user has to act
-    // on — a failed poll costs a reading, this costs the rewards.
-    LogosNotice {
-        Layout.fillWidth: true
-        objectName: "claimsStalledNotice"
-        shown: root.claimsStalled
-        severity: LogosNotice.Warning
-        title: qsTr("Tickets are outrunning claims")
-        message: d.stallMessage
+        LogosStatCard {
+            Layout.fillWidth: true
+            Layout.preferredWidth: 1
+            objectName: "miningRewardsCard"
+            label: qsTr("Mining Rewards")
+            value: root.powRewardsLepta.length > 0
+                   ? Units.compact(root.powRewardsLepta) : Units.compact("0")
+            flashOnChange: root.visible
+            labelTrailing: [
+                LogosInfoButton {
+                    title: qsTr("Mining Rewards")
+                    dialogContentItem: InfoSections { info: InfoContent.miningRewards }
+                }
+            ]
+        }
     }
 
     // The poll's own failure, with room to be read.

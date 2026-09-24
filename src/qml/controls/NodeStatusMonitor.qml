@@ -32,6 +32,7 @@ Item {
 
     // The node reports itself caught up. Debounced — see `_applySyncReading`.
     readonly property alias synced: d.synced
+    readonly property alias modeOnline: d.modeOnline
     // Whether it has *ever* been caught up this run. The node reports the same
     // `mode` whether it never got there or fell behind after hours online; only
     // we can tell those apart, and the diagnosis differs completely.
@@ -44,6 +45,12 @@ Item {
     readonly property bool stale: d.retryMs >= d.staleAfterMs && !d.progressFresh
     // Seconds until the next retry. Display only.
     readonly property alias nextPollSeconds: d.nextPollSeconds
+    // Seconds since the status RPC last answered, 0 before the first reply of
+    // the run. Display only, and deliberately NOT a verdict: how long we have
+    // been in the dark says nothing about which of "busy" or "unreachable" it
+    // is. It exists so the card can report the size of the gap instead of only
+    // the retry countdown, which reads the same at 20 seconds and 40 minutes.
+    readonly property alias silentSeconds: d.silentSeconds
 
     // The node's own genesis time has not arrived yet, so it cannot reach
     // Online no matter how long it runs or how many blocks it takes. The module
@@ -110,6 +117,11 @@ Item {
         readonly property int staleAfterMs: 16000
         property int retryMs: 0
         property int nextPollSeconds: 0
+        // Seeded when the run starts, not left at 0 until the first reply: a
+        // node that never answers at all is the case most worth reporting, and
+        // measuring from the start is the only way to have a figure for it.
+        property double lastOkAt: 0
+        property int silentSeconds: 0
 
         // Two independent signals say the node is progressing: chain height
         // advancing (pulled) and a processed block arriving (pushed). The pushed
@@ -175,6 +187,8 @@ Item {
             d.retryMs = 0
             d.nextPollSeconds = 0
             d.lastProgressAt = 0
+            d.lastOkAt = 0
+            d.silentSeconds = 0
             d.heightSeen = ""
             d.progressFresh = false
             d.progressStalled = false
@@ -186,6 +200,8 @@ Item {
             d.error = ""
             d.retryMs = 0                  // recovered: back to the base cadence
             d.nextPollSeconds = 0
+            d.lastOkAt = Date.now()
+            d.silentSeconds = 0
             d.applySyncReading()
             // Height advancing is the pulled half of the progress signal.
             // Compared as a string: it is a u64, and Number() loses precision
@@ -260,8 +276,10 @@ Item {
 
     onRunningChanged: {
         d.reset()
-        if (root.running)
+        if (root.running) {
+            d.lastOkAt = Date.now()        // measure the gap from the run's start
             d.poll()                       // immediate first poll
+        }
         else
             statusTimer.stop()
     }
@@ -295,6 +313,9 @@ Item {
             const since = Date.now() - d.lastProgressAt
             d.progressFresh = d.lastProgressAt > 0 && since < d.progressFreshMs
             d.progressStalled = d.lastProgressAt > 0 && since > d.progressStallMs
+            d.silentSeconds = d.lastOkAt > 0
+                ? Math.max(0, Math.floor((Date.now() - d.lastOkAt) / 1000))
+                : 0
         }
     }
 

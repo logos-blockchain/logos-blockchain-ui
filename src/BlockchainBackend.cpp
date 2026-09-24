@@ -199,15 +199,6 @@ constexpr int kPidLookupAttempts = 3;
 // the long deadline. Giving both the 15-minute one left the button dead and
 // silent for a quarter of an hour on a node that was merely refusing.
 constexpr int kStopWhenRunningTimeoutMs = 60 * 1000;
-// How long the claimable count may climb without ever falling before we call
-// claiming stalled. The node's auto-claim ticker defaults to 300s and a ticket's
-// reward window is the same 300 slots, so one missed tick is already a
-// generation of tickets lost; this is that period plus a minute of slack, and
-// short enough to warn while the next generation can still be saved.
-//
-// Both numbers are the node's and neither is readable from here yet — see the
-// pow_status() request — so this is a floor, not a derivation.
-constexpr qint64 kClaimStallMs = 360 * 1000;
 // Floor between balance re-reads. One auto-claim drain settles many claims back
 // to back; re-reading every key for each would be dozens of blocking calls.
 constexpr qint64 kBalanceRefreshMinMs = 30 * 1000;
@@ -253,6 +244,26 @@ QString normalizeHex(const QString& hex)
     if (out.startsWith(QStringLiteral("0x"), Qt::CaseInsensitive))
         out = out.mid(2);
     return out.toLower();
+}
+
+// The block inside a processed-block event, whichever shape the stream sends.
+// The same three BlockModel::appendRaw accepts: wrapped under "block" as an
+// object or as a stringified one, or the bare block sent directly.
+//
+// The stream wraps it today, so this is a guard rather than a fix: the two
+// readers of the same payload disagreeing about its shape is how a schema change
+// would take the rewards down while leaving the Blocks view working, and that
+// asymmetry is worth closing whether or not anything has moved yet.
+QJsonObject blockFromEvent(const QJsonObject& event)
+{
+    const QJsonValue wrapped = event.value(QStringLiteral("block"));
+    if (wrapped.isObject())
+        return wrapped.toObject();
+    if (wrapped.isString())
+        return QJsonDocument::fromJson(wrapped.toString().toUtf8()).object();
+    if (event.contains(QStringLiteral("header")))
+        return event;
+    return {};
 }
 
 // The node reports Online / Bootstrapping / NotStarted in get_cryptarchia_info.
@@ -897,8 +908,12 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
             // The node does not persist mining: stopping it, or losing it,
             // leaves mining off
             setMiningRequested(false);
-            // Auto-claim is not persisted either.
+            // Auto-claim is not persisted either. The config reading goes with
+            // it: the next start takes its own, and the override the user may
+            // have applied to this run does not outlive the run it was for.
             setAutoClaimRunning(false);
+            m_autoClaimConfigured = false;
+            m_autoClaimUserToggled = false;
         }
     });
 
@@ -929,9 +944,8 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         const bool wanted = watching || miningRequested();
         if (!wanted) {
             m_claimablePollTimer->stop();
-            // Nothing is producing tickets, so a count that stopped falling says
-            // nothing. Leaving the flags up would strand them on screen.
-            setClaimsStalled(false);
+            // Nothing is producing tickets, so a count that stopped moving says
+            // nothing. Leaving the flag up would strand it on screen.
             setPowActive(false);
             return;
         }
@@ -1021,7 +1035,6 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         setError(QStringLiteral("Failed to subscribe to events"));
     }
 
-    setClaimStallSeconds(static_cast<int>(kClaimStallMs / 1000));
 
     qDebug() << "BlockchainBackend: initialized";
 }
@@ -1677,17 +1690,15 @@ BlockchainBackend::claimPayeesByTx(const QJsonObject& block)
 
     for (const QJsonValue txValue : txs) {
         const QJsonObject tx = txValue.toObject();
-        // `{ id, mantle_tx: { ops: [...] }, ops_proofs }` — the id is flattened
-        // in beside the signed transaction, so the ops sit one level down. That
-        // id is the transaction's own hash, which is what its events are keyed
-        // by, so it is the join between a block and the events fetched for it.
-        const QString txHash = tx.value(QStringLiteral("id")).toString();
+        // The transaction's own hash, which its events are keyed by — the join
+        // between a block and the events fetched for it.
+        QString txHash = tx.value(QStringLiteral("id")).toString();
+        const QJsonObject mantleTx = tx.value(QStringLiteral("mantle_tx")).toObject();
+        if (txHash.isEmpty())
+            txHash = mantleTx.value(QStringLiteral("hash")).toString();
         if (txHash.isEmpty())
             continue;
-        const QJsonArray ops = tx.value(QStringLiteral("mantle_tx"))
-                                   .toObject()
-                                   .value(QStringLiteral("ops"))
-                                   .toArray();
+        const QJsonArray ops = mantleTx.value(QStringLiteral("ops")).toArray();
 
         bool holdsClaim = false;
         PendingBlock::TxClaim claim;
@@ -1701,18 +1712,42 @@ BlockchainBackend::claimPayeesByTx(const QJsonObject& block)
             case kLeaderClaimOpcode: {
                 // A staking reward is minted straight to the key the op names,
                 // so the op alone settles whose it is.
+                //
+                // `pk` is a GUESS. No leader claim has ever appeared on the
+                // devnet — its entire transaction history holds only
+                // ClaimPowReward and LedgerTransfer ops — so this field name has
+                // never met a real one. If it is wrong, payees comes back empty,
+                // the block is dropped, and Earned reads zero with nothing
+                // anywhere to say why. That is exactly how the mining total hid a
+                // bug for a whole session, so this one reports itself instead.
                 holdsClaim = true;
                 const QString pk = normalizeHex(payload.value(QStringLiteral("pk")).toString());
-                if (!pk.isEmpty() && !claim.payees.contains(pk))
+                if (pk.isEmpty()) {
+                    static bool warnedNoLeaderPayee = false;
+                    if (!warnedNoLeaderPayee) {
+                        warnedNoLeaderPayee = true;
+                        qWarning() << "Earned: leader claim op has no \"pk\" - payload keys:"
+                                   << payload.keys()
+                                   << "- staking rewards stay uncounted until this reads"
+                                      " the field the op actually uses";
+                    }
+                    break;
+                }
+                if (!claim.payees.contains(pk))
                     claim.payees << pk;
                 break;
             }
             case kClaimPowRewardOpcode:
-                // A mining reward is minted to the per-ticket puzzle key, which
-                // is generated per solution and never matches a wallet. Nothing
-                // in the op says where it ends up — only the transfer below
-                // does, which is why mining is attributed from the transaction
-                // rather than from its claim.
+                // A mining reward is minted to the per-ticket puzzle key, which is
+                // generated per solution and never matches a wallet — so
+                // attribution comes from the transfer riding with the claim, read
+                // below, rather than from the claim itself.
+                //
+                // The op DOES carry a key, though: a real one on the devnet reads
+                // { epoch_nonce, block_hash, public_key }. Nothing here needs it —
+                // the transfer path is proven against 938 recorded claims — but
+                // this comment used to say the op named nothing at all, and that
+                // was simply wrong.
                 holdsClaim = true;
                 break;
             case kTransferOpcode:
@@ -1744,7 +1779,7 @@ BlockchainBackend::claimPayeesByTx(const QJsonObject& block)
                 claim.payees << pk;
         }
         if (!claim.payees.isEmpty())
-            out.insert(txHash, claim);
+            out.insert(normalizeHex(txHash), claim);
     }
     return out;
 }
@@ -1760,7 +1795,7 @@ void BlockchainBackend::noteProcessedBlock(const QString& eventJson)
     // walking backwards and un-counting a claim that was already confirmed.
     m_libSlot = std::max(m_libSlot, jsonUint(event.value(QStringLiteral("lib_slot"))));
 
-    const QJsonObject block = event.value(QStringLiteral("block")).toObject();
+    const QJsonObject block = blockFromEvent(event);
     // Blocks carrying no reward claim of either kind are the overwhelming
     // majority, and ruling them out needs no wallet keys — only the opcode.
     // That is what keeps a catch-up replay affordable: a node rebuilding its
@@ -1790,9 +1825,18 @@ void BlockchainBackend::noteProcessedBlock(const QString& eventJson)
     }
 
     const QJsonObject header = block.value(QStringLiteral("header")).toObject();
-    const QString id = header.value(QStringLiteral("id")).toString();
+    QString id = header.value(QStringLiteral("id")).toString();
     if (id.isEmpty())
+        id = event.value(QStringLiteral("block_id")).toString();
+    if (id.isEmpty()) {
+        if (!m_warnedBlockIdMissing) {
+            m_warnedBlockIdMissing = true;
+            qWarning() << "Earned: processed block carries claims but no header id -"
+                       << claims.size() << "claim tx dropped. Event keys:" << event.keys()
+                       << "header keys:" << header.keys();
+        }
         return;
+    }
 
     PendingBlock queued;
     queued.blockId = id;
@@ -1935,7 +1979,7 @@ void BlockchainBackend::recordClaimsFrom(const QString& eventsJson, const Pendin
             // The note's pk is the per-ticket puzzle key and will never be one
             // of ours. What makes a mining claim ours is the transfer that
             // carried it, which was read off the block when it was queued.
-            const PendingBlock::TxClaim* claim = block.claimFor(record.txHash);
+            const PendingBlock::TxClaim* claim = block.claimFor(normalizeHex(record.txHash));
             if (!claim)
                 continue;
             for (const QString& pk : claim->payees) {
@@ -2043,6 +2087,9 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
         setNodeModuleReachable(true);
         setNodeRecovering(false);
         const bool modeOnline = cryptarchiaMode(r.value) == QLatin1String("Online");
+        // LIB from the poll, not only from the block stream.
+        m_libSlot = std::max(m_libSlot, jsonUint(QJsonDocument::fromJson(
+            r.value.toString().toUtf8()).object().value(QStringLiteral("lib_slot"))));
         // Everything below describes a running node, and this call blocked in a
         // nested event loop long enough for the node to have been stopped inside
         // it (see stillRunning). applyOnlineReading is the one that bites: fed a
@@ -2057,6 +2104,7 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
             // the poll is its own — but the clock has no reason to make a round trip
             // for a verdict already in hand here.
             applyOnlineReading(modeOnline);
+            applyAutoClaimSeed(modeOnline);
             refreshNetwork();
             refreshChainId();
             // TODO(logos-co/logos-liblogos#219). Rides the status poll rather
@@ -2100,6 +2148,8 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
         }
 
         if (++m_consecutivePollFailures >= kFailuresBeforeProbe) {
+            if (!cause)
+                setNodeRecovering(false);
             if (moduleConfirmedGone()) {
                 declareModuleGone();
                 r.error = lastErrorMessage();
@@ -2190,8 +2240,10 @@ QVariantMap BlockchainBackend::powStartAutoClaim()
 
     const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("pow_start_auto_claim")));
-    if (r.success)
+    if (r.success) {
+        m_autoClaimUserToggled = true;
         setAutoClaimRunning(true);
+    }
     return result::toVariantMap(r);
 }
 
@@ -2202,8 +2254,10 @@ QVariantMap BlockchainBackend::powStopAutoClaim()
 
     const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("pow_stop_auto_claim")));
-    if (r.success)
+    if (r.success) {
+        m_autoClaimUserToggled = true;
         setAutoClaimRunning(false);
+    }
     return result::toVariantMap(r);
 }
 
@@ -2278,6 +2332,37 @@ QVariantMap BlockchainBackend::readAccountRoles(const QString& configPath)
     // now the superset — and it is the only side that carries balances. Building
     // them twice is how the picker ended up showing a name with no figure.
     return result::toVariantMap(LogosResult{true, accountRows(), QVariant()});
+}
+
+// Targets in the config mean the node arms auto-claim by itself when its PoW
+// service starts — no call from here, which is why the switch used to read Off
+// through runs that were claiming the whole time. Reuses getPowConfig so the
+// wizard and this read the file exactly one way.
+void BlockchainBackend::seedAutoClaimFromConfig()
+{
+    m_autoClaimConfigured = false;
+    m_autoClaimUserToggled = false;
+
+    const QString path = userConfig().trimmed();
+    if (path.isEmpty())
+        return;
+
+    const QVariantMap reply = getPowConfig(path);
+    if (!reply.value(QStringLiteral("success")).toBool())
+        return;
+
+    m_autoClaimConfigured = !reply.value(QStringLiteral("value"))
+                                 .toMap()
+                                 .value(QStringLiteral("auto_claim_targets"))
+                                 .toList()
+                                 .isEmpty();
+}
+
+void BlockchainBackend::applyAutoClaimSeed(bool modeOnline)
+{
+    if (!modeOnline || m_autoClaimUserToggled || autoClaimRunning() == m_autoClaimConfigured)
+        return;
+    setAutoClaimRunning(m_autoClaimConfigured);
 }
 
 // The pow section the config already holds.
@@ -2366,30 +2451,21 @@ void BlockchainBackend::pollClaimableRewards()
     setClaimableLoaded(true);
 }
 
-// Opens a fresh stall window. Called when mining starts and when the poll is
-// armed, so the count has a full window to fall before anything is claimed about
-// it — the first auto-claim tick can be a whole period away.
+// Opens a fresh activity window. Called when mining starts and when the poll is
+// armed, so powActive starts from "nothing seen yet" rather than inheriting the
+// last run's verdict.
 void BlockchainBackend::restartClaimStallWatch()
 {
     m_lastClaimableTickets = -1;
-    m_sinceClaimableFell.restart();
     m_sinceClaimableMoved.restart();
-    setClaimsStalled(false);
     setPowActive(false);
 }
 
-// A claim is the only thing that takes tickets *out* of the claimable set while
-// mining continues, so a count that falls is proof claiming works and a count
-// that never falls is proof it does not. Expiry also removes tickets, which is
-// why a fall is treated as good news rather than counted: it makes this
-// forgiving in the one direction that matters, and it still cannot stay quiet
-// through a run where nothing is claimed at all.
+// Whether the PoW service is doing anything, from the only thing this app can
+// see it through: the claimable count moving.
 void BlockchainBackend::noteClaimableReading(int tickets)
 {
     const bool fell = m_lastClaimableTickets >= 0 && tickets < m_lastClaimableTickets;
-    // Movement either way is the evidence: up means the search is finding
-    // tickets, down means a claim was paid. Only a count that does not budge at
-    // all says nothing is happening.
     const bool moved = m_lastClaimableTickets >= 0 && tickets != m_lastClaimableTickets;
     if (moved)
         m_sinceClaimableMoved.restart();
@@ -2397,23 +2473,9 @@ void BlockchainBackend::noteClaimableReading(int tickets)
                  && m_sinceClaimableMoved.elapsed() <= kPowIdleMs);
     m_lastClaimableTickets = tickets;
 
-    if (fell || tickets <= 0) {
-        m_sinceClaimableFell.restart();
-        setClaimsStalled(false);
-        // A falling count means tickets were redeemed, which the block stream
-        // may not tell us about — see the dead-feed problem. Balances are the
-        // one place the payout still shows up.
-        if (fell)
-            refreshBalancesIfStale();
-        return;
+    if (fell) {
+        refreshBalancesIfStale();
     }
-
-    if (!m_sinceClaimableFell.isValid()) {
-        m_sinceClaimableFell.restart();
-        return;
-    }
-
-    setClaimsStalled(miningRequested() && m_sinceClaimableFell.elapsed() > kClaimStallMs);
 }
 
 // Flattens the model into the rows a picker binds to. Balances deliberately do
@@ -2588,8 +2650,10 @@ void BlockchainBackend::startBlockchain()
                 self->setNodeRecovering(false);
                 self->setStatus(Running);
                 QTimer::singleShot(500, self.data(), [self]() {
-                    if (self)
-                        self->refreshAccounts();
+                    if (!self)
+                        return;
+                    self->refreshAccounts();
+                    self->seedAutoClaimFromConfig();
                 });
             } else {
                 self->setError(r.error.toString());
@@ -2766,7 +2830,7 @@ QVariantMap BlockchainBackend::getBalance(QString addressHex)
     // behind the failure.
     if (lr.success)
         m_accountsModel->setBalanceForAddress(addressHex, lr.value.toString());
-    setWalletFunded(m_accountsModel->hasFunds());
+    setWalletFunded(m_accountsModel->hasFundsForRole(QStringLiteral("leader_funding")));
     return result::toVariantMap(lr);
 }
 
