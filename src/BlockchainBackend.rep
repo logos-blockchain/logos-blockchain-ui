@@ -41,26 +41,18 @@ class BlockchainBackend
     PROP(bool claimableLoaded)
     PROP(QString claimableError)
     PROP(bool claimablePollActive READWRITE)
-    // Tickets are accumulating faster than they are being claimed. Derived from
-    // the claimable count alone — the one PoW figure the node answers directly —
-    // because a claim is the only thing that makes it fall.
+    // The claimable count moved on one of the last few readings — the only proof
+    // of PoW activity the app can stand behind. `mining` cannot do this job: it
+    // is what we last asked for, not what the node is doing, and there is no
+    // pow_is_mining() to correct it.
     //
-    // It does NOT mean claiming has stopped: one claim transaction redeems a
-    // single capped batch while mining adds tickets far faster, so a count that
-    // only ever climbs is equally a node whose claiming works and cannot keep
-    // up. Both lose tickets to expiry, which is why one flag covers both, and
-    // why the wording has to stop short of blaming auto-claim.
-    PROP(bool claimsStalled READONLY)
-    // The claimable count moved on one of the last few readings, which is the
-    // only proof of PoW activity the app can actually stand behind: rising means
-    // tickets are being mined, falling means claims are landing. `mining` cannot
-    // do this job — it is what we last asked for, not what the node is doing,
-    // and there is no pow_is_mining() to correct it.
+    // Deliberately blind to WHY it moved. A fall can be a claim being submitted,
+    // a claim landing, or the pruner discarding expired tickets, and nothing here
+    // can tell those apart — which is why the claimsStalled verdict that used to
+    // sit beside this was removed rather than repaired. Awaiting payout, Mining
+    // Rewards and the expiry countdown report the same ground truth by measuring
+    // it instead of inferring it.
     PROP(bool powActive READONLY)
-    // The window claimsStalled is measured over. Published rather than restated
-    // in the view, so the number the user reads and the number the rule uses
-    // cannot drift apart.
-    PROP(int claimStallSeconds READONLY)
 
     PROP(QString lastErrorMessage READONLY)
     // lastErrorMessage is progress (replaying blocks), not a failure.

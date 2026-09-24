@@ -257,6 +257,8 @@ Rectangle {
     function refreshClaimableVouchers() {
         if (!root.backend || root.backend.status !== BlockchainBackend.Running)
             return
+        if (!monitor.modeOnline)
+            return
         root._vouchersDirty = false
         logos.watch(
             root.backend.getClaimableVouchers(),
@@ -287,21 +289,20 @@ Rectangle {
     Timer {
         interval: 2000
         repeat: true
-        running: root.nodeRunning
+        running: root.voucherGateOpen
         onTriggered: if (root._vouchersDirty) root.refreshClaimableVouchers()
     }
 
-    // Initial load when the node reaches Running (before the next block).
+    readonly property bool voucherGateOpen: root.nodeRunning && monitor.modeOnline
+    onVoucherGateOpenChanged: if (root.voucherGateOpen) root.refreshClaimableVouchers()
+
     Connections {
         target: root.backend
         enabled: root.backend !== null
         ignoreUnknownSignals: true
         function onStatusChanged() {
-            if (root.backend.status === BlockchainBackend.Running) {
-                root.refreshClaimableVouchers()
-            } else {
+            if (root.backend.status !== BlockchainBackend.Running)
                 root.claimableVouchersJson = ""
-            }
         }
     }
 
@@ -667,6 +668,7 @@ Rectangle {
                     hasBeenOnline: monitor.hasBeenOnline
                     statusStale: monitor.stale
                     statusNextPollSeconds: monitor.nextPollSeconds
+                    statusSilentSeconds: monitor.silentSeconds
                     syncStalled: monitor.stalled
                     blockStreamEnded: monitor.streamEnded
                     genesisPending: monitor.genesisPending
@@ -677,8 +679,8 @@ Rectangle {
                     miningError: _d.miningError
                     powRewardsClaimed: root.backend ? root.backend.powRewardsClaimed : 0
                     powRewardsLepta: root.backend ? root.backend.powRewardsLepta : ""
+                    powClaimsPending: root.backend ? root.backend.powClaimsPending : 0
                     claimableTickets: root.backend ? root.backend.claimableTickets : 0
-                    claimsStalled: root.backend ? root.backend.claimsStalled : false
                     powActive: root.backend ? root.backend.powActive : false
                     keystorePresent: !!root.backend && root.backend.nodeKeystorePath.length > 0
                     keysBackedUp: !!root.backend && root.backend.keysBackedUp
@@ -844,13 +846,12 @@ Rectangle {
                     nodeRunning: opPage.nodeRunning
                     submittedCount: root.backend ? root.backend.powClaimsSubmitted : 0
                     pendingCount: root.backend ? root.backend.powClaimsPending : 0
+                    powRewardsLepta: root.backend ? root.backend.powRewardsLepta : ""
                     claimsModel: root.miningClaimsModel
                     nodeOffReason: root.nodeOffReason
                     timeInfoJson: monitor.timeInfoJson
                     accounts: root.backend ? root.backend.accountRows : []
 
-                    claimsStalled: root.backend ? root.backend.claimsStalled : false
-                    claimStallSeconds: root.backend ? root.backend.claimStallSeconds : 0
                     claimableTickets: root.backend ? root.backend.claimableTickets : 0
                     soonestExpirySlots: root.backend ? root.backend.soonestExpirySlots : -1
                     soonestExpiryCount: root.backend ? root.backend.soonestExpiryCount : 0

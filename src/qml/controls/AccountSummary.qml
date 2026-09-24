@@ -30,16 +30,6 @@ ColumnLayout {
             elide: Text.ElideMiddle
             font.pixelSize: Theme.typography.secondaryText
             font.weight: Theme.typography.weightBold
-
-            HoverHandler { id: titleHover; enabled: root.titled }
-
-            LogosToolTip {
-                text: root.roleLabel.length > 0
-                      ? qsTr("Used as “%1” in the node config.").arg(root.roleLabel)
-                      : qsTr("Held in the keystore; the node config gives it no job.")
-                placement: LogosToolTip.Placement.Top
-                visible: titleHover.hovered
-            }
         }
 
         LogosText {

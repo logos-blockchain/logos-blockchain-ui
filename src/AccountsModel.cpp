@@ -204,8 +204,9 @@ void AccountsModel::setBalanceForAddress(const QString& address, const QString& 
     const QString valueToSet = balance.trimmed().startsWith(QStringLiteral("Error"))
         ? QStringLiteral("---")
         : balance;
+    const QString wanted = normalizeKey(address);
     for (int i = 0; i < m_entries.size(); ++i) {
-        if (m_entries[i].address == address) {
+        if (normalizeKey(m_entries[i].address) == wanted) {
             if (m_entries[i].balance != valueToSet) {
                 m_entries[i].balance = valueToSet;
                 const QModelIndex idx = index(i, 0);
@@ -216,18 +217,45 @@ void AccountsModel::setBalanceForAddress(const QString& address, const QString& 
     }
 }
 
+namespace {
+
+// A fetched, non-zero figure. "---" is an unfetched or failed read and must not
+// read as zero; a reported "0" is a reading and does.
+bool holdsTokens(const QString& raw)
+{
+    const QString balance = raw.trimmed();
+    if (balance.isEmpty())
+        return false;
+    bool nonZero = false;
+    for (const QChar c : balance) {
+        if (!c.isDigit())
+            return false;
+        if (c != QLatin1Char('0'))
+            nonZero = true;
+    }
+    return nonZero;
+}
+
+} // namespace
+
 bool AccountsModel::hasFunds() const
 {
     for (const Entry& e : m_entries) {
-        const QString balance = e.balance.trimmed();
-        bool digitsOnly = !balance.isEmpty();
-        bool nonZero = false;
-        for (const QChar c : balance) {
-            if (!c.isDigit()) { digitsOnly = false; break; }
-            if (c != QLatin1Char('0')) nonZero = true;
-        }
-        if (digitsOnly && nonZero)
+        if (holdsTokens(e.balance))
             return true;
     }
     return false;
+}
+
+bool AccountsModel::hasFundsForRole(const QString& role) const
+{
+    bool roleFound = false;
+    for (const Entry& e : m_entries) {
+        if (!e.roles.contains(role))
+            continue;
+        roleFound = true;
+        if (holdsTokens(e.balance))
+            return true;
+    }
+    return roleFound ? false : hasFunds();
 }

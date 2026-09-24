@@ -102,6 +102,95 @@ function formatPlain(lepta, locale) {
          + _fraction(parts[1], loc.decimalPoint)
 }
 
+// Short-form LOGOS for a tile that has to fit: "16.6 LGO", "1.23K LGO",
+// "18.45B LGO". For headline figures only — anything the user might copy, check
+// against the chain or type back in gets format() or canonical(), which never
+// round.
+//
+// Rounds half-up, and the rounding runs on the digit strings for the same reason
+// everything else here does: these amounts pass 2^53, where Number() would lose
+// the digits that matter.
+var _UNITS = [[12, "T"], [9, "B"], [6, "M"], [3, "K"]]
+// Enough to tell 16.6 from 16.7, few enough to fit. Trailing zeros are trimmed
+// after, so a whole number stays whole.
+var _COMPACT_PLACES = 2
+
+// Rounds [int, frac] to `places` decimals, half-up. Returns the same pair.
+// Carries into the integer when it has to: 0.999 at 2 places is 1.00, not 0.99.
+function _roundPair(intDigits, frac, places) {
+    const keep = frac.slice(0, places)
+    const next = frac.charAt(places)
+    if (next === "" || next < "5")
+        return [intDigits, keep]
+    const bumped = _add(intDigits + keep, "1")
+    const cut = bumped.length - places
+    return [_stripLeadingZeros(bumped.slice(0, cut)), bumped.slice(cut)]
+}
+
+function compact(lepta, locale) {
+    const plain = compactPlain(lepta, locale)
+    return plain.length > 0 ? plain + " " + SYMBOL : ""
+}
+
+// As compact(), without the symbol.
+function compactPlain(lepta, locale) {
+    if (!_digitsOnly(lepta))
+        return ""
+    const loc = locale || Qt.locale()
+    const parts = _split(lepta)
+    let int = parts[0]
+    let frac = parts[1]
+
+    // Under one LOGOS there is no magnitude to abbreviate, and rounding to two
+    // places would turn a real balance into "0.00". Keep two SIGNIFICANT digits
+    // instead, so a single lepta still reads as something.
+    if (int === "0") {
+        const firstDigit = frac.search(/[1-9]/)
+        if (firstDigit < 0)
+            return "0"
+        const rounded = _roundPair("0", frac, Math.min(firstDigit + 2, DECIMALS))
+        return rounded[0] + _fraction(rounded[1], loc.decimalPoint)
+    }
+
+    // The largest unit the integer actually exceeds; -1 when it is under a
+    // thousand and there is nothing to abbreviate.
+    let idx = -1
+    for (let i = 0; i < _UNITS.length; i++) {
+        if (int.length > _UNITS[i][0]) {
+            idx = i
+            break
+        }
+    }
+
+    if (idx < 0) {
+        const small = _roundPair(int, frac, _COMPACT_PLACES)
+        return groupDigits(small[0], groupSizesFor(loc), loc.groupSeparator)
+             + _fraction(small[1], loc.decimalPoint)
+    }
+
+    let unit = _renderUnit(int, frac, idx)
+    // Rounding can push the head past its own unit — 999,999 renders as
+    // "1000.00K", which should read "1M". Stepping UP one unit settles it, and
+    // one step is always enough: the carry can only ever add a single digit.
+    if (unit[0].length > 3 && idx > 0)
+        unit = _renderUnit(int, frac, idx - 1)
+
+    return groupDigits(unit[0], groupSizesFor(loc), loc.groupSeparator)
+         + _fraction(unit[1], loc.decimalPoint) + unit[2]
+}
+
+// The amount expressed in _UNITS[i], as [head, frac, symbol]. The digits shifted
+// off the integer become the head of the fraction. An empty head means the
+// amount is below the unit — only reachable from the step-up above, where the
+// carry that sent us there makes it 1.
+function _renderUnit(int, frac, i) {
+    const shift = _UNITS[i][0]
+    const head = int.length > shift ? int.slice(0, int.length - shift) : "0"
+    const tail = int.length > shift ? int.slice(int.length - shift) : int
+    const rounded = _roundPair(head, tail + frac, _COMPACT_PLACES)
+    return [rounded[0], rounded[1], _UNITS[i][1]]
+}
+
 // LOGOS in canonical form: no grouping, '.' as the decimal point. What copy
 // buttons hand over, so it pastes into anything.
 function canonical(lepta) {

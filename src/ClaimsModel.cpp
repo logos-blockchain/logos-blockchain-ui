@@ -26,6 +26,10 @@ QVariant ClaimsModel::data(const QModelIndex& index, int role) const
     case SlotRole:       return QVariant::fromValue<qulonglong>(row.record.slot);
     case NullifierRole:  return row.record.nullifier;
     case ConfirmedRole:  return row.confirmed;
+    case SlotsToFinalityRole:
+        return row.confirmed || row.record.slot <= m_libSlot
+            ? 0
+            : static_cast<int>(row.record.slot - m_libSlot);
     default:             return {};
     }
 }
@@ -41,6 +45,7 @@ QHash<int, QByteArray> ClaimsModel::roleNames() const
         { SlotRole,      "slot" },
         { NullifierRole, "nullifier" },
         { ConfirmedRole, "confirmed" },
+        { SlotsToFinalityRole, "slotsToFinality" },
     };
 }
 
@@ -91,9 +96,18 @@ void ClaimsModel::rebuild()
     // list only changes when a claim settles or LIB advances past one, which is
     // rare enough that a reset costs nothing. Skipped entirely when nothing
     // moved, which is the common case on a 2s poll.
-    if (rows == m_rows)
+    if (rows == m_rows) {
+        if (m_libSlot != m_rowsLibSlot) {
+            m_rowsLibSlot = m_libSlot;
+            if (!m_rows.isEmpty()) {
+                emit dataChanged(index(0, 0), index(m_rows.size() - 1, 0),
+                                 { SlotsToFinalityRole });
+            }
+        }
         return;
+    }
 
+    m_rowsLibSlot = m_libSlot;
     beginResetModel();
     m_rows = std::move(rows);
     endResetModel();

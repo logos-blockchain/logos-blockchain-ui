@@ -137,6 +137,16 @@ private:
     void refreshNetwork();
     void clearNetwork();
     void refreshChainId();
+    // Reads pow.auto_claim.targets out of the config so the switch can report
+    // auto-claim the node armed itself, which is how most of them are armed —
+    // the UI's own start/stop calls are a runtime override on top. There is no
+    // pow_is_auto_claim() to ask instead, so the file is the only source.
+    void seedAutoClaimFromConfig();
+    // Applies that reading once the chain is online. Deferred rather than done
+    // at Running because the node's PoW service waits for online too, and the
+    // wait is not short: a whole hour of ProlongedBootstrapPeriod is normal, and
+    // a switch reading On through it describes nothing that exists yet.
+    void applyAutoClaimSeed(bool modeOnline);
 
     // ---- Claims: the app's own tally of settled rewards, staking and mining ----
     // A block the processed-block stream delivered that might carry a claim,
@@ -246,10 +256,9 @@ private:
     int m_consecutivePollFailures = 0;
     // Last mtime seen on the node's log, for nodeLogAdvanced().
     QDateTime m_lastNodeLogWrite;
-    // Claim-stall detection. -1 means nothing read yet, which is not the same as
-    // a count of zero and must not be mistaken for one.
+    // Previous claimable reading, for powActive. -1 means nothing read yet, which
+    // is not the same as a count of zero and must not be mistaken for one.
     int m_lastClaimableTickets = -1;
-    QElapsedTimer m_sinceClaimableFell;
     // Since the claimable count last moved in either direction, for powActive.
     QElapsedTimer m_sinceClaimableMoved;
     void noteClaimableReading(int tickets);
@@ -308,6 +317,16 @@ private:
     // The last irreversible slot, straight off the processed-block stream. What
     // decides whether a recorded claim is counted yet.
     quint64 m_libSlot = 0;
+    // A block carrying our claims arrived without a header id, so it could not
+    // be queued. Latched: the schema does not change mid-run.
+    bool m_warnedBlockIdMissing = false;
+    // The config names accounts for auto-claim to pay, read once when the node
+    // starts. The node reads its pow section at that same moment and not again,
+    // so re-reading the file later would report intent the node never saw.
+    bool m_autoClaimConfigured = false;
+    // The switch was used this run, so the config no longer decides it. Without
+    // this, the seed below would undo a stop the user had just asked for.
+    bool m_autoClaimUserToggled = false;
 
     static const QString BLOCKCHAIN_MODULE_NAME;
     // TODO(logos-co/logos-liblogos#219): only reached for the PID behind the

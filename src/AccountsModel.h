@@ -34,6 +34,9 @@ public:
     // strings out of it: they overflow a double and only need comparing to zero.
     bool hasFunds() const;
 
+    // Whether the account holding a given config role holds tokens
+    bool hasFundsForRole(const QString& role) const;
+
     // From the config. Addresses not already present are added, because this
     // runs before any node has reported one — and addresses already present
     // keep their balances.
