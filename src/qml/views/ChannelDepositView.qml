@@ -316,7 +316,7 @@ ColumnLayout {
     StackLayout {
         Layout.fillWidth: true
         Layout.fillHeight: true
-        currentIndex: 1
+        currentIndex: d.step
 
         // ---- Step 0: Select notes ----
         ColumnLayout {
