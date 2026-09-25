@@ -34,6 +34,11 @@ class BlockchainBackend
     // it is handed and does NOT fall back to the deployment's own peers, so a
     // config generated without these is a node that never finds the chain.
     PROP(QStringList bootstrapPeers READONLY)
+    // The LEZ channel a deposit can be pre-filled with, read from the same
+    // metadata.json. Neither the LEZ wallet nor the indexer publishes the
+    // channel id, so a build that targets a known LEZ deployment carries it
+    // here; empty means the deposit view offers no preset at all.
+    PROP(QString lezChannelId READONLY)
 
     // Whether the user is part-way through setup.
     PROP(bool setupInProgress READWRITE)

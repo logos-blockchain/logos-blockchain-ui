@@ -1400,13 +1400,36 @@ void BlockchainBackend::loadBootstrapPeers(const QVariantMap& metadata)
     setBootstrapPeers(peers);
 }
 
+// The LEZ channel id, from the same metadata.json. Warns rather than staying
+// quiet on a malformed value: an empty list of peers is a shape the UI is
+// designed around, but a channel id that was configured and then dropped is a
+// typo someone wants to hear about.
+void BlockchainBackend::loadLezChannelId(const QVariantMap& metadata)
+{
+    const QString raw =
+        metadata.value(QStringLiteral("lez_channel_id")).toString().trimmed();
+    if (raw.isEmpty())
+        return;
+
+    // The shape the deposit field itself validates against.
+    static const QRegularExpression channelId(
+        QStringLiteral("^(0x)?[0-9a-fA-F]{64}$"));
+    if (!channelId.match(raw).hasMatch()) {
+        qWarning() << "BlockchainBackend: lez_channel_id is not 64 hex characters,"
+                   << "so the deposit view offers no preset:" << raw;
+        return;
+    }
+    setLezChannelId(raw);
+}
+
 void BlockchainBackend::setModuleContext(const QString& modulePath)
 {
     if (modulePath.isEmpty()) {
         qWarning() << "BlockchainBackend: no module path from the host, so"
-                   << "bootstrap peers cannot be read and first-run Quick start"
-                   << "will be hidden. Needs a ui-host that calls"
-                   << "initModuleContext (logos-view-module-runtime).";
+                   << "metadata.json cannot be read: first-run Quick start and"
+                   << "the LEZ channel preset will both be hidden. Needs a"
+                   << "ui-host that calls initModuleContext"
+                   << "(logos-view-module-runtime).";
         return;
     }
 
@@ -1414,7 +1437,7 @@ void BlockchainBackend::setModuleContext(const QString& modulePath)
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) {
         qWarning() << "BlockchainBackend: could not open" << path
-                   << "- bootstrap peers unavailable.";
+                   << "- bootstrap peers and the LEZ channel id unavailable.";
         return;
     }
 
@@ -1423,7 +1446,9 @@ void BlockchainBackend::setModuleContext(const QString& modulePath)
         qWarning() << "BlockchainBackend:" << path << "is not a JSON object.";
         return;
     }
-    loadBootstrapPeers(doc.object().toVariantMap());
+    const QVariantMap metadata = doc.object().toVariantMap();
+    loadBootstrapPeers(metadata);
+    loadLezChannelId(metadata);
 }
 
 // Which config the keystore was last saved for, rather than a bare "done"
@@ -3091,15 +3116,31 @@ QString BlockchainBackend::nextNodeFolder() const
 // like it is about the config the user just tried to repair.
 //
 // Its two own errors name their subject already and are passed through.
+// Whatever the node rejected, the file is still text and the user can still
+// open it — so this goes on every failure the node hands back, not on a list of
+// error strings we thought of in advance. Naming ONE file is the only judgement
+// made here: "edit your config or your keystore" is an invitation to go
+// breaking the wrong one.
+static QString withManualEditHint(const QString& message, const QString& path,
+                                  const QString& reassurance)
+{
+    return message + QStringLiteral("\n\n") + reassurance + QLatin1Char(' ')
+        + QObject::tr("If you know what needs changing, you can edit %1 yourself — copy "
+                      "it somewhere safe first.").arg(path);
+}
+
 static QString describeMigrateFailure(const QString& error, const QString& keystorePath)
 {
     if (error.contains(QLatin1String("configuration exists"), Qt::CaseInsensitive)
             || error.contains(QLatin1String("Keystore file does not exist"), Qt::CaseInsensitive)) {
         return error;
     }
-    return QObject::tr("Rebuilding the config failed while reading your keystore at %1. "
-                       "That is the only file this step reads.\n\n%2")
-        .arg(keystorePath, error);
+    return withManualEditHint(
+        QObject::tr("Rebuilding the config failed while reading your keystore at %1. "
+                    "That is the only file this step reads.\n\n%2")
+            .arg(keystorePath, error),
+        keystorePath,
+        QObject::tr("Your keys are still in this file."));
 }
 
 QVariantMap BlockchainBackend::upgradeConfig()
@@ -3148,7 +3189,11 @@ QVariantMap BlockchainBackend::upgradeConfig()
         QVariantList{configPath, newPath, QString(), false, false}));
     if (!merged.success) {
         QFile::remove(newPath);
-        return fail(merged.error.toString());
+        return fail(withManualEditHint(
+            tr("Carrying your settings across failed while reading your existing config "
+               "at %1.\n\n%2").arg(configPath, merged.error.toString()),
+            configPath,
+            tr("Your settings are still in this file.")));
     }
 
     // Conflicts are not failure: the merge wrote the destination either way, and

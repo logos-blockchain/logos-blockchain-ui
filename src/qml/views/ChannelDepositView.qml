@@ -21,6 +21,11 @@ ColumnLayout {
     // so a picker can show what an account IS rather than bare hex.
     property var accountRows: []
     property bool nodeRunning: false
+    // A known LEZ channel id this build ships, or empty. Nothing on the LEZ side
+    // publishes it — not the wallet, not the indexer — so without a configured
+    // value there is nothing to offer and the preset is absent rather than
+    // disabled.
+    property string lezChannelId: ""
     // Why the node cannot answer, or empty when it can.
     property string nodeOffReason: ""
     // A LogosNotice.Severity for the banner above.
@@ -220,6 +225,7 @@ ColumnLayout {
             noteSelector.errorText = ""
             selectedAddress = ""
             loadedAddress = ""
+            lezChannelCheck.checked = false
             channelIdField.text = ""
             changeKey = ""
             fundingKeysModel.clear()
@@ -310,7 +316,7 @@ ColumnLayout {
     StackLayout {
         Layout.fillWidth: true
         Layout.fillHeight: true
-        currentIndex: d.step
+        currentIndex: 1
 
         // ---- Step 0: Select notes ----
         ColumnLayout {
@@ -351,14 +357,32 @@ ColumnLayout {
                 width: fieldsScroll.availableWidth
                 spacing: Theme.spacing.medium
 
-                LogosText {
-                    text: qsTr("Channel ID hex")
-                    font.pixelSize: Theme.typography.secondaryText
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacing.medium
+
+                    LogosText {
+                        text: qsTr("Channel ID hex")
+                        font.pixelSize: Theme.typography.secondaryText
+                    }
+                    Item { Layout.fillWidth: true }
+                    LogosCheckbox {
+                        id: lezChannelCheck
+                        Layout.alignment: Qt.AlignVCenter
+                        visible: root.lezChannelId.length > 0
+                        text: qsTr("LEZ testnet")
+                        font.pixelSize: Theme.typography.secondaryText
+                        // Clears on the way out: the operator unticked to supply
+                        // their own channel, and leaving the preset behind would
+                        // show a value the tick says is not in use.
+                        onToggled: channelIdField.text = checked ? root.lezChannelId : ""
+                    }
                 }
                 LogosTextField {
                     id: channelIdField
                     Layout.fillWidth: true
                     placeholderText: qsTr("64 hex characters")
+                    readOnly: lezChannelCheck.checked
                     validator: RegularExpressionValidator {
                         regularExpression: d.addressHexRegExp
                     }
