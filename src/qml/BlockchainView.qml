@@ -115,6 +115,7 @@ Rectangle {
     LogosToast {
         id: keystoreBackupToast
         z: 1
+        width: Math.min(560, root.width - 2 * Theme.spacing.xxlarge)
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Theme.spacing.large
@@ -124,9 +125,11 @@ Rectangle {
     LogosToast {
         id: stopFailedToast
         z: 1
+        width: Math.min(560, root.width - 2 * Theme.spacing.xxlarge)
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Theme.spacing.large
+        duration: 12000
     }
 
     ConfigUpgradeDialog {
@@ -137,9 +140,11 @@ Rectangle {
                                   : BlockchainBackend.ConfigUnknown
         configDropped: root.backend ? root.backend.configDropped : []
         configBackupPath: root.backend ? root.backend.configBackupPath : ""
+        mergeConfigReportPath: root.backend ? root.backend.mergeConfigReportPath : ""
         hasKeystore: !!root.backend && root.backend.nodeKeystorePath.length > 0
         refusalReason: root.backend ? root.backend.lastErrorMessage : ""
         busy: _d.configUpgradeBusy
+        upgradeError: _d.configUpgradeError
 
         onUpgradeRequested: _d.upgradeConfig()
         onStartNodeRequested: if (root.backend) root.backend.startBlockchain()
@@ -393,25 +398,32 @@ Rectangle {
         // migrate + merge + swap, in the backend. A failure here leaves the
         // config untouched, so there is nothing to undo — the dialog just stays
         // on the offer with the reason attached.
+        // Why the last upgrade attempt failed, or empty
+        property string configUpgradeError: ""
+
+        function reportUpgradeFailure(error) {
+            _d.configUpgradeError = _d.errorText(error)
+            stopFailedToast.show(qsTr("Couldn't update the config"),
+                                 _d.configUpgradeError)
+            configUpgradeDialog.dismiss()
+        }
+
         function upgradeConfig() {
             if (!root.backend || _d.configUpgradeBusy)
                 return
             _d.configUpgradeBusy = true
+            // Cleared per attempt, so a retry never shows the previous reason.
+            _d.configUpgradeError = ""
             logos.watch(
                 root.backend.upgradeConfig(),
                 function(result) {
                     _d.configUpgradeBusy = false
-                    if (!result.success) {
-                        // configState is still Stale, so the dialog stays up and
-                        // the toast says why this attempt didn't take.
-                        stopFailedToast.show(qsTr("Couldn't update the config"),
-                                             _d.errorText(result.error))
-                    }
+                    if (!result.success)
+                        _d.reportUpgradeFailure(result.error)
                 },
                 function(error) {
                     _d.configUpgradeBusy = false
-                    stopFailedToast.show(qsTr("Couldn't update the config"),
-                                         _d.errorText(error))
+                    _d.reportUpgradeFailure(error)
                 }
             )
         }

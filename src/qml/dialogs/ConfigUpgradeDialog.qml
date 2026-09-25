@@ -19,7 +19,7 @@ import Logos.BlockchainBackend 1.0
 //   ConfigUpgraded    a rebuild happened. Report what it could not carry over
 //                     and where the backup went.
 //
-// Every other configState leaves it hidden.x
+// Every other configState leaves it hidden.
 LogosWarningDialog {
     id: root
 
@@ -29,6 +29,11 @@ LogosWarningDialog {
     // Settings this release no longer recognises, dotted as the node names them
     // ("blend.core.backend.core_peering_degree"). Rendered only while Upgraded.
     property var configDropped: []
+
+    // Where the list of settings that could not be carried over was written,
+    // or empty when a clean upgrade wrote none. Offered beside the backup so
+    // the two files are found together.
+    property string mergeConfigReportPath: ""
 
     // Where the pre-upgrade config was saved
     property string configBackupPath: ""
@@ -42,11 +47,15 @@ LogosWarningDialog {
     // An upgrade is in flight. Disables every action and shows a spinner.
     property bool busy: false
 
+    // Why the last attempt failed, or empty
+    property string upgradeError: ""
+
     signal upgradeRequested()
     signal startNodeRequested()
     signal startFreshRequested()
 
     function rearm(): void { d.dismissed = false }
+    function dismiss(): void { d.dismissed = true }
 
     QtObject {
         id: d
@@ -126,51 +135,112 @@ LogosWarningDialog {
             font.pixelSize: Theme.typography.secondaryText
         }
 
-        ListView {
-            Layout.fillWidth: true
-            Layout.fillHeight: false
-            Layout.preferredHeight: Math.min(contentHeight, 160)
-            visible: d.upgraded && d.hasDropped
-            clip: true
-            model: root.configDropped
-            ScrollBar.vertical: LogosScrollBar { policy: ScrollBar.AsNeeded }
-
-            delegate: LogosText {
-                required property string modelData
-
-                width: ListView.view.width
-                text: modelData
-                elide: Text.ElideMiddle
-                color: Theme.palette.textTertiary
-                font.pixelSize: Theme.typography.secondaryText
-                font.family: Theme.typography.mono
-            }
-        }
-
-        LogosText {
+        // The report and its caption travel as one unit, held together by a
+        // spacing tighter than the dialog's own. The block runs to the same left
+        // and right edge as the prose above it: the darker background is what
+        // marks this as the node's output rather than ours, so it does not also
+        // need to be indented.
+        ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: false
             visible: d.upgraded
-            text: qsTr("Comments and formatting from the original aren't carried over.")
-            wrapMode: Text.WordWrap
-            color: Theme.palette.textTertiary
-            font.pixelSize: Theme.typography.secondaryText
+            spacing: Theme.spacing.tiny
+
+            LogosFrame {
+                Layout.fillWidth: true
+                Layout.fillHeight: false
+                visible: d.hasDropped
+                padding: Theme.spacing.small
+                backgroundColor: Theme.palette.backgroundInset
+                borderColor: "transparent"
+                radius: Theme.spacing.radiusSmall
+
+                contentItem: ColumnLayout {
+                    spacing: Theme.spacing.small
+
+                    // Copies every line at once: these name settings the user
+                    // chose once and cannot get back from the new config, so the
+                    // next step is usually to take them elsewhere and decide
+                    // what to re-apply — not to transcribe them out of a modal.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: false
+                        spacing: Theme.spacing.tiny
+
+                        Item { Layout.fillWidth: true }
+
+                        LogosCopyButton {
+                            objectName: "configDroppedCopyButton"
+                            Layout.preferredHeight: 24
+                            Layout.preferredWidth: 24
+                            value: root.configDropped.join("\n")
+                        }
+                    }
+
+                    // A ListView rather than a Repeater because the count is
+                    // whatever the schema happened to change: short lists size
+                    // to content, long ones scroll instead of pushing the
+                    // buttons off the bottom. It only takes flicks once it
+                    // actually overflows — a list that fits but still slides
+                    // under the cursor reads as broken.
+                    ListView {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: false
+                        Layout.preferredHeight: Math.min(contentHeight, 220)
+                        clip: true
+                        spacing: Theme.spacing.small
+                        model: root.configDropped
+                        interactive: contentHeight > height
+                        boundsBehavior: Flickable.StopAtBounds
+                        ScrollBar.vertical: LogosScrollBar { policy: ScrollBar.AsNeeded }
+
+                        // Wrapped, never elided. These are not always short:
+                        // while Stale they are bare dotted keys from the start
+                        // failure, but once Upgraded they are the merge's own
+                        // conflict lines — whole sentences carrying the key AND
+                        // the value that could not be carried across. Eliding
+                        // drops the half that says what was lost.
+                        delegate: LogosText {
+                            required property string modelData
+
+                            width: ListView.view.width
+                            text: modelData
+                            wrapMode: Text.WordWrap
+                            color: Theme.palette.textTertiary
+                            font.pixelSize: Theme.typography.secondaryText
+                            font.family: Theme.typography.mono
+                        }
+                    }
+                }
+            }
+
+            LogosText {
+                Layout.fillWidth: true
+                Layout.fillHeight: false
+                text: qsTr("Comments and formatting from the original aren't carried over.")
+                wrapMode: Text.WordWrap
+                color: Theme.palette.textTertiary
+                font.pixelSize: Theme.typography.secondaryText
+            }
         }
 
-        RowLayout {
+        component SavedFileRow: RowLayout {
+            property string label: ""
+            property string path: ""
+
             Layout.fillWidth: true
             Layout.fillHeight: false
-            visible: d.upgraded && root.configBackupPath.length > 0
+            visible: path.length > 0
             spacing: Theme.spacing.tiny
 
             LogosText {
-                text: qsTr("Previous config saved at")
+                text: parent.label
                 color: Theme.palette.textTertiary
                 font.pixelSize: Theme.typography.secondaryText
             }
             LogosText {
                 Layout.fillWidth: true
-                text: root.configBackupPath
+                text: parent.path
                 elide: Text.ElideMiddle
                 color: Theme.palette.textTertiary
                 font.pixelSize: Theme.typography.secondaryText
@@ -179,8 +249,32 @@ LogosWarningDialog {
             LogosCopyButton {
                 Layout.preferredHeight: 24
                 Layout.preferredWidth: 24
-                value: root.configBackupPath
+                value: parent.path
             }
+        }
+
+        SavedFileRow {
+            objectName: "configBackupPathRow"
+            visible: d.upgraded && root.configBackupPath.length > 0
+            label: qsTr("Previous config")
+            path: root.configBackupPath
+        }
+
+        SavedFileRow {
+            objectName: "mergeConfigReportPathRow"
+            visible: d.upgraded && root.mergeConfigReportPath.length > 0
+            label: qsTr("What wasn't carried over")
+            path: root.mergeConfigReportPath
+        }
+
+        LogosNotice {
+            objectName: "configUpgradeErrorNotice"
+            Layout.fillWidth: true
+            Layout.fillHeight: false
+            shown: root.upgradeError.length > 0 && !root.busy
+            severity: LogosNotice.Error
+            title: qsTr("Couldn't update the config")
+            message: root.upgradeError
         }
 
         RowLayout {

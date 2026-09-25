@@ -838,6 +838,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     setConfigState(ConfigUnknown);
     setConfigDropped({});
     setConfigBackupPath(QString());
+    setMergeConfigReportPath(QString());
     setGeneratedUserConfigPath(
         QDir::currentPath() + QStringLiteral("/user_config.yaml"));
 
@@ -969,6 +970,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         setConfigState(ConfigUnknown);
         setConfigDropped({});
         setConfigBackupPath(QString());
+        setMergeConfigReportPath(QString());
     });
     connect(this, &BlockchainBackendSimpleSource::deploymentConfigChanged, this, [this]() {
         const QString p = deploymentConfig();
@@ -3080,9 +3082,30 @@ QString BlockchainBackend::nextNodeFolder() const
     return {};
 }
 
+// Names the file a failed migrate was actually looking at.
+//
+// migrate_user_config reads exactly ONE file — the keystore. The config is not
+// parsed, it is BUILT from that keystore and written out. So a parser complaint
+// coming back from this step can only be about the keystore, however much
+// "Error migrating config: found character that cannot start any token" sounds
+// like it is about the config the user just tried to repair.
+//
+// Its two own errors name their subject already and are passed through.
+static QString describeMigrateFailure(const QString& error, const QString& keystorePath)
+{
+    if (error.contains(QLatin1String("configuration exists"), Qt::CaseInsensitive)
+            || error.contains(QLatin1String("Keystore file does not exist"), Qt::CaseInsensitive)) {
+        return error;
+    }
+    return QObject::tr("Rebuilding the config failed while reading your keystore at %1. "
+                       "That is the only file this step reads.\n\n%2")
+        .arg(keystorePath, error);
+}
+
 QVariantMap BlockchainBackend::upgradeConfig()
 {
     const auto fail = [](const QString& why) {
+        qWarning().noquote() << "upgradeConfig: FAILED —" << why;
         return result::toVariantMap(result::err(why));
     };
 
@@ -3105,16 +3128,21 @@ QVariantMap BlockchainBackend::upgradeConfig()
     const QString newPath = configPath + QStringLiteral(".new");
     const QString backupPath = configPath + QStringLiteral(".bak");
 
+    qWarning().noquote() << "upgradeConfig: config=" << configPath
+                         << "keystore=" << keystorePath;
+
     if (QFile::exists(newPath) && !QFile::remove(newPath))
         return fail(tr("Could not clear a leftover file at %1.").arg(newPath));
 
+    qWarning().noquote() << "upgradeConfig: migrate ->" << newPath;
     const LogosResult migrated = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("migrate_user_config"), newPath, keystorePath));
     if (!migrated.success) {
         QFile::remove(newPath);
-        return fail(migrated.error.toString());
+        return fail(describeMigrateFailure(migrated.error.toString(), keystorePath));
     }
 
+    qWarning().noquote() << "upgradeConfig: merge" << configPath << "->" << newPath;
     const LogosResult merged = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("merge_user_config"),
         QVariantList{configPath, newPath, QString(), false, false}));
@@ -3129,6 +3157,8 @@ QVariantMap BlockchainBackend::upgradeConfig()
 
     // Swap last, so every failure above leaves the user's config untouched. The
     // path never changes — see the .rep note on upgradeConfig.
+    qWarning().noquote() << "upgradeConfig: swap — backup ->" << backupPath
+                         << "| dropped:" << dropped.size();
     QFile::remove(backupPath);
     if (!QFile::rename(configPath, backupPath)) {
         QFile::remove(newPath);
@@ -3140,13 +3170,16 @@ QVariantMap BlockchainBackend::upgradeConfig()
         return fail(tr("Could not put the updated config in place."));
     }
 
+    // Cleared first: a clean upgrade writes no report
+    setMergeConfigReportPath(QString());
     if (!dropped.isEmpty()) {
         const QString reportPath =
             QFileInfo(configPath).absolutePath() + QStringLiteral("/user_config-migration-report.txt");
         QFile report(reportPath);
-        if (report.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+        if (report.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
             report.write(dropped.join(QLatin1Char('\n')).toUtf8() + '\n');
-        else
+            setMergeConfigReportPath(reportPath);
+        } else
             qWarning().noquote() << "upgradeConfig: could not write the report to" << reportPath;
     }
 

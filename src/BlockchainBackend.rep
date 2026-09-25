@@ -21,6 +21,7 @@ class BlockchainBackend
     PROP(ConfigState configState READONLY)
     PROP(QStringList configDropped READONLY)
     PROP(QString configBackupPath READONLY)
+    PROP(QString mergeConfigReportPath READONLY)
     PROP(QVariantMap configPowSection READONLY)
     PROP(QString nodeDataDir READONLY)
     PROP(QString nodeKeystorePath READONLY)
