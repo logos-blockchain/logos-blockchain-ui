@@ -214,6 +214,10 @@ private:
     // an empty list is a state the UI already handles (it drops Quick start),
     // and is not worth refusing to start over.
     void loadBootstrapPeers(const QVariantMap& metadata);
+    // Fills lezChannelId from the same metadata. A malformed value is dropped,
+    // not passed on: the field validates it the moment it lands, so a preset
+    // that cannot pass is only a value the operator has to clear again.
+    void loadLezChannelId(const QVariantMap& metadata);
     // Where a new node would go — <root>/node-2, then node-3. Private: the
     // view asks for "a new node", not for a path.
     [[nodiscard]] QString nextNodeFolder() const;

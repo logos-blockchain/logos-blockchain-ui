@@ -19,6 +19,9 @@ RowLayout {
     property string nodeOffReason: ""
     // A LogosNotice.Severity for the banner above.
     property int nodeOffSeverity: LogosNotice.Info
+    // The LEZ channel a deposit can be pre-filled with, or empty when this
+    // build carries none.
+    property string lezChannelId: ""
 
     // ---- Requests out (the host orchestrates these) ----
     signal refreshAccountsRequested()
@@ -93,6 +96,7 @@ RowLayout {
                 nodeOffReason: root.nodeOffReason
                 accountRows: root.accountRows
                 nodeRunning: root.nodeRunning
+                lezChannelId: root.lezChannelId
                 onGetNotesRequested: (addressHex, optionalTipHex) =>
                     root.getNotesRequested(addressHex, optionalTipHex)
                 onSubmitRequested: (channelIdHex, inputNoteIdHexes, metadataBase58,

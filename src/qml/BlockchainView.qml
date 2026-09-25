@@ -907,6 +907,7 @@ Rectangle {
                     accountsModel: root.accountsModel
                     accountRows: root.backend ? root.backend.accountRows : []
                     nodeRunning: opPage.nodeRunning
+                    lezChannelId: root.backend ? root.backend.lezChannelId : ""
 
                     onRefreshAccountsRequested: if (root.backend) root.backend.refreshAccounts()
 
