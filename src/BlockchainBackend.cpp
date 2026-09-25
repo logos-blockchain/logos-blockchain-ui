@@ -2970,7 +2970,7 @@ QVariantMap BlockchainBackend::transferFunds(
 QVariantMap BlockchainBackend::generateConfig(
     QString outputPath, QStringList initialPeers, int netPort, int blendPort,
     QString httpAddr, QString externalAddress, bool noPublicIpCheck,
-    int deploymentMode, QString deploymentConfigPath, QString statePath)
+    int deploymentMode, QString deploymentConfigPath, bool newNode)
 {
     if (!m_blockchainClient)
         return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
@@ -3011,10 +3011,24 @@ QVariantMap BlockchainBackend::generateConfig(
         normalized.insert("external_address", externalAddress.trimmed());
     if (noPublicIpCheck)
         normalized.insert("no_public_ip_check", true);
-    // An explicit node state dir still wins: the module leaves a pinned path
-    // untouched even when use_persistence_paths routing is on.
-    if (!statePath.trimmed().isEmpty())
-        normalized.insert("state_path", toLocalPath(statePath.trimmed()));
+    // A node folder makes this node self-contained: config, keystore, state,
+    // database and logs all inside one directory, so a second node shares
+    // nothing with the first and the first needs no clearing up.
+    const QString folder = newNode ? nextNodeFolder() : QString();
+    if (!folder.isEmpty()) {
+        if (!QDir().mkpath(folder)) {
+            return result::toVariantMap(
+                result::err(tr("Could not create the folder for the new node at %1.")
+                                .arg(folder)));
+        }
+        qWarning().noquote() << "generateConfig: new node at" << folder;
+        const QDir dir(folder);
+        normalized.insert("output", dir.filePath(QStringLiteral("user_config.yaml")));
+        normalized.insert("state_path", dir.filePath(QStringLiteral("state")));
+        normalized.insert("storage_path", dir.filePath(QStringLiteral("db")));
+        normalized.insert("logs_path", dir.filePath(QStringLiteral("logs")));
+        normalized.remove(QStringLiteral("use_persistence_paths"));
+    }
 
     const QJsonDocument doc = QJsonDocument::fromVariant(normalized);
     const QString jsonToSend =
@@ -3035,6 +3049,35 @@ QVariantMap BlockchainBackend::generateConfig(
 static QStringList splitConflictsReport(const QString& report)
 {
     return report.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+}
+
+// Where the next node goes. generate_user_config refuses when a
+// config OR a keystore already exists, so a new folder is the only way to reach
+// the one precondition under which generating is valid. Nothing is deleted and
+// the current node keeps running from where it is.
+QString BlockchainBackend::nextNodeFolder() const
+{
+    static const QRegularExpression numbered(QStringLiteral("^node-\\d+$"));
+
+    QString root = nodeDataDir();
+    if (root.isEmpty()) {
+        const QString cfg = toLocalPath(userConfig().trimmed());
+        if (cfg.isEmpty())
+            return {};
+        root = QFileInfo(cfg).absolutePath();
+    }
+    if (numbered.match(QFileInfo(root).fileName()).hasMatch())
+        root = QFileInfo(root).absolutePath();
+    if (root.isEmpty())
+        return {};
+
+    const QDir dir(root);
+    for (int n = 2; n < 1000; ++n) {
+        const QString candidate = dir.filePath(QStringLiteral("node-%1").arg(n));
+        if (!QFileInfo::exists(candidate))
+            return QDir::toNativeSeparators(candidate);
+    }
+    return {};
 }
 
 QVariantMap BlockchainBackend::upgradeConfig()

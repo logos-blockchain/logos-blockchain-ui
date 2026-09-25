@@ -34,8 +34,10 @@ Rectangle {
         function onViewModuleReadyChanged(moduleName, isReady) {
             if (moduleName === "blockchain_ui") {
                 root.ready = isReady && root.backend !== null
-                if (root.ready)
+                if (root.ready) {
                     root.refreshPeerId()
+                    _d.captureConfigBaseline()
+                }
             }
         }
     }
@@ -44,8 +46,10 @@ Rectangle {
         // Cover the case where the replica is already Valid by the time
         // we attach the Connections handler.
         root.ready = root.backend !== null && logos.isViewModuleReady("blockchain_ui")
-        if (root.ready)
+        if (root.ready) {
             root.refreshPeerId()
+            _d.captureConfigBaseline()
+        }
         if (root.needsSetup)
             root.openSetup()
     }
@@ -157,7 +161,14 @@ Rectangle {
     // QML property would come back false, dropping anyone mid-setup onto the
     // dashboard.
     readonly property bool setupOpen: !!root.backend && root.backend.setupInProgress
-    function openSetup() { if (root.backend) root.backend.setupInProgress = true }
+    // newNode false = configure the node we already have; true = create a second
+    // one, which the backend places in a fresh directory of its own choosing.
+    function openSetup(newNode) {
+        if (!root.backend)
+            return
+        _d.setupNewNode = newNode === true
+        root.backend.setupInProgress = true
+    }
     function closeSetup() { if (root.backend) root.backend.setupInProgress = false }
 
     // A node with no config cannot do anything else, so setup opens itself.
@@ -206,6 +217,8 @@ Rectangle {
             if (root.backend.status === BlockchainBackend.Stopped
                     || root.backend.status === BlockchainBackend.Error)
                 configUpgradeDialog.rearm()
+            if (root.backend.status === BlockchainBackend.Running)
+                _d.captureConfigBaseline()
         }
     }
 
@@ -356,6 +369,27 @@ Rectangle {
         // start one, so a single flag keeps it to one at a time.
         property bool configUpgradeBusy: false
 
+        // Whether the open wizard run is creating a second node rather than
+        // configuring the current one.
+        property bool setupNewNode: false
+
+        // What the node is running, or would be if started right now. Captured
+        // when the app settles and again whenever the node reaches Running.
+        property string baselineUserConfig: ""
+        property string baselineDeploymentConfig: ""
+
+        function captureConfigBaseline() {
+            if (!root.backend)
+                return
+            _d.baselineUserConfig = root.backend.userConfig
+            _d.baselineDeploymentConfig = root.backend.deploymentConfig
+        }
+
+        readonly property bool configChangedSinceStart:
+            !!root.backend
+            && (root.backend.userConfig !== _d.baselineUserConfig
+                || root.backend.deploymentConfig !== _d.baselineDeploymentConfig)
+
         // migrate + merge + swap, in the backend. A failure here leaves the
         // config untouched, so there is nothing to undo — the dialog just stays
         // on the offer with the reason attached.
@@ -472,6 +506,7 @@ Rectangle {
             backend: root.backend
             // Nothing to exit to until a config exists.
             canExit: root.hasConfig
+            newNode: _d.setupNewNode
 
             onKeystoreSaved: function(path) {
                 keystoreBackupToast.show(qsTr("Keystore saved"), path)
@@ -956,6 +991,7 @@ Rectangle {
 
                     NodeSettingsView {
                         id: nodeSettingsView
+                        objectName: "nodeSettingsView"
                         width: settingsScroll.availableWidth
                         userConfig: root.backend ? root.backend.userConfig : ""
                         deploymentConfig: root.backend ? root.backend.deploymentConfig : ""
@@ -984,7 +1020,23 @@ Rectangle {
                     }
                     autoClaimRunning: root.backend ? root.backend.autoClaimRunning : false
                     keysBackedUp: !!root.backend && root.backend.keysBackedUp
-                    onChangeConfigRequested: root.openSetup()
+                    configStale: !!root.backend
+                        && root.backend.configState === BlockchainBackend.ConfigStale
+
+                    onUpdateConfigRequested: _d.upgradeConfig()
+                    configChangedSinceStart: _d.configChangedSinceStart
+                    onUserConfigSelected: function(path) {
+                        if (!root.backend || path.length === 0)
+                            return
+                        root.backend.userConfig = path
+                        root.backend.useGeneratedConfig = false
+                    }
+                    onDeploymentConfigSelected: function(path) {
+                        if (!root.backend)
+                            return
+                        root.backend.deploymentConfig = path
+                    }
+                    onStartNewNodeRequested: root.openSetup(true)
                     onAutoClaimToggled: function(enabled) { _d.setAutoClaim(enabled) }
                     }
                 }

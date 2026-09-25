@@ -1,0 +1,481 @@
+name: "The config lifecycle: refuse, update, repoint, start a second node"
+output: blockchain-ui-config-lifecycle.md
+release: ""
+
+intro: |
+  A node config outlives the release it was written for. `logos-blockchain-ui`
+  has to cope with that: recognise a config this build will not accept, offer to
+  rebuild it without losing the user's keys, let them point at a different one,
+  and let them stand up a second node without destroying the first.
+
+  This doc-test drives all of it **headless and without ever starting a node**.
+  That is not a compromise — it is where the interesting behaviour lives. A
+  config this build refuses is rejected during parsing, before any network or
+  storage work, so every refusal path reproduces in milliseconds with no peers,
+  no chain and no disk state. The one thing a node would add is proof that a
+  *repaired* config runs, and that is the node's own doc-test to make.
+
+  Each section launches the app fresh, because the behaviour under test is
+  exactly what the app decides at startup from what it finds on disk.
+
+what_you_build: "The `logos-blockchain-ui` standalone app, driven headless through every branch of its config lifecycle."
+
+what_you_learn:
+  - Why nothing can validate a node config without starting the node, and what the UI does about it
+  - How a refused config is told apart from an unreadable one, and why they are offered different things
+  - How the app repoints at a different config without going near the setup wizard
+  - How a second node is created in its own directory rather than by overwriting the first
+
+prerequisites:
+  - |
+    **Nix** with flakes enabled (see [nixos.org](https://nixos.org/download.html)).
+  - "**A Linux or macOS machine.** Everything runs via `QT_QPA_PLATFORM=offscreen`, so no display is required."
+
+sections:
+  - title: "Build the qt-mcp test driver"
+    step: true
+    text: |
+      [`logos-qt-mcp`](https://github.com/logos-co/logos-qt-mcp) attaches to the
+      QML inspector port the standalone app opens, and lets a spec click, type,
+      read properties back and take screenshots.
+    steps:
+      - title: "Build it"
+        run: "nix build 'github:logos-co/logos-qt-mcp' --out-link ./result-mcp"
+        code_block: |
+          nix build 'github:logos-co/logos-qt-mcp' --out-link ./result-mcp
+
+  - title: "Two configs the node will refuse"
+    step: true
+    text: |
+      Both fixtures are valid YAML and neither is a usable `UserConfig`, which
+      is the whole point: the node's own parser is the only thing that can tell
+      the difference, and it says so in terms the UI has to act on.
+
+      They differ in one way that matters to the user. The first sits beside a
+      `keystore.yaml`, so its keys can be carried into a rebuilt config. The
+      second does not, so there is nothing to rebuild *from* — and the app has
+      to offer something else rather than a button that cannot work.
+    steps:
+      - title: "Write them"
+        run: |
+          rm -rf /tmp/logos-ui-fixtures
+          mkdir -p /tmp/logos-ui-fixtures/with-keystore /tmp/logos-ui-fixtures/no-keystore
+          for d in with-keystore no-keystore; do
+            cat > "/tmp/logos-ui-fixtures/$d/user_config.yaml" <<'YAML'
+          # Parses as YAML, is not a UserConfig: the node reports a missing
+          # required section, which is how a config older than the release
+          # announces itself.
+          network:
+            backend:
+              inner: {}
+          YAML
+          done
+          # Only the first gets keys to carry forward.
+          printf 'keys: {}\n' > /tmp/logos-ui-fixtures/with-keystore/keystore.yaml
+          ls -R /tmp/logos-ui-fixtures
+        code_block: |
+          mkdir -p /tmp/logos-ui-fixtures/with-keystore /tmp/logos-ui-fixtures/no-keystore
+          # …a user_config.yaml in each, and a keystore.yaml in the first only
+
+  - title: "A config this build refuses"
+    step: true
+    text: |
+      Nothing in the module can validate a config without starting the node —
+      there is no `validate_user_config` — so the app does not pretend
+      otherwise. It reports the config as `ConfigUnknown` until something has an
+      opinion, and the first thing with an opinion is `start`.
+
+      So the test presses Start, and the refusal is what produces the offer.
+    steps:
+      - title: "Point the app at the fixture and start"
+        ui_test:
+          launch: "nix run .#ui-dev --no-write-lock-file -- --height 1000"
+          qt_mcp: "result-mcp"
+          build_timeout: 3600
+          launch_timeout: 3600
+          tests:
+            - name: "Reach the Settings tab"
+              action: click_object
+              find_by: "objectName"
+              find_value: "tabSettings"
+
+            - name: "Repoint at the fixture"
+              # The same signal the file dialog and the text field emit, so the
+              # whole handler chain runs — this is not a shortcut around it.
+              action: call_method
+              find_by: "objectName"
+              find_value: "nodeSettingsView"
+              method: "userConfigSelected"
+              args: ["/tmp/logos-ui-fixtures/with-keystore/user_config.yaml"]
+
+            - name: "The app has not decided anything yet"
+              # No API can judge a config without running it, so anything other
+              # than Unknown here would be the UI inventing a verdict.
+              action: expect_property
+              find_by: "objectName"
+              find_value: "configUpgradeDialog"
+              property: "visible"
+              value: false
+
+            - name: "Start the node"
+              action: click_object
+              find_by: "objectName"
+              find_value: "nodeRunButton"
+
+            - name: "The refusal becomes an offer"
+              action: wait_for
+              texts: ["Your config is out of date"]
+              timeout: 20000
+              screenshot: "config-refused.png"
+              text: |
+                The node rejected the file while parsing it, and the app turned
+                that into the one action that can fix it. Note what it does
+                **not** say: nothing here claims the node crashed or stopped
+                unexpectedly. It never started.
+
+            - name: "Update is offered, because a keystore sits beside it"
+              action: expect_property
+              find_by: "objectName"
+              find_value: "configUpgradeButton"
+              property: "visible"
+              value: true
+
+            - name: "Starting fresh is not, because it does not have to be"
+              action: expect_property
+              find_by: "objectName"
+              find_value: "configStartFreshButton"
+              property: "visible"
+              value: false
+
+  - title: "Declining, and finding your way back"
+    step: true
+    text: |
+      "Not now" has to be survivable. The node cannot start until the config is
+      dealt with, so a dismissal that could not be undone would leave the user
+      on a dashboard whose only button silently fails.
+
+      The subtle part is why pressing Start again works. The backend's generated
+      property setter drops a write of the value it already holds, so a second
+      refusal re-reports `ConfigStale` **without emitting a change** — and a
+      dialog that reset itself only on that signal would never return. Start
+      re-arms it explicitly instead, and does not spend a doomed start attempt
+      to do so.
+    steps:
+      - title: "Dismiss it, then ask again"
+        ui_test:
+          launch: "nix run .#ui-dev --no-write-lock-file -- --height 1000"
+          qt_mcp: "result-mcp"
+          build_timeout: 3600
+          launch_timeout: 3600
+          tests:
+            - name: "Reach the Settings tab"
+              action: click_object
+              find_by: "objectName"
+              find_value: "tabSettings"
+
+            - name: "Repoint at the fixture"
+              action: call_method
+              find_by: "objectName"
+              find_value: "nodeSettingsView"
+              method: "userConfigSelected"
+              args: ["/tmp/logos-ui-fixtures/with-keystore/user_config.yaml"]
+
+            - name: "Start, and be refused"
+              action: click_object
+              find_by: "objectName"
+              find_value: "nodeRunButton"
+
+            - name: "The offer appears"
+              action: wait_for
+              texts: ["Your config is out of date"]
+              timeout: 20000
+
+            - name: "Decline it"
+              action: click_object
+              find_by: "objectName"
+              find_value: "configUpgradeDismissButton"
+
+            - name: "It goes away"
+              action: expect_property
+              find_by: "objectName"
+              find_value: "configUpgradeDialog"
+              property: "visible"
+              value: false
+
+            - name: "The banner keeps saying why the node will not run"
+              action: wait_for
+              texts: ["This config needs updating before the node can start."]
+              timeout: 8000
+              screenshot: "config-refused-dismissed.png"
+              text: |
+                The dialog is dismissible; the condition is not. The banner is
+                on every node-dependent view, so this is where most people meet
+                the problem after waving the dialog away.
+
+            - name: "Start brings the offer back"
+              action: click_object
+              find_by: "objectName"
+              find_value: "nodeRunButton"
+
+            - name: "…and it really is back"
+              action: expect_property
+              find_by: "objectName"
+              find_value: "configUpgradeDialog"
+              property: "visible"
+              value: true
+
+  - title: "A config with no keys to carry"
+    step: true
+    text: |
+      Rebuilding a config means generating a fresh one **from the user's own
+      keystore**, which is what keeps their wallet. With no keystore beside the
+      config there is nothing to rebuild from, so offering "Update config" would
+      promise something the module would refuse to do.
+    steps:
+      - title: "Point at the keystore-less fixture"
+        ui_test:
+          launch: "nix run .#ui-dev --no-write-lock-file -- --height 1000"
+          qt_mcp: "result-mcp"
+          build_timeout: 3600
+          launch_timeout: 3600
+          tests:
+            - name: "Reach the Settings tab"
+              action: click_object
+              find_by: "objectName"
+              find_value: "tabSettings"
+
+            - name: "Repoint at the fixture with no keystore"
+              action: call_method
+              find_by: "objectName"
+              find_value: "nodeSettingsView"
+              method: "userConfigSelected"
+              args: ["/tmp/logos-ui-fixtures/no-keystore/user_config.yaml"]
+
+            - name: "Start, and be refused"
+              action: click_object
+              find_by: "objectName"
+              find_value: "nodeRunButton"
+
+            - name: "The offer is a different one"
+              action: wait_for
+              texts: ["This config can't be updated"]
+              timeout: 20000
+              screenshot: "config-refused-no-keystore.png"
+              text: |
+                Same refusal, different remedy — and the wording says plainly
+                that starting fresh means a new keystore, a new wallet and a new
+                set of keys, because that is what it means.
+
+            - name: "Update is withheld"
+              action: expect_property
+              find_by: "objectName"
+              find_value: "configUpgradeButton"
+              property: "visible"
+              value: false
+
+            - name: "Starting fresh is offered instead"
+              action: expect_property
+              find_by: "objectName"
+              find_value: "configStartFreshButton"
+              property: "visible"
+              value: true
+
+  - title: "Repointing happens in Settings, not in the wizard"
+    step: true
+    text: |
+      Changing which config the app uses is two path fields. The setup wizard
+      exists to **build** a node, and walking its welcome screen and its
+      generate-or-reuse picker to change one string was ceremony around a text
+      box — so Settings edits them in place.
+
+      What it must not do is act and say nothing. Repointing takes effect
+      immediately but changes nothing visible until the node runs, so the card
+      says so — and stops saying so the moment the selection matches what the
+      node would run again.
+    steps:
+      - title: "Change it, then change it back"
+        ui_test:
+          launch: "nix run .#ui-dev --no-write-lock-file -- --height 1000"
+          qt_mcp: "result-mcp"
+          build_timeout: 3600
+          launch_timeout: 3600
+          tests:
+            - name: "Reach the Settings tab"
+              action: click_object
+              find_by: "objectName"
+              find_value: "tabSettings"
+
+            - name: "Both paths are editable in place"
+              action: expect_property
+              find_by: "objectName"
+              find_value: "settingsUserConfigField"
+              property: "visible"
+              value: true
+
+            - name: "Nothing has been changed, so nothing is announced"
+              action: expect_property
+              find_by: "objectName"
+              find_value: "configChangedNotice"
+              property: "shown"
+              value: false
+
+            - name: "Repoint at the first fixture"
+              action: call_method
+              find_by: "objectName"
+              find_value: "nodeSettingsView"
+              method: "userConfigSelected"
+              args: ["/tmp/logos-ui-fixtures/with-keystore/user_config.yaml"]
+
+            - name: "Now it is announced"
+              action: expect_property
+              find_by: "objectName"
+              find_value: "configChangedNotice"
+              property: "shown"
+              value: true
+              text: |
+                The prompt is derived from a comparison, not raised by a flag.
+                A flag set on "the user touched something" stays true after they
+                put the path back, leaving a banner announcing a change that no
+                longer exists.
+
+            - name: "Repoint at the second"
+              action: call_method
+              find_by: "objectName"
+              find_value: "nodeSettingsView"
+              method: "userConfigSelected"
+              args: ["/tmp/logos-ui-fixtures/no-keystore/user_config.yaml"]
+
+            - name: "Still announced — still different from what would run"
+              action: expect_property
+              find_by: "objectName"
+              find_value: "configChangedNotice"
+              property: "shown"
+              value: true
+
+            - name: "Put the original back"
+              # Whatever the app opened with is the baseline, so this is the
+              # revert: the notice has to disappear on its own.
+              action: call_method
+              find_by: "objectName"
+              find_value: "nodeSettingsView"
+              method: "deploymentConfigSelected"
+              args: [""]
+
+            - name: "The wizard was never opened for any of this"
+              action: expect_property
+              find_by: "objectName"
+              find_value: "onboardingFlow"
+              property: "visible"
+              value: false
+              screenshot: "config-settings-inline.png"
+
+  - title: "A second node, not a replacement"
+    step: true
+    text: |
+      `generate_user_config` refuses when a config **or** a keystore already
+      exists. That is deliberate — it is what stops a regenerate quietly
+      destroying a wallet — and it means generating is only ever valid on an
+      empty slate.
+
+      So "Start a new node" makes one: a fresh directory beside the current
+      node, with its own config, keystore, state, database and logs. Nothing is
+      deleted, and the old node is one file-picker away.
+    steps:
+      - title: "Create one"
+        ui_test:
+          launch: "nix run .#ui-dev --no-write-lock-file -- --height 1000"
+          qt_mcp: "result-mcp"
+          build_timeout: 3600
+          launch_timeout: 3600
+          tests:
+            - name: "Reach the Settings tab"
+              action: click_object
+              find_by: "objectName"
+              find_value: "tabSettings"
+
+            - name: "Start a new node"
+              action: click_object
+              find_by: "objectName"
+              find_value: "startNewNodeButton"
+
+            - name: "It opens at the network step, not the welcome screen"
+              action: wait_for
+              texts: ["Network"]
+              timeout: 10000
+              screenshot: "config-new-node-network.png"
+              text: |
+                Both questions the welcome screen asks — quick or advanced,
+                generate or reuse — are already answered by having chosen to
+                start a new node. Peers arrive pre-filled from the module's
+                `metadata.json`, so accepting them is the quick path and editing
+                them is the advanced one.
+
+            - name: "Back is hidden: there is nothing behind this step"
+              action: expect_property
+              find_by: "objectName"
+              find_value: "onboardingBackButton"
+              property: "visible"
+              value: false
+              text: |
+                A run that starts here has no earlier screen. Before this, Back
+                fell through to a welcome page the run had never shown.
+
+            - name: "Exit is offered instead"
+              action: expect_property
+              find_by: "objectName"
+              find_value: "onboardingExitButton"
+              property: "visible"
+              value: true
+              text: |
+                Leaving is always one click, from any step. It is deliberately a
+                separate control from Back: one moves back a screen, the other
+                abandons the run, and sharing a button between them would put
+                the destructive one where a confident click lands.
+
+            - name: "The step will generate, not skip"
+              # The bug this catches: judging "already written" from the app's
+              # CURRENT config — which of course exists — made this step walk
+              # straight past generating to the keys of the node already
+              # selected, creating nothing at all.
+              action: expect_property
+              find_by: "objectName"
+              find_value: "onboardingAdvanceButton"
+              property: "text"
+              value: "Generate config"
+
+            - name: "Generate it"
+              action: click_object
+              find_by: "objectName"
+              find_value: "onboardingAdvanceButton"
+
+            - name: "The keys of a genuinely new node"
+              action: wait_for
+              texts: ["Back up your keys"]
+              timeout: 30000
+              screenshot: "config-new-node-keys.png"
+              text: |
+                A new directory means a new keystore, which means a new wallet.
+                The old node's keys are untouched in the folder it still owns.
+
+            - name: "The app is now pointed at the new node"
+              action: expect_property
+              find_by: "objectName"
+              find_value: "settingsUserConfigField"
+              property: "enabled"
+              value: true
+
+outro: |
+  ## What this cannot cover
+
+  Two things are deliberately out of reach here.
+
+  **That a repaired config runs.** `merge_user_config` works on raw YAML and
+  never type-checks its result, so the only thing that can call an upgrade good
+  is a start that succeeds — which needs a node, reachable peers and a matching
+  chainsync protocol version. That belongs in the module's own doc-test.
+
+  **Anything below the UI.** The classifier that turns the node's wording into a
+  verdict, and the backend setter whose change-signal is dropped when the value
+  repeats, are both reachable only from C++. This spec asserts their
+  consequences — the right dialog appears, Start brings it back — but not the
+  mechanisms, which want a unit suite this repo does not yet have.

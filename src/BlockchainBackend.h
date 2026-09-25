@@ -93,7 +93,7 @@ public slots:
     QVariantMap generateConfig(QString outputPath, QStringList initialPeers, int netPort,
                        int blendPort, QString httpAddr, QString externalAddress,
                        bool noPublicIpCheck, int deploymentMode,
-                       QString deploymentConfigPath, QString statePath) override;
+                       QString deploymentConfigPath, bool newNode) override;
     QVariantMap upgradeConfig() override;
     QVariantMap getNotes(QString walletAddressHex, QString optionalTipHex) override;
     QVariantMap channelDepositWithNotes(QString channelIdHex,
@@ -214,6 +214,9 @@ private:
     // an empty list is a state the UI already handles (it drops Quick start),
     // and is not worth refusing to start over.
     void loadBootstrapPeers(const QVariantMap& metadata);
+    // Where a new node would go — <root>/node-2, then node-3. Private: the
+    // view asks for "a new node", not for a path.
+    [[nodiscard]] QString nextNodeFolder() const;
     void refreshDiskUsage();
     // Re-checked AFTER every blocking module call, not just before one. See the
     // definition: the sync call spins a nested event loop, so a stop can run to
