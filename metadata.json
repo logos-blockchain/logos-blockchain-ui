@@ -1,14 +1,14 @@
 {
   "name": "blockchain_ui",
   "display_name": "Blockchain",
-  "version": "0.2.1-rc.3",
+  "version": "0.3.0-rc.1",
   "type": "ui_qml",
   "category": "blockchain",
   "description": "Blockchain UI module for the Logos application",
   "main": "blockchain_ui_plugin",
   "icon": "src/icons/blockchain.png",
   "view": "qml/BlockchainView.qml",
-  "dependencies": ["blockchain_module"],
+  "dependencies": [{ "name": "blockchain_module", "version": ">=0.3.0-rc.5" }],
   "bootstrap_peers": [],
   "lez_channel_id": "",
   "nix": {
