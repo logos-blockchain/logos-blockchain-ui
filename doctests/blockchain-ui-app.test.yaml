@@ -85,7 +85,11 @@ sections:
             - name: "Go back into setup"
               action: click_object
               find_by: "objectName"
-              find_value: "changeConfigButton"
+              # Settings no longer has a single "Change config" that reopens the
+              # wizard: repointing a config is two fields edited in place, and
+              # the wizard is reserved for BUILDING a node. "Start a new node"
+              # is the route that still enters it.
+              find_value: "startNewNodeButton"
 
             - name: "Welcome screen is shown"
               action: wait_for

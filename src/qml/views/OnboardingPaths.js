@@ -10,3 +10,14 @@ function toLocalPath(url) {
     var s = String(url)
     return s.indexOf("file://") === 0 ? decodeURIComponent(s.substring(7)) : s
 }
+
+// The inverse, for FileDialog.currentFolder: the directory holding `path`, as a
+// URL. Browsing for a config should start where the current one lives rather
+// than wherever Qt last happened to be.
+function toFolderUrl(path) {
+    var s = String(path).trim()
+    var cut = s.lastIndexOf("/")
+    if (cut <= 0)
+        return ""
+    return "file://" + encodeURI(s.substring(0, cut))
+}

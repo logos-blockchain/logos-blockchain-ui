@@ -11,6 +11,7 @@ Item {
     // --- Inputs ---
 
     property var backend: null
+    property bool newNode: false
     // A usable config already exists, so setup can be abandoned.
     property bool canExit: false
 
@@ -21,6 +22,9 @@ Item {
     signal keystoreSaved(string path)
 
     function begin() {
+        d.previousUserConfig = root.backend ? root.backend.userConfig : ""
+        d.previousUseGenerated = !!root.backend && root.backend.useGeneratedConfig
+        d.switched = false
         onboardingView.reset()
         d.setupError = ""
         d.setupBusy = false
@@ -37,6 +41,20 @@ Item {
         property string setupBusyMessage: ""
         property string setupError: ""
         property string powConfigPath: ""
+
+        // What was selected before this run of the wizard, and whether it has
+        // been replaced yet. Only meaningful while creating a new node.
+        property string previousUserConfig: ""
+        property bool previousUseGenerated: false
+        property bool switched: false
+
+        function restorePrevious() {
+            if (!root.backend || !d.switched)
+                return
+            root.backend.userConfig = d.previousUserConfig
+            root.backend.useGeneratedConfig = d.previousUseGenerated
+            d.switched = false
+        }
 
         function loadPowAccounts(configPath) {
             d.powConfigPath = configPath || ""
@@ -67,7 +85,7 @@ Item {
 
         function generateConfig(outputPath, initialPeers, netPort, blendPort, httpAddr,
                                 externalAddress, noPublicIpCheck, deploymentMode,
-                                deploymentConfigPath, statePath, quickStart) {
+                                deploymentConfigPath, newNode, quickStart) {
             if (!root.backend)
                 return
             d.setupBusy = true
@@ -77,18 +95,11 @@ Item {
             logos.watch(
                 root.backend.generateConfig(outputPath, initialPeers, netPort, blendPort,
                                             httpAddr, externalAddress, noPublicIpCheck,
-                                            deploymentMode, deploymentConfigPath, statePath),
+                                            deploymentMode, deploymentConfigPath, newNode),
                 function(result) {
                     d.setupBusy = false
                     d.setupBusyMessage = ""
                     if (!result.success) {
-                        if (!quickStart && root.backend.userConfig.length > 0) {
-                            d.setupError = ""
-                            d.loadPowAccounts(root.backend.userConfig)
-                            d.loadKeystoreKeys(root.backend.userConfig)
-                            onboardingView.configGenerated()
-                            return
-                        }
                         d.setupError = result.error
                         return
                     }
@@ -97,6 +108,7 @@ Item {
                         ? result.value
                         : (outputPath !== "" ? outputPath
                                              : root.backend.generatedUserConfigPath)
+                    d.switched = root.newNode
                     root.backend.userConfig = resolved
                     root.backend.deploymentConfig =
                         (deploymentMode === 1 && deploymentConfigPath !== "")
@@ -153,6 +165,7 @@ Item {
         nodeKeystorePath: root.backend ? root.backend.nodeKeystorePath : ""
         keysBackedUp: !!root.backend && root.backend.keysBackedUp
         bootstrapPeers: root.backend ? root.backend.bootstrapPeers : []
+        newNode: root.newNode
         configExists: !!root.backend && root.backend.useGeneratedConfig
                       && root.backend.userConfig.length > 0
         canExit: root.canExit
@@ -162,10 +175,10 @@ Item {
 
         onGenerateRequested: function(outputPath, initialPeers, netPort, blendPort, httpAddr,
                                       externalAddress, noPublicIpCheck, deploymentMode,
-                                      deploymentConfigPath, statePath) {
+                                      deploymentConfigPath, newNode) {
             d.generateConfig(outputPath, initialPeers, netPort, blendPort, httpAddr,
                              externalAddress, noPublicIpCheck, deploymentMode,
-                             deploymentConfigPath, statePath,
+                             deploymentConfigPath, newNode,
                              onboardingView.atWelcomeScreen)
         }
 
@@ -197,7 +210,14 @@ Item {
                 function(error) { d.setupError = error })
         }
 
-        onExitRequested: root.exitRequested()
-        onFinished: function(startNode) { root.finished(startNode) }
+        onExitRequested: {
+            d.restorePrevious()
+            root.exitRequested()
+        }
+
+        onFinished: function(startNode) {
+            d.switched = false
+            root.finished(startNode)
+        }
     }
 }

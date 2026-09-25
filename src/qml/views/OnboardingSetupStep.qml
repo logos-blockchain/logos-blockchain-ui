@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Dialogs
+import QtCore
 
 import Logos.Theme
 import Logos.Controls
@@ -151,6 +152,8 @@ ColumnLayout {
         id: userConfigFileDialog
         modality: Qt.NonModal
         title: qsTr("Select your user config")
+        currentFolder: OnboardingPaths.toFolderUrl(userConfigField.text)
+                       || StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0]
         nameFilters: [qsTr("YAML files (*.yaml *.yml)"), qsTr("All files (*)")]
         onAccepted: userConfigField.text = OnboardingPaths.toLocalPath(selectedFile)
     }
@@ -159,6 +162,8 @@ ColumnLayout {
         id: deploymentConfigFileDialog
         modality: Qt.NonModal
         title: qsTr("Select your deployment config")
+        currentFolder: OnboardingPaths.toFolderUrl(deploymentField.text)
+                       || StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0]
         nameFilters: [qsTr("YAML files (*.yaml *.yml)"), qsTr("All files (*)")]
         onAccepted: deploymentField.text = OnboardingPaths.toLocalPath(selectedFile)
     }

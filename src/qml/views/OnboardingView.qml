@@ -40,6 +40,13 @@ ColumnLayout {
     // configuration, and the backend is what calls generate_user_config.
     property var bootstrapPeers: []
 
+    // True to create a NEW node in its own directory rather than configure the
+    // only one. It also changes where the wizard starts: the welcome screen asks
+    // "quick or advanced?" and the setup step asks "generate or use an existing
+    // file?", and both are already answered by the time someone has chosen to
+    // start a new node. Where that node goes is the backend's business.
+    property bool newNode: false
+
     // A generated config is already on disk for this app. Survives a view
     // rebuild because it is derived from backend state, not remembered here.
     property bool configExists: false
@@ -63,7 +70,7 @@ ColumnLayout {
 
     signal generateRequested(string outputPath, var initialPeers, int netPort, int blendPort,
                              string httpAddr, string externalAddress, bool noPublicIpCheck,
-                             int deploymentMode, string deploymentConfigPath, string statePath)
+                             int deploymentMode, string deploymentConfigPath, bool newNode)
     signal userConfigPathSelected(string path)
     signal deploymentConfigPathSelected(string path)
     signal powConfigureRequested(string configJson)
@@ -71,7 +78,10 @@ ColumnLayout {
     signal finished(bool startNode)
     signal exitRequested()
 
-    function configGenerated() { d.goTo("keys") }
+    function configGenerated() {
+        d.generatedThisRun = true
+        d.goTo("keys")
+    }
     function powConfigured() { root.finished(true) }
 
     spacing: Theme.spacing.large
@@ -82,11 +92,13 @@ ColumnLayout {
         // "generate" or "existing".
         property string mode: "generate"
 
-        readonly property bool configWritten: root.configExists
+        property bool generatedThisRun: false
+        readonly property bool configWritten: root.newNode ? d.generatedThisRun
+                                                           : root.configExists
         property int stepIndex: -1
-        readonly property var steps: mode === "existing"
-            ? ["setup"]
-            : ["setup", "network", "keys", "fund"]
+        readonly property var steps: root.newNode
+            ? ["network", "keys", "fund"]
+            : (mode === "existing" ? ["setup"] : ["setup", "network", "keys", "fund"])
 
         readonly property string step: (stepIndex >= 0 && stepIndex < steps.length)
             ? steps[stepIndex]
@@ -111,8 +123,11 @@ ColumnLayout {
                 stepIndex += 1
         }
 
+        readonly property bool canGoBack: root.newNode ? d.stepIndex > 0
+                                                       : d.stepIndex > -1
+
         function back() {
-            if (stepIndex > -1)
+            if (d.canGoBack)
                 stepIndex -= 1
         }
 
@@ -214,8 +229,9 @@ ColumnLayout {
     }
 
     function reset() {
-        d.stepIndex = -1
+        d.stepIndex = root.newNode ? 0 : -1
         d.mode = "generate"
+        d.generatedThisRun = false
         networkStep.reset()
     }
 
@@ -232,7 +248,7 @@ ColumnLayout {
         canExit: root.canExit
         quickStartAvailable: root.quickStartAvailable
         onQuickStartRequested: root.generateRequested(
-            "", root.bootstrapPeers, 0, 0, "", "", false, 0, "", "")
+            "", root.bootstrapPeers, 0, 0, "", "", false, 0, "", root.newNode)
         onAdvancedRequested: d.stepIndex = 0
         onExitRequested: root.exitRequested()
     }
@@ -271,14 +287,6 @@ ColumnLayout {
                 }
             }
 
-            LogosButton {
-                objectName: "onboardingExitButton"
-                Layout.alignment: Qt.AlignTop
-                visible: root.canExit
-                enabled: !root.busy
-                text: qsTr("Exit setup")
-                onClicked: root.exitRequested()
-            }
         }
 
         RowLayout {
@@ -376,7 +384,7 @@ ColumnLayout {
                                   deploymentPath, statePath) {
                 root.generateRequested(outputPath, initialPeers, netPort, blendPort, httpAddr,
                                        externalAddress, noPublicIpCheck, deploymentMode,
-                                       deploymentPath, statePath)
+                                       deploymentPath, root.newNode)
             }
         }
 
@@ -413,8 +421,16 @@ ColumnLayout {
         spacing: Theme.spacing.medium
 
         LogosButton {
+            objectName: "onboardingExitButton"
+            visible: root.canExit
+            enabled: !root.busy
+            text: qsTr("Exit")
+            onClicked: root.exitRequested()
+        }
+
+        LogosButton {
             objectName: "onboardingBackButton"
-            visible: d.stepIndex > -1
+            visible: d.canGoBack
             enabled: !root.busy
             text: qsTr("Back")
             onClicked: d.back()
