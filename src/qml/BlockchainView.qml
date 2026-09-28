@@ -797,6 +797,7 @@ Rectangle {
                     miningError: _d.miningError
                     powRewardsClaimed: root.backend ? root.backend.powRewardsClaimed : 0
                     powRewardsLepta: root.backend ? root.backend.powRewardsLepta : ""
+                    powClaimsSubmitted: root.backend ? root.backend.powClaimsSubmitted : 0
                     powClaimsPending: root.backend ? root.backend.powClaimsPending : 0
                     claimableTickets: root.backend ? root.backend.claimableTickets : 0
                     powActive: root.backend ? root.backend.powActive : false

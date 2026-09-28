@@ -2972,7 +2972,7 @@ QVariantMap BlockchainBackend::getBalance(QString addressHex)
     // behind the failure.
     if (lr.success)
         m_accountsModel->setBalanceForAddress(addressHex, lr.value.toString());
-    setWalletFunded(m_accountsModel->hasFundsForRole(QStringLiteral("leader_funding")));
+    setWalletFunded(m_accountsModel->hasFunds());
     return result::toVariantMap(lr);
 }
 
