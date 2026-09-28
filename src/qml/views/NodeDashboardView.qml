@@ -100,6 +100,8 @@ Item {
     // Lepta, decimal string. The value those claims paid; powRewardsClaimed is
     // only how many tickets produced it.
     property string powRewardsLepta: ""
+    // Claims on their way to being paid
+    property int powClaimsSubmitted: 0
     property int powClaimsPending: 0
     // The keystore exists and whether a copy of it has been saved. Together
     // they drive the reminder banner — see the top of the layout.
@@ -119,15 +121,23 @@ Item {
         readonly property bool running: root.status === BlockchainBackend.Running
 
         // Under the reward count, in order of how much the user needs to know it:
-        // a mining failure, then claims settling, then the plain backlog.
+        // a mining failure, then claims in flight, then the plain backlog.
         readonly property string miningCaption: {
             if (root.miningError.length > 0)
                 return root.miningError
+            if (root.powClaimsSubmitted > 0 && root.powClaimsPending > 0)
+                return qsTr("%1 sent \u00b7 %2 settling")
+                           .arg(root.powClaimsSubmitted).arg(root.powClaimsPending)
             if (root.powClaimsPending > 0)
                 return root.claimableTickets > 0
                     ? qsTr("%1 settling \u00b7 %2 waiting")
                           .arg(root.powClaimsPending).arg(root.claimableTickets)
                     : qsTr("%n claim(s) settling", "", root.powClaimsPending)
+            if (root.powClaimsSubmitted > 0)
+                return root.claimableTickets > 0
+                    ? qsTr("%1 sent \u00b7 %2 waiting")
+                          .arg(root.powClaimsSubmitted).arg(root.claimableTickets)
+                    : qsTr("%n sent, not seen yet", "", root.powClaimsSubmitted)
             if (root.claimableTickets > 0)
                 return qsTr("%1 claimed \u00b7 %2 waiting")
                            .arg(root.powRewardsClaimed).arg(root.claimableTickets)
