@@ -42,7 +42,24 @@ ColumnLayout {
     property bool claimSuccess: false
     property string claimMessage: ""
 
+    // ---- PoW runtime state ----
+    property bool miningActive: false
+    // The node's PoW service answers nothing until the chain is online, so
+    // neither mining nor auto-claim can be read or changed before then.
+    property bool chainOnline: false
+    property bool powStatusKnown: false
+    property bool powRewardsEnabled: false
+    property bool autoClaimArmed: false
+    // Off because every target is done, rather than off because someone said so.
+    property bool autoClaimSelfDisarmed: false
+    property int autoClaimTick: 0
+    property string autoClaimTickUnit: ""
+    // Rows of { address, thresholdLepta, balanceLepta, balanceKnown, reached,
+    // noCap }.
+    property var claimTargets: []
+
     signal claimRequested(string addressHex)
+    signal autoClaimToggled(bool enabled)
 
     // ---- Claim history ----
     // Remoted ClaimsModel scoped to mining. Null until the replica resolves.
@@ -84,6 +101,43 @@ ColumnLayout {
                        .arg(root.soonestExpiryCount)
                        .arg(root.soonestExpirySlots)
         }
+
+        // The friendly name the claim combo uses for the same address.
+        function accountLabel(address) {
+            for (var i = 0; i < root.accounts.length; ++i) {
+                if (root.accounts[i].address === address)
+                    return root.accounts[i].label || ""
+            }
+            return ""
+        }
+
+        // Tickets are piling up and nothing is going to claim them. The
+        // combination the app could not see before pow_status, and the one that
+        // cost 170k tickets in logos-blockchain-module#86.
+        // One line under the auto-claim switch; the first that applies wins.
+        readonly property string autoClaimHint: {
+            if (!root.nodeRunning)
+                return ""
+            if (!root.powStatusKnown && !root.chainOnline)
+                return qsTr("Available once the node is online.")
+            if (!root.powStatusKnown)
+                return qsTr("This node's module does not report auto-claim's state, so the "
+                            + "switch shows what was last asked for.")
+            if (root.claimTargets.length === 0)
+                return qsTr("No auto-claim targets configured — add them under "
+                            + "pow.auto_claim.targets in the config, then restart the node.")
+            if (root.autoClaimSelfDisarmed)
+                return qsTr("Every target has reached the balance it stops at, so the node "
+                            + "turns auto-claim off again as soon as it is switched on. Raise "
+                            + "a threshold in the config's pow section to resume.")
+            if (root.autoClaimArmed && !root.miningActive)
+                return qsTr("On, but there is nothing to claim until mining is running.")
+            return ""
+        }
+
+        readonly property bool miningIntoNothing:
+            root.powStatusKnown && root.miningActive && !root.autoClaimArmed
+            && root.claimableTickets > 0
 
         readonly property string awaitingPayoutCaption: {
             if (root.submittedCount > 0 && root.pendingCount > 0)
@@ -193,11 +247,147 @@ ColumnLayout {
         message: root.claimableError
     }
 
+    // Mining with no claimer. The one state where the numbers above look healthy
+    // and are worthless: tickets climb, every one of them expires.
+    LogosNotice {
+        Layout.fillWidth: true
+        objectName: "miningIntoNothingNotice"
+        shown: d.miningIntoNothing
+        severity: LogosNotice.Warning
+        title: qsTr("Nothing is claiming these tickets")
+        message: root.autoClaimSelfDisarmed
+                 ? qsTr("Auto-claim is off and every claim target has already reached the "
+                        + "balance it stops at, so switching it on would stop it again at "
+                        + "once. Tickets expire unclaimed until a threshold is raised or "
+                        + "you claim by hand below.")
+                 : qsTr("Mining is on and auto-claim is off. Tickets expire unclaimed "
+                        + "until auto-claim is switched on below or you claim by hand.")
+    }
+
+    LogosNotice {
+        Layout.fillWidth: true
+        objectName: "powRewardsDisabledNotice"
+        shown: root.powStatusKnown && !root.powRewardsEnabled
+        severity: LogosNotice.Info
+        title: qsTr("This chain pays no mining rewards")
+        message: qsTr("The node reports PoW rewards as disabled for this deployment, so "
+                      + "mining here produces nothing to claim.")
+    }
+
+    // ---- Auto-claim ----
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.topMargin: Theme.spacing.small
+        spacing: Theme.spacing.small
+
+        LogosText {
+            text: qsTr("Auto-claim")
+            font.pixelSize: Theme.typography.subtitleText
+            font.weight: Theme.typography.weightMedium
+        }
+
+        LogosInfoButton {
+            Layout.alignment: Qt.AlignVCenter
+            title: qsTr("Auto-claim")
+            dialogContentItem: InfoSections { info: InfoContent.autoClaim }
+        }
+
+        Item { Layout.fillWidth: true }
+
+        LogosText {
+            visible: root.autoClaimTick > 0
+            text: root.autoClaimTickUnit === "slots"
+                  ? qsTr("every %n slot(s)", "", root.autoClaimTick)
+                  : qsTr("every %n second(s)", "", root.autoClaimTick)
+            color: Theme.palette.textTertiary
+            font.pixelSize: Theme.typography.secondaryText
+        }
+
+        // With no target the node refuses to arm and the switch would snap back,
+        // so it can only be turned off then. A module without pow_status reports
+        // no targets at all, which is not the same as having none.
+        LogosSwitch {
+            objectName: "autoClaimSwitch"
+            checked: root.autoClaimArmed
+            enabled: root.nodeRunning
+                     && (root.chainOnline || root.powStatusKnown)
+                     && (root.autoClaimArmed || !root.powStatusKnown
+                         || root.claimTargets.length > 0)
+            onToggled: root.autoClaimToggled(checked)
+        }
+    }
+
+    LogosText {
+        Layout.fillWidth: true
+        objectName: "autoClaimHint"
+        visible: text.length > 0
+        wrapMode: Text.WordWrap
+        text: d.autoClaimHint
+        color: Theme.palette.textTertiary
+        font.pixelSize: Theme.typography.secondaryText
+    }
+
+    Repeater {
+        model: root.claimTargets
+
+        delegate: RowLayout {
+            id: targetRow
+
+            required property var modelData
+
+            readonly property string accountLabel: d.accountLabel(targetRow.modelData.address)
+
+            Layout.fillWidth: true
+            spacing: Theme.spacing.small
+
+            LogosText {
+                visible: targetRow.accountLabel.length > 0
+                text: targetRow.accountLabel
+                font.pixelSize: Theme.typography.secondaryText
+                color: Theme.palette.textSecondary
+            }
+
+            LogosText {
+                objectName: "claimTargetAddress"
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                text: targetRow.modelData.address
+                elide: Text.ElideMiddle
+                font.family: Theme.typography.mono
+                font.pixelSize: Theme.typography.secondaryText
+                color: Theme.palette.textSecondary
+            }
+
+            LogosBadge {
+                objectName: "claimTargetReachedBadge"
+                visible: targetRow.modelData.reached === true
+                text: qsTr("Threshold reached")
+                color: Theme.palette.textTertiary
+            }
+
+            LogosText {
+                objectName: "claimTargetBalance"
+                text: {
+                    const balance = targetRow.modelData.balanceKnown
+                                    ? Units.compact(targetRow.modelData.balanceLepta)
+                                    : qsTr("—")
+                    return targetRow.modelData.noCap
+                           ? qsTr("%1 · no cap").arg(balance)
+                           : qsTr("%1 / %2").arg(balance)
+                                            .arg(Units.compact(targetRow.modelData.thresholdLepta))
+                }
+                font.pixelSize: Theme.typography.secondaryText
+                color: Theme.palette.text
+            }
+        }
+    }
+
     // ---- Manual claim ----
     LogosText {
         Layout.topMargin: Theme.spacing.small
-        text: qsTr("Claim now")
-        font.pixelSize: Theme.typography.primaryText
+        text: qsTr("Manual claim")
+        font.pixelSize: Theme.typography.subtitleText
+        font.weight: Theme.typography.weightMedium
     }
 
     LogosText {
