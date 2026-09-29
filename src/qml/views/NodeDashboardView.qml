@@ -83,9 +83,10 @@ Item {
     // Seconds the node has been online, ticked by the backend and reset by it
     // whenever the view stops reporting Online — see the .rep.
     property int uptimeSeconds: 0
-    // PoW mining, as last toggled from the Fund button, and the failure that
-    // stopped it if there was one.
-    property bool miningRequested: false
+    // Whether the node is mining, and the failure that stopped it if there was
+    // one. Read back from the node where the module answers pow_status, and what
+    // the Fund button last asked for where it does not.
+    property bool miningActive: false
     property string miningError: ""
     // Tickets mined and not yet claimed. Sits under the reward figure rather than
     // replacing it: a ticket is not a reward until it is claimed, and a large
@@ -147,7 +148,7 @@ Item {
                     mined.push(d.countingSince)
                 return mined.join(" \u00b7 ")
             }
-            return root.miningRequested ? qsTr("no tickets claimed") : ""
+            return root.miningActive ? qsTr("no tickets claimed") : ""
         }
 
         function parseJson(text) {
@@ -749,7 +750,7 @@ Item {
                             },
                             LogosStage {
                                 label: qsTr("Funded")               
-                                busyLabel: root.miningRequested ? qsTr("Funding")
+                                busyLabel: root.miningActive ? qsTr("Funding")
                                                        : qsTr("Fund your wallet")
                             },
                             LogosStage {

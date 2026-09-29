@@ -26,9 +26,6 @@ ColumnLayout {
     // the time this cannot honestly be recommended.
     property bool configStale: false
 
-    // Whether the node is currently claiming mined rewards on its own. A
-    // RUNTIME flag, not a stored setting — see the card below.
-    property bool autoClaimRunning: false
     property bool nodeRunning: false
 
     // A config was repointed and the node has not been started since. Changing
@@ -53,7 +50,6 @@ ColumnLayout {
 
     signal updateConfigRequested()
     signal startNewNodeRequested()
-    signal autoClaimToggled(bool enabled)
 
 
     LogosFrame {
@@ -321,78 +317,6 @@ ColumnLayout {
                 actions: [
                     LogosCopyButton { value: root.backupError }
                 ]
-            }
-        }
-    }
-
-    // ---- Mining ----
-    LogosFrame {
-        Layout.fillWidth: true
-        padding: Theme.spacing.large
-        backgroundColor: Theme.palette.surfaceRaised
-        borderColor: "transparent"
-        radius: Theme.spacing.radiusLarge
-
-        contentItem: ColumnLayout {
-            spacing: Theme.spacing.small
-
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: false
-                Layout.bottomMargin: Theme.spacing.small
-                spacing: Theme.spacing.small
-
-                LogosText {
-                    text: qsTr("Mining")
-                    color: Theme.palette.text
-                    font.pixelSize: Theme.typography.panelTitleText
-                    font.weight: Theme.typography.weightMedium
-                }
-
-                Item { Layout.fillWidth: true }
-
-                LogosInfoButton {
-                    Layout.alignment: Qt.AlignVCenter
-                    title: qsTr("Auto-claim")
-                    dialogContentItem: InfoSections { info: InfoContent.autoClaim }
-                }
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: false
-                spacing: Theme.spacing.small
-
-                LogosText {
-                    text: qsTr("Auto-claim")
-                    font.pixelSize: Theme.typography.primaryText
-                }
-                LogosBadge {
-                    objectName: "autoClaimRecommendedBadge"
-                    text: qsTr("Recommended")
-                    color: Theme.palette.success
-                }
-
-                Item { Layout.fillWidth: true }
-
-                LogosSwitch {
-                    objectName: "autoClaimSwitch"
-                    checked: root.autoClaimRunning
-                    enabled: root.nodeRunning
-                    onToggled: root.autoClaimToggled(checked)
-                }
-            }
-
-            LogosText {
-                Layout.fillWidth: true
-                Layout.topMargin: Theme.spacing.small
-                wrapMode: Text.WordWrap
-                text: qsTr("The rest of mining — how many threads the search uses, which "
-                           + "accounts auto-claim pays and the balance it stops at — lives in "
-                           + "the config file, under pow. Copy its path from the Node card "
-                           + "then restart the node.")
-                color: Theme.palette.textTertiary
-                font.pixelSize: Theme.typography.secondaryText
             }
         }
     }

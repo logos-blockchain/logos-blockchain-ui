@@ -219,8 +219,8 @@ var autoClaim = {
     // "what". Same reasoning as nodeConfig.
     what: "Whether the node redeems mined tickets on its own. A ticket pays "
         + "nothing until it is claimed and expires if it never is, so without "
-        + "this every ticket has to be claimed by hand from the Mining tab "
-        + "before its window closes.\n\n"
+        + "this every ticket has to be claimed by hand before its window "
+        + "closes.\n\n"
         + "This switch applies to the RUNNING node only. It is not written "
         + "back to the config, so a restart puts it back to whatever the file "
         + "says \u2014 which is why it can read differently after a restart "
@@ -230,9 +230,8 @@ var autoClaim = {
         + "and that list is not empty. Without a target the node has nowhere to "
         + "pay, and tickets expire however this switch is set. Add one during "
         + "onboarding, or by editing the config directly.\n\n"
-        + "The node does not report back that it is claiming. If nothing is "
-        + "being redeemed, trust the ticket count on the Mining tab over this "
-        + "switch.",
+        + "The node also switches auto-claim off by itself once every target "
+        + "has reached the balance it stops at.",
     states: [
         { label: "On",
           meaning: "The node claims mined rewards unattended \u2014 provided "
