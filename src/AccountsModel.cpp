@@ -247,15 +247,3 @@ bool AccountsModel::hasFunds() const
     return false;
 }
 
-bool AccountsModel::hasFundsForRole(const QString& role) const
-{
-    bool roleFound = false;
-    for (const Entry& e : m_entries) {
-        if (!e.roles.contains(role))
-            continue;
-        roleFound = true;
-        if (holdsTokens(e.balance))
-            return true;
-    }
-    return roleFound ? false : hasFunds();
-}

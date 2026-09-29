@@ -143,14 +143,12 @@ class BlockchainBackend
     // asks for an app restart, which is the wrong remedy for a dead node module.
     PROP(bool nodeModuleReachable READONLY)
     // Whether PoW mining was last *asked for* from here — intent, not state.
-    // The node has no pow_is_mining() to read it back and does not persist
-    // mining across a restart, so this is cleared on every transition out of
-    // Running and can still be wrong in between: a node that stopped mining on
-    // its own leaves this standing.
+    // Cleared on every transition out of Running, and wrong in between whenever
+    // the node starts or stops mining on its own.
     //
-    // Named for what it actually is. Use it where intent is the right input —
-    // which way the button toggles, which call to send — and powActive where
-    // proof is, because that one is measured rather than assumed.
+    // Named for what it actually is. It is the fallback for miningActive on a
+    // module with no pow_status, and the optimistic update that keeps the button
+    // responsive between a toggle and the next poll. Bind views to miningActive.
     PROP(bool miningRequested READONLY)
     // PoW reward claims paid to one of this wallet's keys, all-time for this
     // chain — not per session. They used to reset on every start, on the premise
@@ -167,17 +165,24 @@ class BlockchainBackend
     // it counted the change as income and ran above the wallet balance without
     // bound. The event's note is the minted reward and nothing else.
     PROP(QString powRewardsLepta READONLY)
-    // Whether auto-claim was last started from here. Optimistic for the same
-    // reason `mining` is — there is no pow_is_auto_claim() to read it back.
+    // Whether auto-claim was last started from here, seeded from the config's
+    // pow.auto_claim.targets. Intent and inference, like miningRequested, and
+    // the fallback for autoClaimArmed when pow_status is unavailable.
     //
     // It follows the node's own default, which is OFF: unattended claiming is
     // opt-in through pow.auto_claim.targets, and generate_user_config writes no
-    // pow section at all, so a freshly generated config has nothing to arm. This
-    // used to assert `true` on every transition into Running, which was wrong for
-    // every config nobody had been through the PoW settings for — and wrong
-    // again once the node disarms itself, which it does as soon as every target
-    // has reached its threshold.
+    // pow section at all, so a freshly generated config has nothing to arm.
     PROP(bool autoClaimRunning READONLY)
+
+    // ---- PoW runtime state, read back from the node (pow_status) ----
+    PROP(bool powStatusKnown READONLY)
+    PROP(bool miningActive READONLY)
+    PROP(bool autoClaimArmed READONLY)
+    PROP(bool autoClaimSelfDisarmed READONLY)
+    PROP(bool powRewardsEnabled READONLY)
+    PROP(int autoClaimTick READONLY)
+    PROP(QString autoClaimTickUnit READONLY)
+    PROP(QVariantList powClaimTargets READONLY)
 
     SLOT(void startBlockchain())
     SLOT(void stopBlockchain())

@@ -561,7 +561,7 @@ Rectangle {
             readonly property string chainId: root.backend && root.backend.chainId
                 ? root.backend.chainId
                 : ""
-            readonly property bool miningRequested: root.backend ? root.backend.miningRequested : false
+            readonly property bool miningActive: root.backend ? root.backend.miningActive : false
 
             // Sections 2-4 (Rewards, Mining, Wallet) need a running node; if it
             // stops while one is open, fall back to Dashboard so the user isn't
@@ -648,13 +648,13 @@ Rectangle {
                 LogosButton {
                     id: fundMiningButton
                     objectName: "fundMiningButton"
-                    text: opPage.miningRequested ? qsTr("Stop Mining") : qsTr("Fund")
+                    text: opPage.miningActive ? qsTr("Stop Mining") : qsTr("Fund")
                     // Mining against a chain we haven't caught up with burns CPU
                     // for nothing: a ticket is anchored to a recent block hash
                     // and expires outside the acceptance window. Stopping stays
                     // available either way — a node that falls behind while
                     // mining must not trap the user with the CPU still pinned.
-                    enabled: opPage.nodeRunning && (opPage.miningRequested || monitor.synced)
+                    enabled: opPage.nodeRunning && (opPage.miningActive || monitor.synced)
                     // The one thing the button cannot say for itself. The
                     // prototype assumed mining stopped at a funding target; this
                     // build has no target and does not stop. What that costs is
@@ -669,7 +669,7 @@ Rectangle {
                             return
                         _d.miningError = ""
                         logos.watch(
-                            opPage.miningRequested ? root.backend.powStopMining()
+                            opPage.miningActive ? root.backend.powStopMining()
                                           : root.backend.powStartMining(),
                             function(result) {
                                 if (!result.success)
@@ -793,10 +793,11 @@ Rectangle {
                     genesisUnixMs: monitor.genesisUnixMs
                     uptimeSeconds: (root.backend && root.backend.uptimeSeconds !== undefined)
                                    ? root.backend.uptimeSeconds : 0
-                    miningRequested: opPage.miningRequested
+                    miningActive: opPage.miningActive
                     miningError: _d.miningError
                     powRewardsClaimed: root.backend ? root.backend.powRewardsClaimed : 0
                     powRewardsLepta: root.backend ? root.backend.powRewardsLepta : ""
+                    powClaimsSubmitted: root.backend ? root.backend.powClaimsSubmitted : 0
                     powClaimsPending: root.backend ? root.backend.powClaimsPending : 0
                     claimableTickets: root.backend ? root.backend.claimableTickets : 0
                     powActive: root.backend ? root.backend.powActive : false
@@ -977,11 +978,22 @@ Rectangle {
                     claimableLoaded: root.backend ? root.backend.claimableLoaded : false
                     claimableError: root.backend ? root.backend.claimableError : ""
 
+                    miningActive: opPage.miningActive
+                    chainOnline: monitor.modeOnline
+                    powStatusKnown: root.backend ? root.backend.powStatusKnown : false
+                    powRewardsEnabled: root.backend ? root.backend.powRewardsEnabled : false
+                    autoClaimArmed: root.backend ? root.backend.autoClaimArmed : false
+                    autoClaimSelfDisarmed: root.backend ? root.backend.autoClaimSelfDisarmed : false
+                    autoClaimTick: root.backend ? root.backend.autoClaimTick : 0
+                    autoClaimTickUnit: root.backend ? root.backend.autoClaimTickUnit : ""
+                    claimTargets: root.backend ? root.backend.powClaimTargets : []
+
                     claimBusy: _d.claimBusy
                     claimSuccess: _d.claimSuccess
                     claimMessage: _d.claimMessage
 
                     onClaimRequested: function(addressHex) { _d.claimPowRewards(addressHex) }
+                    onAutoClaimToggled: function(enabled) { _d.setAutoClaim(enabled) }
                     onHistoryPendingOnlyChanged: function(pendingOnly) {
                         if (root.backend)
                             root.backend.setMiningHistoryFilter(pendingOnly ? 1 : 0)
@@ -995,7 +1007,7 @@ Rectangle {
                 }
 
                 // ---- Section 5: Settings ----
-                // Wrapped rather than made scrollable internally: four cards do
+                // Wrapped rather than made scrollable internally: three cards do
                 // not fit a short window, and the Destructive card is last —
                 // a page that cut off at the bottom would hide exactly what the
                 // user came for when the node is wedged.
@@ -1031,8 +1043,7 @@ Rectangle {
                             }
                         )
                     }
-                    autoClaimRunning: root.backend ? root.backend.autoClaimRunning : false
-                    keysBackedUp: !!root.backend && root.backend.keysBackedUp
+                    keysBackedUp:!!root.backend && root.backend.keysBackedUp
                     configStale: !!root.backend
                         && root.backend.configState === BlockchainBackend.ConfigStale
 
@@ -1050,7 +1061,6 @@ Rectangle {
                         root.backend.deploymentConfig = path
                     }
                     onStartNewNodeRequested: root.openSetup(true)
-                    onAutoClaimToggled: function(enabled) { _d.setAutoClaim(enabled) }
                     }
                 }
             }

@@ -35,6 +35,7 @@
 #include <QVariant>
 
 #include <algorithm>
+#include <limits>
 
 const QString BlockchainBackend::BLOCKCHAIN_MODULE_NAME =
     QStringLiteral("blockchain_module");
@@ -1016,6 +1017,11 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
             setNodeCpuPercent(-1.0);
             setNodeMemoryMb(-1.0);
             m_cpuSampledOnce = false;
+            m_powServiceUp = false;
+            m_powIsMining = false;
+            m_powAutoClaimArmed = false;
+            m_powEveryTargetReached = false;
+            setPowStatusKnown(false);
             // The node does not persist mining: stopping it, or losing it,
             // leaves mining off
             setMiningRequested(false);
@@ -1025,6 +1031,11 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
             setAutoClaimRunning(false);
             m_autoClaimConfigured = false;
             m_autoClaimUserToggled = false;
+            setPowRewardsEnabled(false);
+            setAutoClaimTick(0);
+            setAutoClaimTickUnit(QString());
+            setPowClaimTargets(QVariantList());
+            publishPowState();
         }
     });
 
@@ -1052,7 +1063,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     // slower because a stall is measured in minutes.
     auto syncClaimablePolling = [this]() {
         const bool watching = claimablePollActive();
-        const bool wanted = watching || miningRequested();
+        const bool wanted = watching || miningActive();
         if (!wanted) {
             m_claimablePollTimer->stop();
             // Nothing is producing tickets, so a count that stopped moving says
@@ -1068,7 +1079,11 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     };
     connect(this, &BlockchainBackendSimpleSource::claimablePollActiveChanged, this,
             syncClaimablePolling);
-    connect(this, &BlockchainBackendSimpleSource::miningRequestedChanged, this, syncClaimablePolling);
+    connect(this, &BlockchainBackendSimpleSource::miningActiveChanged, this, syncClaimablePolling);
+    connect(this, &BlockchainBackendSimpleSource::miningRequestedChanged, this,
+            &BlockchainBackend::publishPowState);
+    connect(this, &BlockchainBackendSimpleSource::autoClaimRunningChanged, this,
+            &BlockchainBackend::publishPowState);
 
     // The restored config was set before this client existed and before the
     // handler above was connected, so neither fired for it. Everything needed
@@ -2240,6 +2255,9 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
             // the poll is its own — but the clock has no reason to make a round trip
             // for a verdict already in hand here.
             applyOnlineReading(modeOnline);
+            m_powServiceUp = m_powServiceUp || modeOnline;
+            // Before the seed, which is the guess this answer replaces.
+            pollPowStatus();
             applyAutoClaimSeed(modeOnline);
             refreshNetwork();
             refreshChainId();
@@ -2302,9 +2320,6 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
     return result::toVariantMap(r);
 }
 
-// Mining is a fire-and-forget toggle with no readback, so `mining` only moves
-// when the node accepts the call. A failed start therefore leaves the button
-// offering Fund again rather than lying about what the node is doing.
 QVariantMap BlockchainBackend::powStartMining()
 {
     if (!m_blockchainClient)
@@ -2313,7 +2328,9 @@ QVariantMap BlockchainBackend::powStartMining()
     const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("pow_start_mining")));
     if (r.success) {
+        m_powIsMining = true;
         setMiningRequested(true);
+        publishPowState();
         // The tickets this run mines are the ones the stall watch is about, and
         // the previous run's backlog must not count against it.
         restartClaimStallWatch();
@@ -2328,8 +2345,11 @@ QVariantMap BlockchainBackend::powStopMining()
 
     const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("pow_stop_mining")));
-    if (r.success)
+    if (r.success) {
+        m_powIsMining = false;
         setMiningRequested(false);
+        publishPowState();
+    }
     return result::toVariantMap(r);
 }
 
@@ -2378,7 +2398,9 @@ QVariantMap BlockchainBackend::powStartAutoClaim()
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("pow_start_auto_claim")));
     if (r.success) {
         m_autoClaimUserToggled = true;
+        m_powAutoClaimArmed = true;
         setAutoClaimRunning(true);
+        publishPowState();
     }
     return result::toVariantMap(r);
 }
@@ -2392,7 +2414,9 @@ QVariantMap BlockchainBackend::powStopAutoClaim()
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("pow_stop_auto_claim")));
     if (r.success) {
         m_autoClaimUserToggled = true;
+        m_powAutoClaimArmed = false;
         setAutoClaimRunning(false);
+        publishPowState();
     }
     return result::toVariantMap(r);
 }
@@ -2496,6 +2520,8 @@ void BlockchainBackend::seedAutoClaimFromConfig()
 
 void BlockchainBackend::applyAutoClaimSeed(bool modeOnline)
 {
+    if (powStatusKnown())
+        return;
     if (!modeOnline || m_autoClaimUserToggled || autoClaimRunning() == m_autoClaimConfigured)
         return;
     setAutoClaimRunning(m_autoClaimConfigured);
@@ -2529,7 +2555,7 @@ QVariantMap BlockchainBackend::getConfigWalletKeys(QString configPath)
 // the view's; the derivation is ours, because we hold the payload.
 void BlockchainBackend::pollClaimableRewards()
 {
-    if (!m_blockchainClient || status() != Running) {
+    if (!m_blockchainClient || status() != Running || !m_powServiceUp) {
         setClaimableLoaded(false);
         // A node that is not running is not failing to answer — it was not
         // asked. Leaving the last failure up outlives whatever caused it and
@@ -2585,6 +2611,87 @@ void BlockchainBackend::pollClaimableRewards()
     setSoonestExpirySlots(soonest);
     setSoonestExpiryCount(atSoonest);
     setClaimableLoaded(true);
+}
+
+void BlockchainBackend::pollPowStatus()
+{
+    const auto noReading = [this] {
+        setPowStatusKnown(false);
+        publishPowState();
+    };
+
+    if (!m_blockchainClient || status() != Running || !m_powServiceUp)
+        return noReading();
+
+    logos::CallError callError;
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("pow_status"),
+        QVariantList(), Timeout(), &callError));
+    if (!r.success)
+        return noReading();
+
+    const QJsonDocument doc = QJsonDocument::fromJson(r.value.toString().toUtf8());
+    if (!doc.isObject())
+        return noReading();
+
+    const QJsonObject obj = doc.object();
+    const QJsonObject autoClaim = obj.value(QStringLiteral("auto_claim")).toObject();
+
+    const bool wasMining = m_powIsMining;
+    m_powIsMining = obj.value(QStringLiteral("is_mining")).toBool();
+    m_powAutoClaimArmed = autoClaim.value(QStringLiteral("is_armed")).toBool();
+    if (!wasMining && m_powIsMining)
+        restartClaimStallWatch();
+    setPowRewardsEnabled(obj.value(QStringLiteral("are_rewards_enabled")).toBool());
+
+    const QJsonObject tick = autoClaim.value(QStringLiteral("tick")).toObject();
+    const quint64 tickValue = jsonUint(tick.value(QStringLiteral("value")));
+    setAutoClaimTick(static_cast<int>(
+        std::min<quint64>(tickValue, std::numeric_limits<int>::max())));
+    setAutoClaimTickUnit(tick.value(QStringLiteral("unit")).toString());
+
+    QVariantList targets;
+    bool everyTargetReached = true;
+    const QJsonArray rows = autoClaim.value(QStringLiteral("targets")).toArray();
+    for (const QJsonValue& entry : rows) {
+        const QJsonObject target = entry.toObject();
+        const QString threshold = target.value(QStringLiteral("threshold")).toString();
+        const QJsonValue balanceValue = target.value(QStringLiteral("balance"));
+        const bool balanceKnown = balanceValue.isString();
+        const QString balance = balanceKnown ? balanceValue.toString() : QString();
+
+        bool thresholdOk = false;
+        bool balanceOk = false;
+        const quint64 thresholdNum = threshold.toULongLong(&thresholdOk);
+        const quint64 balanceNum = balance.toULongLong(&balanceOk);
+
+        const bool reached =
+            balanceKnown && thresholdOk && balanceOk && balanceNum >= thresholdNum;
+        everyTargetReached = everyTargetReached && reached;
+
+        QVariantMap row;
+        row[QStringLiteral("address")] =
+            normalizeHex(target.value(QStringLiteral("public_key")).toString());
+        row[QStringLiteral("thresholdLepta")] = threshold;
+        row[QStringLiteral("balanceLepta")] = balance;
+        row[QStringLiteral("balanceKnown")] = balanceKnown;
+        row[QStringLiteral("reached")] = reached;
+        row[QStringLiteral("noCap")] = threshold == QLatin1String(kMaxLepta);
+        targets.append(row);
+    }
+    setPowClaimTargets(targets);
+    m_powEveryTargetReached = !targets.isEmpty() && everyTargetReached;
+
+    setPowStatusKnown(true);
+    publishPowState();
+}
+
+void BlockchainBackend::publishPowState()
+{
+    const bool known = powStatusKnown();
+    setMiningActive(known ? m_powIsMining : miningRequested());
+    setAutoClaimArmed(known ? m_powAutoClaimArmed : autoClaimRunning());
+    setAutoClaimSelfDisarmed(known && !m_powAutoClaimArmed && m_powEveryTargetReached);
 }
 
 // Opens a fresh activity window. Called when mining starts and when the poll is
@@ -2972,7 +3079,7 @@ QVariantMap BlockchainBackend::getBalance(QString addressHex)
     // behind the failure.
     if (lr.success)
         m_accountsModel->setBalanceForAddress(addressHex, lr.value.toString());
-    setWalletFunded(m_accountsModel->hasFundsForRole(QStringLiteral("leader_funding")));
+    setWalletFunded(m_accountsModel->hasFunds());
     return result::toVariantMap(lr);
 }
 

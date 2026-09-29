@@ -140,8 +140,8 @@ private:
     void refreshChainId();
     // Reads pow.auto_claim.targets out of the config so the switch can report
     // auto-claim the node armed itself, which is how most of them are armed —
-    // the UI's own start/stop calls are a runtime override on top. There is no
-    // pow_is_auto_claim() to ask instead, so the file is the only source.
+    // the UI's own start/stop calls are a runtime override on top. Only used
+    // when pow_status cannot be read; the node's own answer wins over the file.
     void seedAutoClaimFromConfig();
     // Applies that reading once the chain is online. Deferred rather than done
     // at Running because the node's PoW service waits for online too, and the
@@ -301,6 +301,25 @@ private:
     void publishAccountRows();
     // One reading of pow_claimable_rewards, straight onto the properties above.
     void pollClaimableRewards();
+    // One reading of pow_status. Rides the status poll rather than the claimable
+    // timer: that timer only runs while the app believes mining is on, which is
+    // exactly the belief this call exists to correct.
+    void pollPowStatus();
+    // The node's PoW service does not read its inbox until the chain has first
+    // gone online, and the module waits on it with no timeout, on its own thread:
+    // a pow_* call before then stalls every other call and every event, blocks
+    // included. Latched per run; the service keeps answering after that.
+    bool m_powServiceUp = false;
+    // Resolves miningActive/autoClaimArmed from the readback when there is one
+    // and from the intent flags when there is not. Called from both sides so the
+    // two can never disagree about which source is in force.
+    void publishPowState();
+    // Last readback. Meaningless unless powStatusKnown().
+    bool m_powIsMining = false;
+    bool m_powAutoClaimArmed = false;
+    // There is at least one claim target and every one of them has reached its
+    // threshold — the node's own reason for standing auto-claim down.
+    bool m_powEveryTargetReached = false;
 
     QTimer* m_claimablePollTimer = nullptr;
 
