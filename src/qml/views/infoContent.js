@@ -669,15 +669,17 @@ var cpu = {
         + "inside the blockchain module's process, so what is measured is that "
         + "process — the node's own work, plus a negligible amount of module "
         + "overhead.",
-    calc: "The share of this machine's total processing power, averaged over "
-        + "the two seconds since the previous reading. The line beneath gives "
-        + "the same figure as a share of a single core, which is how Activity "
-        + "Monitor and top report a process: a node spread across four cores "
-        + "reads 400% there and 50% here on an eight-core machine.",
+    calc: "Averaged over the two seconds since the previous reading, and "
+        + "counted per core, the way Basecamp's Module Inspector, Activity "
+        + "Monitor and top report a process: one fully busy core is 100%, so a "
+        + "node spread across four cores reads 400%. The line beneath gives the "
+        + "same figure as a share of the whole machine — 50% of an eight-core "
+        + "machine, in that example.",
     states: [
-        { label: "0–100%",
-          meaning: "Share of the whole machine. Mining drives this up hard and "
-                 + "deliberately; catching up on blocks does too, briefly." },
+        { label: "0% and up",
+          meaning: "Mining drives this up hard and deliberately, towards 100% "
+                 + "for each mining thread; catching up on blocks does too, "
+                 + "briefly." },
         { label: "Measuring…",
           meaning: "The first reading has no earlier one to compare against, so "
                  + "no percentage exists yet. The next one, two seconds later, "
