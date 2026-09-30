@@ -194,8 +194,13 @@ constexpr int kMaxEventFetchAttempts = 3;
 constexpr quint64 kSubmissionWindowSlots = 150;
 // The ledger is rewritten whole on every save, and a catch-up replay can find
 // claims faster than a disk write is worth doing. Anything newer than this is
-// still in memory, and is flushed when the node stops.
+// still in memory, and is flushed by the next status poll or when the node stops.
 constexpr qint64 kEarnedSaveThrottleMs = 5000;
+// Slots the claim catch-up reads per status poll. Blocks land every ~40 slots
+// on the devnet, so this is ~50 blocks per get_blocks call — small enough not
+// to stall the poll, large enough that a full backfill takes minutes, not hours.
+constexpr quint64 kCatchUpSlotsPerPoll = 2000;
+constexpr quint64 kCatchUpMaxSlotsPerPoll = 64000;
 constexpr int kFailuresBeforeProbe = 3;
 // Start and stop share one deadline because the reasoning is the same: it is a
 // bound on our own patience, not a prediction of the node's workload. The module
@@ -277,6 +282,13 @@ QString normalizeHex(const QString& hex)
     if (out.startsWith(QStringLiteral("0x"), Qt::CaseInsensitive))
         out = out.mid(2);
     return out.toLower();
+}
+
+// Pending-claim key for a transaction read without its hash. Cannot collide
+// with a hash, which is bare hex.
+QString beneficiaryKey(const QString& pk)
+{
+    return QStringLiteral("pk:") + pk;
 }
 
 // The block inside a processed-block event, whichever shape the stream sends.
@@ -990,7 +1002,14 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         if (chainId().isEmpty())
             return;
         m_claimsLoaded = false;
+        m_genesisId.clear();
         m_libSlot = 0;
+        m_libId.clear();
+        m_libIdSlot = 0;
+        m_catchUpSpan = kCatchUpSlotsPerPoll;
+        m_catchUpStuckSlot = 0;
+        m_catchUpStuckAttempts = 0;
+        m_catchUpUnavailableSlot = 0;
         m_pendingEventBlocks.clear();
         setEarnedTotal(QString());
         setEarnedClaimCount(0);
@@ -1709,8 +1728,9 @@ void BlockchainBackend::loadClaimLedger()
     refreshGenesisId();
     m_claims.load(path, chainIdentity());
     // Stamped once, on the run that starts the tally, and never moved after —
-    // it is what lets the tiles say what they actually cover.
-    if (m_claims.countingSince().isEmpty())
+    // it is what lets the tiles say what they actually cover. Not once the
+    // catch-up has scanned from genesis: the tally then covers the whole chain.
+    if (m_claims.countingSince().isEmpty() && m_claims.scannedSlot() == 0)
         m_claims.setCountingSince(QDateTime::currentDateTime().toString(Qt::ISODate));
     // What the file remembers is older than anything noticed since this run
     // started, so it goes in front: the queue stays oldest-first, which is the
@@ -1727,12 +1747,16 @@ void BlockchainBackend::saveClaims(bool force)
 {
     if (!m_claimsLoaded || claimLedgerPath().isEmpty())
         return;
-    if (!force && m_claimsSaved.isValid() && m_claimsSaved.elapsed() < kEarnedSaveThrottleMs)
+    if (!force && m_claimsSaved.isValid() && m_claimsSaved.elapsed() < kEarnedSaveThrottleMs) {
+        m_claimsDirty = true;
         return;
+    }
 
     m_claims.setPending(m_pendingEventBlocks);
-    if (m_claims.save(claimLedgerPath()))
+    if (m_claims.save(claimLedgerPath())) {
         m_claimsSaved.restart();
+        m_claimsDirty = false;
+    }
 }
 
 // 0 all, 1 pending only — see the .rep. Anything else falls back to showing
@@ -1802,24 +1826,50 @@ void BlockchainBackend::refreshGenesisId()
     if (!m_genesisId.isEmpty() || !m_blockchainClient || status() != Running)
         return;
 
+    // get_blocks returns raw blocks, whose header has no id (see catchUpClaims),
+    // so genesis is named by its child's parent_block. Only trusted when genesis
+    // itself came back: a node without early history would otherwise offer
+    // some later block's parent.
     const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_blocks"), QVariant::fromValue(0),
-        QVariant::fromValue(0)));
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_blocks"), QVariant::fromValue<qulonglong>(0),
+        QVariant::fromValue<qulonglong>(kCatchUpSlotsPerPoll)));
     if (!r.success || !stillRunning())
         return;
 
-    const QJsonArray blocks = QJsonDocument::fromJson(r.value.toString().toUtf8()).array();
-    if (blocks.isEmpty())
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(r.value.toString().toUtf8(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isArray())
         return;
-    const QString id = blocks.first()
-                           .toObject()
-                           .value(QStringLiteral("header"))
-                           .toObject()
-                           .value(QStringLiteral("id"))
-                           .toString();
-    if (id.isEmpty())
+
+    bool haveGenesis = false;
+    QString genesisId;
+    QString genesisParent;
+    quint64 childSlot = 0;
+    QString childParent;
+    for (const QJsonValue& value : doc.array()) {
+        const QJsonObject header = value.toObject().value(QStringLiteral("header")).toObject();
+        if (!header.contains(QStringLiteral("slot")))
+            continue;
+        const quint64 slot = jsonUint(header.value(QStringLiteral("slot")));
+        if (slot == 0) {
+            haveGenesis = true;
+            genesisId = normalizeHex(header.value(QStringLiteral("id")).toString());
+            genesisParent = normalizeHex(header.value(QStringLiteral("parent_block")).toString());
+        } else if (childSlot == 0 || slot < childSlot) {
+            childSlot = slot;
+            childParent = normalizeHex(header.value(QStringLiteral("parent_block")).toString());
+        }
+    }
+    if (!haveGenesis)
         return;
-    m_genesisId = normalizeHex(id);
+    if (!genesisId.isEmpty()) {
+        m_genesisId = genesisId;
+        return;
+    }
+    // Checked like the catch-up's ids: get_blocks may have left out genesis's
+    // real child. Left empty on failure, and a later run retries.
+    if (checkBlockId(childParent, 0, genesisParent) == BlockCheck::Verified)
+        m_genesisId = childParent;
 }
 
 // Who the leader claims in a block pay, if any.
@@ -1847,13 +1897,14 @@ BlockchainBackend::claimPayeesByTx(const QJsonObject& block)
         const QJsonObject mantleTx = tx.value(QStringLiteral("mantle_tx")).toObject();
         if (txHash.isEmpty())
             txHash = mantleTx.value(QStringLiteral("hash")).toString();
-        if (txHash.isEmpty())
-            continue;
+        // get_blocks serializes the raw block, which has no hash. Its claims are
+        // keyed by beneficiary instead, which the event's note names too.
         const QJsonArray ops = mantleTx.value(QStringLiteral("ops")).toArray();
 
         bool holdsClaim = false;
         PendingBlock::TxClaim claim;
         QStringList transferPayees;
+        QStringList beneficiaries;
 
         for (const QJsonValue opValue : ops) {
             const QJsonObject fields = opValue.toObject();
@@ -1864,13 +1915,10 @@ BlockchainBackend::claimPayeesByTx(const QJsonObject& block)
                 // A staking reward is minted straight to the key the op names,
                 // so the op alone settles whose it is.
                 //
-                // `pk` is a GUESS. No leader claim has ever appeared on the
-                // devnet — its entire transaction history holds only
-                // ClaimPowReward and LedgerTransfer ops — so this field name has
-                // never met a real one. If it is wrong, payees comes back empty,
-                // the block is dropped, and Earned reads zero with nothing
-                // anywhere to say why. That is exactly how the mining total hid a
-                // bug for a whole session, so this one reports itself instead.
+                // `pk` is LeaderClaimOp's field in the node (leader_claim.rs), and
+                // the reward note is minted to it. Still reports itself if it ever
+                // comes back empty: a renamed field would otherwise read as
+                // Earned zero with nothing anywhere to say why.
                 holdsClaim = true;
                 const QString pk = normalizeHex(payload.value(QStringLiteral("pk")).toString());
                 if (pk.isEmpty()) {
@@ -1886,21 +1934,25 @@ BlockchainBackend::claimPayeesByTx(const QJsonObject& block)
                 }
                 if (!claim.payees.contains(pk))
                     claim.payees << pk;
+                beneficiaries << pk;
                 break;
             }
-            case kClaimPowRewardOpcode:
+            case kClaimPowRewardOpcode: {
                 // A mining reward is minted to the per-ticket puzzle key, which is
                 // generated per solution and never matches a wallet — so
                 // attribution comes from the transfer riding with the claim, read
                 // below, rather than from the claim itself.
                 //
-                // The op DOES carry a key, though: a real one on the devnet reads
-                // { epoch_nonce, block_hash, public_key }. Nothing here needs it —
-                // the transfer path is proven against 938 recorded claims — but
-                // this comment used to say the op named nothing at all, and that
-                // was simply wrong.
+                // That key is the reward note's pk (Note::new(epoch_reward,
+                // public_key) in the node), which is what matches a hashless
+                // transaction to its event.
                 holdsClaim = true;
+                const QString pk =
+                    normalizeHex(payload.value(QStringLiteral("public_key")).toString());
+                if (!pk.isEmpty())
+                    beneficiaries << pk;
                 break;
+            }
             case kTransferOpcode:
                 // Payee keys ONLY. What these outputs are worth is not income:
                 // a claim transaction returns change to the same key it pays,
@@ -1929,8 +1981,14 @@ BlockchainBackend::claimPayeesByTx(const QJsonObject& block)
             if (!claim.payees.contains(pk))
                 claim.payees << pk;
         }
-        if (!claim.payees.isEmpty())
+        if (claim.payees.isEmpty())
+            continue;
+        if (!txHash.isEmpty()) {
             out.insert(normalizeHex(txHash), claim);
+            continue;
+        }
+        for (const QString& pk : beneficiaries)
+            out.insert(beneficiaryKey(pk), claim);
     }
     return out;
 }
@@ -2010,6 +2068,217 @@ void BlockchainBackend::noteProcessedBlock(const QString& eventJson)
     saveClaims();
 }
 
+void BlockchainBackend::catchUpClaims()
+{
+    // Without the keys every claim in the window would look like somebody
+    // else's, and the window is marked scanned either way. The drain asks for
+    // them, so a later poll picks this up.
+    if (!m_blockchainClient || !m_claimsLoaded || m_knownAddresses.isEmpty() || m_libSlot == 0)
+        return;
+
+    const quint64 from = m_claims.scannedSlot() + 1;
+    if (from > m_libSlot)
+        return;
+    const quint64 to = std::min(m_libSlot, from + m_catchUpSpan - 1);
+
+    // get_blocks answers immutable blocks only, clamped to the node's LIB, so a
+    // window that reaches past it is not a gap: LIB here comes from the same
+    // node, and the unread tail is asked for again once it has settled.
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_blocks"),
+        QVariant::fromValue<qulonglong>(from), QVariant::fromValue<qulonglong>(to)));
+    // Blocks in a nested event loop like the drain's call. A failure leaves the
+    // window unscanned, so the next poll asks for it again.
+    if (!stillRunning())
+        return;
+    if (!r.success) {
+        static bool warnedCatchUpFailed = false;
+        if (!warnedCatchUpFailed) {
+            warnedCatchUpFailed = true;
+            qWarning() << "Earned: catch-up could not read slots" << from << "to" << to << "-"
+                       << r.error.toString();
+        }
+        return;
+    }
+
+    // get_blocks returns the raw block, not the stream's API shape: the header
+    // has no id and transactions have no hash. The id is recovered from the
+    // chain itself — each block's parent_block is the id of the one before —
+    // and the claims are keyed by beneficiary (see claimPayeesByTx).
+    struct RawBlock {
+        QJsonObject block;
+        quint64 slot = 0;
+        QString id;
+        QString parent;
+    };
+    // A reply that is not a JSON array would read as an empty window and skip
+    // the range for good. Only an actual empty array means "no blocks here".
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(r.value.toString().toUtf8(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isArray()) {
+        static bool warnedCatchUpParse = false;
+        if (!warnedCatchUpParse) {
+            warnedCatchUpParse = true;
+            qWarning() << "Earned: catch-up got no block array for slots" << from << "to" << to
+                       << "-" << parseError.errorString();
+        }
+        return;
+    }
+    QVector<RawBlock> window;
+    const QJsonArray blocks = doc.array();
+    for (const QJsonValue& value : blocks) {
+        RawBlock raw;
+        raw.block = value.toObject();
+        const QJsonObject header = raw.block.value(QStringLiteral("header")).toObject();
+        raw.slot = jsonUint(header.value(QStringLiteral("slot")));
+        raw.id = normalizeHex(header.value(QStringLiteral("id")).toString());
+        raw.parent = normalizeHex(header.value(QStringLiteral("parent_block")).toString());
+        // Marking a window scanned without reading it is how the first catch-up
+        // walked the whole chain and found nothing. Stop instead, and say so.
+        if (raw.slot == 0 || (raw.id.isEmpty() && raw.parent.isEmpty())) {
+            static bool warnedCatchUpShape = false;
+            if (!warnedCatchUpShape) {
+                warnedCatchUpShape = true;
+                qWarning() << "Earned: catch-up cannot read get_blocks - header keys:"
+                           << header.keys() << "- missed claims stay uncounted";
+            }
+            return;
+        }
+        window.append(raw);
+    }
+    std::sort(window.begin(), window.end(),
+              [](const RawBlock& a, const RawBlock& b) { return a.slot < b.slot; });
+
+    // The stream may have delivered some of these already. A block already
+    // recorded or queued would only cost a second event fetch.
+    QSet<QString> knownBlocks;
+    for (const ClaimLedger::Record& record : m_claims.records())
+        knownBlocks.insert(normalizeHex(record.blockId));
+    for (const PendingBlock& queued : m_pendingEventBlocks)
+        knownBlocks.insert(normalizeHex(queued.blockId));
+
+    quint64 scannedTo = to;
+    bool needWiderWindow = false;
+    for (qsizetype i = 0; i < window.size(); ++i) {
+        const RawBlock& raw = window[i];
+        QHash<QString, PendingBlock::TxClaim> claims = claimPayeesByTx(raw.block);
+        for (auto it = claims.begin(); it != claims.end();) {
+            const QStringList& payees = it.value().payees;
+            const bool ours =
+                std::any_of(payees.cbegin(), payees.cend(),
+                            [this](const QString& pk) { return m_knownAddresses.contains(pk); });
+            if (ours)
+                ++it;
+            else
+                it = claims.erase(it);
+        }
+        // Only a block with our claims needs its id, so only those pay for one.
+        if (claims.isEmpty())
+            continue;
+
+        QString id = raw.id;
+        BlockCheck check = BlockCheck::Verified;
+        if (id.isEmpty()) {
+            if (i + 1 < window.size()) {
+                check = checkBlockId(window[i + 1].parent, raw.slot, raw.parent);
+                if (!stillRunning())
+                    return;
+                if (check == BlockCheck::Verified)
+                    id = window[i + 1].parent;
+            } else if (raw.slot == m_libIdSlot && !m_libId.isEmpty()) {
+                id = m_libId;
+            } else {
+                // Its successor is outside the window; the next one starts here.
+                scannedTo = raw.slot - 1;
+                needWiderWindow = true;
+                break;
+            }
+        }
+        if (check == BlockCheck::Unavailable) {
+            // Not an answer about the block: hold the cursor, count nothing.
+            if (m_catchUpUnavailableSlot != raw.slot) {
+                m_catchUpUnavailableSlot = raw.slot;
+                qWarning() << "Earned: could not check the block at slot" << raw.slot
+                           << "- retrying on the next poll";
+            }
+            scannedTo = raw.slot - 1;
+            break;
+        }
+        if (id.isEmpty()) {
+            // get_blocks skips a block whose body is missing, so the next
+            // returned block may not be this one's child. Hold the cursor here
+            // and retry; a body that stays missing must not stall the scan.
+            if (raw.slot != m_catchUpStuckSlot) {
+                m_catchUpStuckSlot = raw.slot;
+                m_catchUpStuckAttempts = 0;
+            }
+            if (++m_catchUpStuckAttempts < kMaxEventFetchAttempts) {
+                scannedTo = raw.slot - 1;
+                break;
+            }
+            qWarning() << "Earned: cannot identify the block at slot" << raw.slot
+                       << "- the node is missing a block body next to it;" << claims.size()
+                       << "claim(s) in it stay uncounted";
+            continue;
+        }
+        if (knownBlocks.contains(id))
+            continue;
+
+        PendingBlock queued;
+        queued.blockId = id;
+        queued.slot = raw.slot;
+        queued.claims = std::move(claims);
+        m_pendingEventBlocks.append(queued);
+        knownBlocks.insert(id);
+    }
+
+    if (scannedTo < from) {
+        // One lone block with our claims and nothing after it in range: widen
+        // until the window reaches its successor. A failed check just retries.
+        if (needWiderWindow)
+            m_catchUpSpan = std::min(m_catchUpSpan * 2, kCatchUpMaxSlotsPerPoll);
+        return;
+    }
+    m_catchUpSpan = kCatchUpSlotsPerPoll;
+
+    m_claims.setScannedSlot(scannedTo);
+    // Scanned from genesis to LIB: the tally now covers the whole chain, and a
+    // "since" date would undersell it.
+    if (scannedTo == m_libSlot && !m_claims.countingSince().isEmpty())
+        m_claims.setCountingSince(QString());
+    saveClaims();
+}
+
+BlockchainBackend::BlockCheck BlockchainBackend::checkBlockId(const QString& candidate,
+                                                              quint64 slot, const QString& parent)
+{
+    if (candidate.isEmpty() || parent.isEmpty())
+        return BlockCheck::NotThisBlock;
+    if (!m_blockchainClient)
+        return BlockCheck::Unavailable;
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("get_block"), candidate));
+    if (!r.success) {
+        // The module forwards the node's message but drops its NotFound code,
+        // so the text is the only way to tell a missing block from a busy node
+        // (c-bindings/src/api/storage.rs). Anything unrecognised is retried.
+        return r.error.toString().contains(QStringLiteral("No block found for header id"))
+                   ? BlockCheck::NotThisBlock
+                   : BlockCheck::Unavailable;
+    }
+    // One block per slot on the immutable chain, and the same parent: this is
+    // the block, not a neighbour get_blocks left out.
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(r.value.toString().toUtf8(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject())
+        return BlockCheck::Unavailable;
+    const QJsonObject header = doc.object().value(QStringLiteral("header")).toObject();
+    if (jsonUint(header.value(QStringLiteral("slot"))) != slot
+        || normalizeHex(header.value(QStringLiteral("parent_block")).toString()) != parent)
+        return BlockCheck::NotThisBlock;
+    return BlockCheck::Verified;
+}
+
 void BlockchainBackend::drainClaimEvents()
 {
     if (!m_blockchainClient || !m_claimsLoaded)
@@ -2084,6 +2353,10 @@ void BlockchainBackend::recordClaimsFrom(const QString& eventsJson, const Pendin
 {
     const QJsonArray events = QJsonDocument::fromJson(eventsJson.toUtf8()).array();
     bool changed = false;
+    // A catch-up block's id is inferred from its successor's parent_block, so a
+    // body the node skipped would hand it a neighbour's id — and its events
+    // would then match none of the keys read off it.
+    bool matchedBeneficiary = false;
 
     for (const QJsonValue& entry : events) {
         // Externally-tagged serde enums all the way down:
@@ -2122,6 +2395,8 @@ void BlockchainBackend::recordClaimsFrom(const QString& eventsJson, const Pendin
             const QString pk = normalizeHex(note.value(QStringLiteral("pk")).toString());
             if (!m_knownAddresses.contains(pk))
                 continue;
+            if (block.claims.contains(beneficiaryKey(pk)))
+                matchedBeneficiary = true;
             record.payee = pk;
             // Gas for a staking claim is funded from the wallet's other notes
             // and never comes off the reward, so nothing here can say what
@@ -2131,6 +2406,11 @@ void BlockchainBackend::recordClaimsFrom(const QString& eventsJson, const Pendin
             // of ours. What makes a mining claim ours is the transfer that
             // carried it, which was read off the block when it was queued.
             const PendingBlock::TxClaim* claim = block.claimFor(normalizeHex(record.txHash));
+            if (!claim) {
+                claim = block.claimFor(
+                    beneficiaryKey(normalizeHex(note.value(QStringLiteral("pk")).toString())));
+                matchedBeneficiary = matchedBeneficiary || claim;
+            }
             if (!claim)
                 continue;
             for (const QString& pk : claim->payees) {
@@ -2155,6 +2435,19 @@ void BlockchainBackend::recordClaimsFrom(const QString& eventsJson, const Pendin
         // the rest find nothing, which is what we want.
         m_claims.clearSubmission(record.kind, normalizeHex(record.txHash));
         changed = true;
+    }
+
+    const bool fromCatchUp =
+        std::any_of(block.claims.keyBegin(), block.claims.keyEnd(),
+                    [](const QString& key) { return key.startsWith(beneficiaryKey({})); });
+    if (fromCatchUp && !matchedBeneficiary) {
+        static bool warnedCatchUpMismatch = false;
+        if (!warnedCatchUpMismatch) {
+            warnedCatchUpMismatch = true;
+            qWarning() << "Earned: events for block" << block.blockId << "at slot" << block.slot
+                       << "match none of its claims - the node is likely missing a block body"
+                          " near it, and those claims stay uncounted";
+        }
     }
 
     if (changed)
@@ -2238,9 +2531,15 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
         setNodeModuleReachable(true);
         setNodeRecovering(false);
         const bool modeOnline = cryptarchiaMode(r.value) == QLatin1String("Online");
-        // LIB from the poll, not only from the block stream.
-        m_libSlot = std::max(m_libSlot, jsonUint(QJsonDocument::fromJson(
-            r.value.toString().toUtf8()).object().value(QStringLiteral("lib_slot"))));
+        // LIB from the poll, not only from the block stream. Its id too: the
+        // catch-up needs it to name the LIB block, which get_blocks does not.
+        const QJsonObject info = QJsonDocument::fromJson(r.value.toString().toUtf8()).object();
+        const quint64 polledLib = jsonUint(info.value(QStringLiteral("lib_slot")));
+        if (polledLib >= m_libSlot) {
+            m_libId = normalizeHex(info.value(QStringLiteral("lib")).toString());
+            m_libIdSlot = polledLib;
+        }
+        m_libSlot = std::max(m_libSlot, polledLib);
         // Everything below describes a running node, and this call blocked in a
         // nested event loop long enough for the node to have been stopped inside
         // it (see stillRunning). applyOnlineReading is the one that bites: fed a
@@ -2271,6 +2570,8 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
             // early is what lets a claim found during a catch-up replay be
             // written down rather than held in memory until the node settles.
             loadClaimLedger();
+            if (m_claimsDirty)
+                saveClaims();
             if (modeOnline) {
                 refreshBalancesIfStale();
                 if (blendRole() == Unknown)
@@ -2284,6 +2585,7 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
                 // queue is what absorbs the difference — it is persisted, so a
                 // replay's claims wait there and are resolved afterwards
                 // instead of being watched go past.
+                catchUpClaims();
                 drainClaimEvents();
                 publishClaims();
             } else {
