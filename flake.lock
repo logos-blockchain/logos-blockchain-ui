@@ -6,16 +6,16 @@
         "logos-module-builder": "logos-module-builder"
       },
       "locked": {
-        "lastModified": 1790592786,
-        "narHash": "sha256-DtiFWlUTswn0FhCJro3jV6T+JYbANClF46FyKMk7X3Q=",
+        "lastModified": 1790755307,
+        "narHash": "sha256-HvMs+5695njaCMH1biUEWH75kLP+waglgcxk4yeJCDU=",
         "owner": "logos-blockchain",
         "repo": "logos-blockchain-module",
-        "rev": "cdda89d9bc0d7151542addf98674a90ce72a3710",
+        "rev": "7952ba0cc9c519e1d5198b27de425c872d23b9fc",
         "type": "github"
       },
       "original": {
         "owner": "logos-blockchain",
-        "ref": "0.3.0-rc.5",
+        "ref": "0.3.0",
         "repo": "logos-blockchain-module",
         "type": "github"
       }
@@ -390,16 +390,16 @@
         "rust-rapidsnark": "rust-rapidsnark"
       },
       "locked": {
-        "lastModified": 1790591690,
-        "narHash": "sha256-Q3Mx5P9oCM8TyTVWob+BPfbofV4Yr+0kI1FWsjrTZi0=",
+        "lastModified": 1790754730,
+        "narHash": "sha256-aZoe94/mJfWTiAVrCHFmbT7wlMNeACPmvSnBleDFyL4=",
         "owner": "logos-blockchain",
         "repo": "logos-blockchain",
-        "rev": "2c652646d74354b2877620bf0bc53b4c4d3f18e4",
+        "rev": "926cd84ab40a4ca62ff1697d65bfb80c62b81dbc",
         "type": "github"
       },
       "original": {
         "owner": "logos-blockchain",
-        "ref": "0.3.0-rc.5",
+        "ref": "0.3.0",
         "repo": "logos-blockchain",
         "type": "github"
       }
