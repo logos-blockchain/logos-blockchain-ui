@@ -669,7 +669,7 @@ var cpu = {
         + "inside the blockchain module's process, so what is measured is that "
         + "process — the node's own work, plus a negligible amount of module "
         + "overhead.",
-    calc: "Averaged over the two seconds since the previous reading, and "
+    calc: "Averaged since the previous reading, taken every few seconds, and "
         + "counted per core, the way Basecamp's Module Inspector, Activity "
         + "Monitor and top report a process: one fully busy core is 100%, so a "
         + "node spread across four cores reads 400%. The line beneath gives the "
@@ -682,7 +682,7 @@ var cpu = {
                  + "briefly." },
         { label: "Measuring…",
           meaning: "The first reading has no earlier one to compare against, so "
-                 + "no percentage exists yet. The next one, two seconds later, "
+                 + "no percentage exists yet. The next one, a few seconds later, "
                  + "does." },
         { label: "—",
           meaning: "The node is not running, or its process could not be "
