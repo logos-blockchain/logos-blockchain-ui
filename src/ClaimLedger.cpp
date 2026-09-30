@@ -45,6 +45,18 @@ QString recordKey(ClaimLedger::Kind kind, const QString& nullifier)
     return kindToString(kind) + QLatin1Char(':') + nullifier;
 }
 
+// Identities are "chain_id" or "chain_id@genesis_id". A missing genesis id is
+// a run that could not fetch it, not a different chain, so it matches the file
+// it opens. A file without one is from before genesis was read and cannot rule
+// out an older chain at the same release: that one is rebuilt from the chain.
+bool sameChain(const QString& fileChain, const QString& nodeChain)
+{
+    if (fileChain == nodeChain)
+        return true;
+    const qsizetype at = fileChain.lastIndexOf(QLatin1Char('@'));
+    return at > 0 && !nodeChain.contains(QLatin1Char('@')) && fileChain.left(at) == nodeChain;
+}
+
 } // namespace
 
 const QString ClaimLedger::kAnyTx = QStringLiteral("*");
@@ -90,6 +102,7 @@ void ClaimLedger::load(const QString& path, const QString& chainId)
     m_submissions.clear();
     m_pending.clear();
     m_countingSince.clear();
+    m_scannedSlot = 0;
     m_chainId = chainId;
 
     QFile file(path);
@@ -112,13 +125,19 @@ void ClaimLedger::load(const QString& path, const QString& chainId)
     }
 
     const QString fileChain = root.value(QStringLiteral("chain_id")).toString();
-    if (fileChain != chainId) {
+    if (!sameChain(fileChain, chainId)) {
         qInfo() << "ClaimLedger: discarding records for chain" << fileChain
                 << "- node is on" << chainId;
         return;
     }
+    // A run that could not learn the genesis id keeps the file's fuller stamp.
+    m_chainId = fileChain;
 
     m_countingSince = root.value(QStringLiteral("counting_since")).toString();
+    // Absent in older files, which then get the full backfill. Not the
+    // "scanned_slot" key: the first catch-up wrote it without reading a block.
+    m_scannedSlot =
+        static_cast<quint64>(root.value(QStringLiteral("claims_scanned_slot")).toInteger());
 
     const QJsonArray records = root.value(QStringLiteral("records")).toArray();
     for (const QJsonValue& entry : records) {
@@ -231,6 +250,7 @@ bool ClaimLedger::save(const QString& path) const
     root[QStringLiteral("chain_id")] = m_chainId;
     if (!m_countingSince.isEmpty())
         root[QStringLiteral("counting_since")] = m_countingSince;
+    root[QStringLiteral("claims_scanned_slot")] = static_cast<qint64>(m_scannedSlot);
     root[QStringLiteral("records")] = records;
     root[QStringLiteral("submissions")] = submissions;
     root[QStringLiteral("pending")] = pending;

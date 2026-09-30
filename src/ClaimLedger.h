@@ -70,7 +70,7 @@ public:
         QString blockId;
         quint64 slot = 0;
         int attempts = 0;
-        QHash<QString, TxClaim> claims; // txHash -> what that transaction claims
+        QHash<QString, TxClaim> claims; // txHash, or "pk:" + beneficiary -> its claim
 
         // Claims for a transaction, or the wildcard entry a ledger written
         // before claims were keyed by transaction leaves behind.
@@ -110,6 +110,12 @@ public:
     [[nodiscard]] QString countingSince() const { return m_countingSince; }
     void setCountingSince(const QString& iso) { m_countingSince = iso; }
 
+    // Every immutable block up to this slot has been checked for our claims,
+    // whether the stream delivered it or the catch-up fetched it. Zero means
+    // no scan yet, so the catch-up starts from genesis.
+    [[nodiscard]] quint64 scannedSlot() const { return m_scannedSlot; }
+    void setScannedSlot(quint64 slot) { m_scannedSlot = slot; }
+
     // Sum of two non-negative decimal integers given as text.
     [[nodiscard]] static QString addLepta(const QString& a, const QString& b);
 
@@ -120,4 +126,5 @@ private:
     QVector<Pending> m_pending;
     QString m_chainId;
     QString m_countingSince;
+    quint64 m_scannedSlot = 0;
 };

@@ -154,7 +154,8 @@ private:
     // waiting for its events to be fetched. Lives in the ledger so it survives
     // a stop.
     using PendingBlock = ClaimLedger::Pending;
-    // What each claim in a block could pay, keyed by transaction. Empty if the
+    // What each claim in a block could pay, keyed by transaction hash, or by
+    // beneficiary for a raw block that has none (get_blocks). Empty if the
     // block holds no claim of either kind. Finding claims needs only the opcode
     // — no wallet keys — which is what lets a block be judged the moment it
     // arrives rather than kept on the chance it might matter.
@@ -164,6 +165,17 @@ private:
     // claim. Parsing ONLY: this runs inside the module's own delivery path, so
     // it must not make a module call.
     void noteProcessedBlock(const QString& eventJson);
+    // Queues our claims from immutable blocks the stream never delivered to
+    // this app — it was closed, reinstalled, or the node restarted past them.
+    // One slot window per poll, resuming from the ledger's scanned slot.
+    void catchUpClaims();
+    // Whether `candidate` is the block at `slot` with `parent`. NotThisBlock is
+    // the node's answer (not found, or a different block) and is safe to give
+    // up on after retries; Unavailable is anything else, and must be retried.
+    // Blocks in a nested event loop — check stillRunning after.
+    enum class BlockCheck { Verified, NotThisBlock, Unavailable };
+    [[nodiscard]] BlockCheck checkBlockId(const QString& candidate, quint64 slot,
+                                          const QString& parent);
     // Fetches events for queued blocks and records the claims that are ours.
     // Driven from the status poll for the same reason refreshStake is.
     void drainClaimEvents();
@@ -178,7 +190,8 @@ private:
     void publishClaims();
     // Writes records and the pending queue together — they are one state, and a
     // queue that outlived its records would re-count what they already hold.
-    // Throttled unless forced; force on the way out of Running.
+    // Throttled unless forced; force on the way out of Running. A throttled
+    // save marks the ledger dirty and the next status poll writes it.
     void saveClaims(bool force = false);
     [[nodiscard]] QString claimLedgerPath() const;
     // The chain this ledger belongs to. chain_id alone is a release string —
@@ -336,6 +349,18 @@ private:
     // When the ledger last reached disk. Throttles the rewrite-whole save so a
     // replay that finds many claims does not pay for one write per claim.
     QElapsedTimer m_claimsSaved;
+    // A save was skipped by the throttle and memory is ahead of the file.
+    bool m_claimsDirty = false;
+    // LIB block id and slot from the last status poll that reported them.
+    QString m_libId;
+    quint64 m_libIdSlot = 0;
+    // Slots the next catch-up asks for; widened past a gap with no blocks.
+    quint64 m_catchUpSpan = 2000; // kCatchUpSlotsPerPoll
+    // The block the node said is not the one we need, and polls spent on it.
+    quint64 m_catchUpStuckSlot = 0;
+    int m_catchUpStuckAttempts = 0;
+    // Last slot whose check failed without an answer; warns once per slot.
+    quint64 m_catchUpUnavailableSlot = 0;
     // Genesis block id, fetched once per run. Empty when the node could not be
     // asked — the guard then falls back to chain_id alone, which is what it
     // used to be, rather than refusing to open the ledger at all.
