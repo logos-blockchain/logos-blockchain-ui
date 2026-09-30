@@ -15,7 +15,7 @@
     "/ip4/65.109.51.37/udp/3002/quic-v1/p2p/12D3KooWQXJavMDTRscjauFSgVAB1VLB6Rzpy2uY5SU9Tk7927tb",
     "/ip4/65.109.51.37/udp/50001/quic-v1/p2p/12D3KooWSQc7CcGtvWDPF1yCbBthFnQjprfCVHmfmNDUrSmqQsU1"
   ],
-  "lez_channel_id": "",
+  "lez_channel_id": "0101010101010101010101010101010101010101010101010101010101010101",
   "nix": {
     "packages": {
       "build": [],
