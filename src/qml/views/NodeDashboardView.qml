@@ -188,16 +188,20 @@ Item {
         readonly property real cpuMachineShare:
             Math.min(100, root.nodeCpuPercent / Math.max(1, root.cpuCount))
 
-        // Whole percent, as the prototype shows it — except below 1%, where
-        // rounding would print "0%" for a node that is demonstrably working. On
-        // a many-core machine a whole busy core is already under 1%.
-        readonly property string cpuText: {
-            if (!cpuSampled)
-                return qsTr("—")
-            if (cpuMachineShare > 0 && cpuMachineShare < 1)
-                return qsTr("<1%")
-            return qsTr("%1%").arg(Math.round(cpuMachineShare))
+        // "<1%" rather than "0%" for a node that is demonstrably working.
+        function percentText(p) {
+            return (p > 0 && p < 1) ? qsTr("<1%") : qsTr("%1%").arg(Math.round(p))
         }
+
+        // Per core, as Basecamp's Inspector, top and Activity Monitor report it,
+        // so the figures agree. Machine share is the caption: on a many-core
+        // machine it sits under 1% for anything short of mining.
+        readonly property string cpuText:
+            cpuSampled ? percentText(root.nodeCpuPercent) : qsTr("—")
+        readonly property string cpuCaption:
+            !cpuSampled ? ""
+            : root.cpuCount === 1 ? qsTr("%1 of 1 core").arg(percentText(cpuMachineShare))
+            : qsTr("%1 of %2 cores").arg(percentText(cpuMachineShare)).arg(root.cpuCount)
 
         // The prototype's format is one-decimal GB, but its fixtures are all
         // above a gigabyte. A node holding 80 MB would render as "0.1GB", and a
@@ -943,6 +947,7 @@ Item {
                     label: qsTr("CPU")
                     opacity: d.infoOpacity
                     value: d.cpuText
+                    caption: d.cpuCaption
                     flashOnChange: true
                     flashColor: Theme.palette.success
                     labelTrailing: [
