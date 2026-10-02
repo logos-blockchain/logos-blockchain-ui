@@ -280,6 +280,28 @@ sections:
               property: "visible"
               value: true
 
+            - name: "Start fresh"
+              action: click_object
+              find_by: "objectName"
+              find_value: "configStartFreshButton"
+
+            - name: "The dialog steps aside for setup"
+              # Setup opens underneath, and the config is still Stale until a
+              # new one is chosen. A dialog left up here is modal and covers
+              # the wizard, so "Start fresh" looks like it did nothing.
+              action: expect_property
+              find_by: "objectName"
+              find_value: "configUpgradeDialog"
+              property: "visible"
+              value: false
+
+            - name: "Setup is what is showing"
+              action: expect_property
+              find_by: "objectName"
+              find_value: "onboardingWelcome"
+              property: "visible"
+              value: true
+
   - title: "Repointing happens in Settings, not in the wizard"
     step: true
     text: |

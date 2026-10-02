@@ -148,7 +148,12 @@ Rectangle {
 
         onUpgradeRequested: _d.upgradeConfig()
         onStartNodeRequested: if (root.backend) root.backend.startBlockchain()
-        onStartFreshRequested: root.openSetup()
+        // Setup opens underneath, and the config stays Stale until a new one is
+        // chosen, so the dialog has to step aside itself.
+        onStartFreshRequested: {
+            configUpgradeDialog.dismiss()
+            root.openSetup()
+        }
     }
 
     // Self libp2p peer id, derived from the selected user config (no running
