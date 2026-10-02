@@ -521,8 +521,7 @@ Rectangle {
             id: onboardingFlow
             objectName: "onboardingFlow"
             backend: root.backend
-            // Nothing to exit to until a config exists.
-            canExit: root.hasConfig
+            canExit: root.hasConfig && _d.setupNewNode
             newNode: _d.setupNewNode
 
             onKeystoreSaved: function(path) {

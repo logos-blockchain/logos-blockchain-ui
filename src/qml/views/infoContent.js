@@ -806,8 +806,9 @@ var powSearchThreads = {
 }
 
 var powTicketsPerBlock = {
-    title: "Tickets in flight per block",
-    what: "How many mined tickets the node carries into one block.",
+    title: "Parallel ticket searches per block",
+    what: "How many ticket searches the node runs at once for each block. It is "
+        + "not a limit on how many tickets a block can earn.",
     calc: "Each ticket\u2019s claim carries its own proof, so raising this costs "
         + "twice over.\n\n"
         + "The whole batch has to fit a single Blend payload, and the node\u2019s "

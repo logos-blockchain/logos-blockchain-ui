@@ -148,11 +148,6 @@ ColumnLayout {
         }
     }
 
-    Connections {
-        target: root
-        function onPowSectionChanged() { powForm.loadFrom(root.powSection) }
-    }
-
     LogosText {
         Layout.fillWidth: true
         Layout.minimumWidth: 0
