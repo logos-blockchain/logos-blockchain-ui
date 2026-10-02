@@ -7,6 +7,7 @@ import Logos.Theme
 import Logos.Controls
 
 import "infoContent.js" as InfoContent
+import "powDefaults.js" as PowDefaults
 
 // Proof-of-Work setup, shown once the user config exists and before the node has
 // ever started. That timing is the point: the node reads every value here once,
@@ -32,28 +33,16 @@ ColumnLayout {
     property string defaultThreshold: "100000000"
     property bool busy: false
 
-    // Defaults for the editable mining settings. 
-    property int maxThreads: 1
-    property int maxTicketsPerBlock: 2
-    property int claimTickSeconds: 300
+    // Defaults for the editable mining settings. Never read back from the
+    // config: a freshly generated one holds the node's own defaults (every CPU,
+    // 4 searches per block, a 300 s claim period), not a choice the user made.
+    property int maxThreads: PowDefaults.maxThreads
+    property int maxTicketsPerBlock: PowDefaults.maxTicketsPerBlock
+    property int claimTickSeconds: PowDefaults.claimTickSeconds
 
     property bool embedded: false
     readonly property bool valid: d.miningSettingsValid()
     function configJson() { return d.buildConfigJson() }
-    function loadFrom(section) {
-        if (!section)
-            return
-        if (section.max_threads === null || section.max_threads === undefined) {
-            d.autoThreads = true
-        } else {
-            d.autoThreads = false
-            maxThreadsField.text = String(section.max_threads)
-        }
-        if (section.max_tickets_per_block)
-            maxTicketsField.text = String(section.max_tickets_per_block)
-        if (section.tick_seconds)
-            claimTickField.text = String(section.tick_seconds)
-    }
 
     spacing: Theme.spacing.medium
 
@@ -165,7 +154,7 @@ ColumnLayout {
         Layout.fillWidth: true
         spacing: Theme.spacing.small
         LogosText {
-            text: qsTr("Tickets in flight per block")
+            text: qsTr("Parallel ticket searches per block")
             font.pixelSize: Theme.typography.secondaryText
             color: Theme.palette.textSecondary
         }
@@ -178,7 +167,7 @@ ColumnLayout {
             validator: IntValidator { bottom: 1 }
         }
         LogosInfoButton {
-            title: qsTr("Tickets in flight per block")
+            title: qsTr("Parallel ticket searches per block")
             dialogContentItem: InfoSections { info: InfoContent.powTicketsPerBlock }
         }
     }
@@ -211,7 +200,7 @@ ColumnLayout {
         Layout.topMargin: -Theme.spacing.small
         objectName: "powMiningFieldError"
         visible: !d.miningSettingsValid()
-        text: qsTr("Search threads, tickets per block and the claim period must each be "
+        text: qsTr("Search threads, ticket searches per block and the claim period must each be "
                    + "a whole number of at least 1.")
         font.pixelSize: Theme.typography.secondaryText
         color: Theme.palette.error

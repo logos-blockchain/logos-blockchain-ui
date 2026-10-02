@@ -4,6 +4,8 @@ import QtQuick.Layouts
 import Logos.Theme
 import Logos.Controls
 
+import "powDefaults.js" as PowDefaults
+
 // The whole first-run flow, self-contained.
 Item {
     id: root
@@ -97,9 +99,9 @@ Item {
                                             httpAddr, externalAddress, noPublicIpCheck,
                                             deploymentMode, deploymentConfigPath, newNode),
                 function(result) {
-                    d.setupBusy = false
-                    d.setupBusyMessage = ""
                     if (!result.success) {
+                        d.setupBusy = false
+                        d.setupBusyMessage = ""
                         d.setupError = result.error
                         return
                     }
@@ -117,11 +119,34 @@ Item {
                     d.loadPowAccounts(resolved)
 
                     if (quickStart) {
-                        root.finished(true)
+                        d.writeQuickStartPow(resolved)
                         return
                     }
+                    d.setupBusy = false
+                    d.setupBusyMessage = ""
                     d.loadKeystoreKeys(resolved)
                     onboardingView.configGenerated()
+                },
+                function(error) {
+                    d.setupBusy = false
+                    d.setupBusyMessage = ""
+                    d.setupError = error
+                })
+        }
+
+        // Quick start never shows the PoW form, so without this the node would
+        // mine with its own defaults. Still busy from generateConfig, so the
+        // user sees one "Setting up your node…" from click to start.
+        function writeQuickStartPow(configPath) {
+            logos.watch(
+                root.backend.powConfigure(configPath, PowDefaults.configJson()),
+                function(result) {
+                    d.setupBusy = false
+                    d.setupBusyMessage = ""
+                    if (result.success)
+                        root.finished(true)
+                    else
+                        d.setupError = result.error
                 },
                 function(error) {
                     d.setupBusy = false
