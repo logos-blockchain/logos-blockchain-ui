@@ -774,6 +774,8 @@ Rectangle {
                     earnedTotal: root.backend ? root.backend.earnedTotal : ""
                     earnedClaimCount: root.backend ? root.backend.earnedClaimCount : 0
                     claimsCountingSince: root.backend ? root.backend.claimsCountingSince : ""
+                    earnedClaimsSubmitted: root.backend ? root.backend.earnedClaimsSubmitted : 0
+                    earnedClaimsPending: root.backend ? root.backend.earnedClaimsPending : 0
                     walletFunded: !!root.backend && root.backend.walletFunded
                     stakeAddresses: root.backend ? root.backend.stakeAddresses : []
                     peerId: root.peerId

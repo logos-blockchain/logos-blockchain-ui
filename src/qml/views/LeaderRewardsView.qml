@@ -78,6 +78,17 @@ ColumnLayout {
             (hasVouchers && parsed && parsed.total_claimable)
             ? Units.format(String(parsed.total_claimable)) : ""
 
+        readonly property string awaitingPayoutCaption: {
+            if (root.submittedCount > 0 && root.pendingCount > 0)
+                return qsTr("%1 sent · %2 settling")
+                           .arg(root.submittedCount).arg(root.pendingCount)
+            if (root.pendingCount > 0)
+                return qsTr("%n settling", "", root.pendingCount)
+            if (root.submittedCount > 0)
+                return qsTr("%n sent, not seen yet", "", root.submittedCount)
+            return ""
+        }
+
         // ---- Claim history ------------------------------------------------
         readonly property var timeInfo: safeParse(root.timeInfoJson)
 
@@ -151,15 +162,15 @@ ColumnLayout {
 
         LogosStatCard {
             Layout.fillWidth: true
-            objectName: "submittedClaimsCard"
-            label: qsTr("Submitted")
-            value: String(root.submittedCount)
-            caption: root.submittedCount > 0 ? qsTr("waiting to land") : ""
+            objectName: "awaitingPayoutCard"
+            label: qsTr("Awaiting payout")
+            value: String(root.submittedCount + root.pendingCount)
+            caption: d.awaitingPayoutCaption
             flashOnChange: root.visible
             labelTrailing: [
                 LogosInfoButton {
-                    title: qsTr("Submitted")
-                    dialogContentItem: InfoSections { info: InfoContent.submitted }
+                    title: qsTr("Awaiting payout")
+                    dialogContentItem: InfoSections { info: InfoContent.leaderAwaitingPayout }
                 }
             ]
         }

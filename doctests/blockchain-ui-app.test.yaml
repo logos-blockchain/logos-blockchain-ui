@@ -300,13 +300,13 @@ sections:
 
             - name: "Rewards says why it is empty"
               action: wait_for
-              texts: ["Vouchers", "Ready to claim", "Submitted", "History",
+              texts: ["Vouchers", "Ready to claim", "Awaiting payout", "History",
                       "Start the node from the Node tab."]
               timeout: 6000
               screenshot: "blockchain-ui-rewards-empty.png"
               text: |
                 Leader rewards. The two tiles are the pipeline — vouchers the
-                wallet can claim, and claims sent but not yet seen on chain —
+                wallet can claim, and claims on their way to being paid —
                 over the history of what has settled. With no node all three
                 read empty, and the banner names the reason rather than leaving
                 a page of dashes to interpret.
@@ -318,7 +318,7 @@ sections:
 
             - name: "Mining shows tickets and its own history"
               action: wait_for
-              texts: ["Tickets", "Ready to claim", "Submitted", "History",
+              texts: ["Tickets", "Ready to claim", "Awaiting payout", "History",
                       "Start the node from the Node tab."]
               timeout: 6000
               screenshot: "blockchain-ui-mining-empty.png"

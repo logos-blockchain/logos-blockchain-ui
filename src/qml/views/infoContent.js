@@ -345,10 +345,8 @@ var claimableTickets = {
     docs: "https://docs.logos.co/blockchain/concepts/about-mantle"
 }
 
-// The Mining tab's replacement for Submitted, which could only ever read zero
-// under auto-claim. Kept separate from `submitted` rather than retitling it: the
-// Rewards tab still has a Submitted card of its own, and that text is right for
-// it.
+// The Mining tab's card. The Rewards tab's twin is `leaderAwaitingPayout`; the
+// two differ in what a lost claim costs, so they are not shared.
 var awaitingPayout = {
     title: "Awaiting payout",
     what: "Claims on their way — sent and not yet seen in a block, plus seen in "
@@ -408,35 +406,31 @@ var miningRewards = {
     docs: "https://docs.logos.co/blockchain/concepts/about-mantle"
 }
 
-// Shared by the Rewards and Mining tabs. Deliberately generic about which total
-// it sits beside: the caveats are identical for both kinds, and two near-copies
-// of this text would drift apart.
-var submitted = {
-    title: "Submitted",
-    what: "Claims sent from this app that have not been seen in a block yet. "
-        + "The step between pressing Claim and the reward showing up — proof "
-        + "the request went somewhere, while the chain decides what to do "
-        + "with it.",
-    calc: "It goes up the moment the node accepts the claim and hands back a "
-        + "transaction, and comes down when that transaction is seen in a "
-        + "block. That is why it can move while the reward totals have not: "
-        + "those wait for the block to settle beyond reversal, which is "
-        + "several slots later.\n\n"
-        + "It counts what this app sent. Auto-claim runs inside the node and "
-        + "never passes through here, so a zero does not mean nothing is in "
-        + "flight — only that nothing was sent from this screen.\n\n"
-        + "A claim that is never seen is dropped once the chain has settled "
-        + "well past it. Submitting is not the same as succeeding, and this "
-        + "figure only ever claimed the first: whether a claim was included, "
-        + "and what it paid, is what the reward totals answer.",
+// The Rewards tab's card — see `awaitingPayout` for Mining's.
+var leaderAwaitingPayout = {
+    title: "Awaiting payout",
+    what: "Claims on their way — sent and not yet seen in a block, plus seen in "
+        + "a block and not yet beyond reversal. Everything between pressing "
+        + "Claim and the reward counting towards Earned.",
+    calc: "The two stages are added together because they are consecutive: a "
+        + "claim leaves the first the moment its transaction is seen on chain, "
+        + "and enters the second. The caption splits them, and they are worth "
+        + "different amounts of trust — 'sent' is only this app's word for it, "
+        + "'settling' has been seen by the chain. A settling claim already "
+        + "shows in History, marked pending.\n\n"
+        + "Auto-claim runs inside the node and never passes through this app, "
+        + "so its claims appear only once they reach a block — counted as "
+        + "settling, never as sent.\n\n"
+        + "A sent claim that is never seen is dropped once the chain has "
+        + "settled well past it. Submitting is not the same as succeeding: "
+        + "whether a claim was included, and what it paid, is what Earned "
+        + "answers.",
     states: [
         { label: "Number",
-          meaning: "Claims sent and not yet seen on chain. It should fall to "
-                 + "zero within a few blocks." },
+          meaning: "Claims on their way. It should drain into Earned within a "
+                 + "few blocks." },
         { label: "0",
-          meaning: "Nothing in flight from here. Normal — it is what this "
-                 + "reads between claims, and while auto-claim is doing the "
-                 + "work instead." }
+          meaning: "Nothing on its way. Normal between claims." }
     ],
     // Nothing published covers the gap between submitting a claim and seeing
     // it land — it is an app-side idea, not a protocol one. Empty rather than
