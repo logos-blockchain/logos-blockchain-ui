@@ -41,6 +41,7 @@ ColumnLayout {
     // Why the last backup failed, or empty. Successes are announced by the
     // host as a toast rather than kept here.
     property string backupError: ""
+    onBackupErrorChanged: backupResultNotice.shown = root.backupError.length > 0
 
     signal backupKeystoreRequested(string destinationPath)
     signal userConfigSelected(string path)
@@ -306,9 +307,10 @@ ColumnLayout {
             }
 
             LogosNotice {
+                id: backupResultNotice
                 Layout.fillWidth: true
                 objectName: "backupResultNotice"
-                shown: root.backupError.length > 0
+                shown: false
                 severity: LogosNotice.Error
                 title: qsTr("Backup failed")
                 message: root.backupError

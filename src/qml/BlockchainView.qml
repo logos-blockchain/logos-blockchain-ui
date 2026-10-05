@@ -334,6 +334,7 @@ Rectangle {
         function onRowsInserted() {
             monitor.nodeProvedAlive()
             root._vouchersDirty = true
+            leaderRewardsView.blockArrived()
         }
     }
 
@@ -823,19 +824,22 @@ Rectangle {
                     timeInfoJson: monitor.timeInfoJson
 
                     onClaimLeaderRewardsRequested: function() {
-                        if (!root.backend) return
+                        if (!root.backend) {
+                            leaderRewardsView.setLeaderClaimError(qsTr("Backend not connected."))
+                            return
+                        }
                         logos.watch(
                             root.backend.claimLeaderRewards(),
                             function(result) {
                                 if (result.success) {
                                     leaderRewardsView.setLeaderClaimResult(result.value, true)
                                 } else {
-                                    leaderRewardsView.setLeaderClaimResult(_d.errorText(result.error), false)
+                                    leaderRewardsView.setLeaderClaimError(result.error)
                                 }
                                 root.refreshClaimableVouchers()
                             },
                             function(error) {
-                                leaderRewardsView.setLeaderClaimResult(_d.errorText(error), false)
+                                leaderRewardsView.setLeaderClaimError(error)
                             }
                         )
                     }

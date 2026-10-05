@@ -42,11 +42,58 @@ ColumnLayout {
     signal openInExplorerRequested(string id)
 
     property string claimResult: ""
+    property string claimDetail: ""
     property bool claimSucceeded: false
+    property bool claimBusy: false
+    property bool claimAwaitingBlock: false
+    function requestLeaderClaim() {
+        if (root.claimBusy)
+            return
+        root.setLeaderClaimResult("", false)
+        root.claimBusy = true
+        root.claimLeaderRewardsRequested()
+    }
 
     function setLeaderClaimResult(text, success) {
+        root.claimBusy = false
         root.claimResult = text
+        root.claimDetail = ""
         root.claimSucceeded = success === true
+    }
+
+    function setLeaderClaimError(error) {
+        const raw = String(error)
+        const funds = raw.match(/does not have enough funds, available=(\d+)/)
+        let text
+        if (funds) {
+            root.claimAwaitingBlock = true
+            text = qsTr("No spendable funds in the leader-funding account (%1 available). "
+                        + "Coins used by your recent claims unlock once those claims are "
+                        + "in a block — Claim comes back when the next block arrives.")
+                   .arg(Units.format(funds[1]))
+        } else if (raw.indexOf("No claimable voucher found") >= 0) {
+            text = qsTr("Nothing to claim right now. Your remaining vouchers already have "
+                        + "claims waiting to be confirmed.")
+        } else if (raw.indexOf("exceeded the configured max fee") >= 0) {
+            text = qsTr("The claim fee is above your node's maximum fee setting (max_tx_fee).")
+        } else if (raw.indexOf("The node is not running") >= 0) {
+            text = qsTr("Start the node to claim.")
+        } else {
+            text = qsTr("Error: %1").arg(raw)
+        }
+        root.setLeaderClaimResult(text, false)
+        root.claimDetail = raw
+    }
+
+    function blockArrived() {
+        root.claimAwaitingBlock = false
+    }
+
+    // Driven from here, not bound: the notices' dismiss button assigns
+    // `shown`, which would destroy a binding and hide them for good.
+    onClaimResultChanged: {
+        claimResultNotice.shown = root.claimResult.length > 0
+        dialogClaimResultNotice.shown = root.claimResult.length > 0
     }
 
     QtObject {
@@ -130,8 +177,9 @@ ColumnLayout {
             id: leaderClaimButton
             Layout.preferredWidth: 140
             variant: LogosButton.Variant.Primary
-            text: qsTr("Claim")
-            onClicked: root.claimLeaderRewardsRequested()
+            enabled: !root.claimBusy && !root.claimAwaitingBlock
+            text: root.claimBusy ? qsTr("Claiming…") : qsTr("Claim")
+            onClicked: root.requestLeaderClaim()
         }
     }
 
@@ -178,9 +226,10 @@ ColumnLayout {
 
     // ---- Claim result ----
     LogosNotice {
+        id: claimResultNotice
         Layout.fillWidth: true
         objectName: "claimResultNotice"
-        shown: root.claimResult.length > 0
+        shown: false
         severity: root.claimSucceeded ? LogosNotice.Success : LogosNotice.Error
         title: root.claimSucceeded ? qsTr("Claim submitted") : qsTr("Claim failed")
         message: root.claimResult
@@ -188,7 +237,7 @@ ColumnLayout {
         onDismissed: root.setLeaderClaimResult("", false)
         actions: [
             LogosCopyButton {
-                value: root.claimResult
+                value: root.claimDetail.length > 0 ? root.claimDetail : root.claimResult
             }
         ]
     }
@@ -304,6 +353,25 @@ ColumnLayout {
                 }
             }
 
+            // The page's notice is behind this modal, so the result is
+            // repeated here for claims made from the dialog.
+            LogosNotice {
+                id: dialogClaimResultNotice
+                Layout.fillWidth: true
+                objectName: "dialogClaimResultNotice"
+                shown: false
+                severity: root.claimSucceeded ? LogosNotice.Success : LogosNotice.Error
+                title: root.claimSucceeded ? qsTr("Claim submitted") : qsTr("Claim failed")
+                message: root.claimResult
+                closable: true
+                onDismissed: root.setLeaderClaimResult("", false)
+                actions: [
+                    LogosCopyButton {
+                        value: root.claimDetail.length > 0 ? root.claimDetail : root.claimResult
+                    }
+                ]
+            }
+
             LogosText {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
@@ -380,9 +448,9 @@ ColumnLayout {
             LogosButton {
                 objectName: "dialogClaimButton"
                 variant: LogosButton.Variant.Primary
-                enabled: d.hasVouchers
-                text: qsTr("Claim")
-                onClicked: root.claimLeaderRewardsRequested()
+                enabled: d.hasVouchers && !root.claimBusy && !root.claimAwaitingBlock
+                text: root.claimBusy ? qsTr("Claiming…") : qsTr("Claim")
+                onClicked: root.requestLeaderClaim()
             }
         ]
     }
