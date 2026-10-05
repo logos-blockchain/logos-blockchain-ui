@@ -46,6 +46,9 @@ Item {
     // ISO 8601 date the tally began, or empty. Neither reward figure is a
     // lifetime total — nothing hands the app one — so both say what they cover.
     property string claimsCountingSince: ""
+    // Staking claims on their way to being paid — the twin of powClaims* below.
+    property int earnedClaimsSubmitted: 0
+    property int earnedClaimsPending: 0
     // Any known address holds tokens. Drives the lane's Funded stage only —
     // the figure itself belongs to the Accounts view.
     property bool walletFunded: false
@@ -277,11 +280,32 @@ Item {
             return qsTr("since %1").arg(d.toLocaleDateString(Qt.locale(), Locale.ShortFormat))
         }
 
+        // Same order as miningCaption: claims in flight, then the backlog, then
+        // the tally. Submissions come first because they don't wait on LIB.
         readonly property string earnedCaption: {
+            const waiting = Math.max(d.voucherCount, 0)
+            if (root.earnedClaimsSubmitted > 0 && root.earnedClaimsPending > 0)
+                return qsTr("%1 sent · %2 settling")
+                           .arg(root.earnedClaimsSubmitted).arg(root.earnedClaimsPending)
+            if (root.earnedClaimsPending > 0)
+                return waiting > 0
+                    ? qsTr("%1 settling · %2 waiting")
+                          .arg(root.earnedClaimsPending).arg(waiting)
+                    : qsTr("%n claim(s) settling", "", root.earnedClaimsPending)
+            if (root.earnedClaimsSubmitted > 0)
+                return waiting > 0
+                    ? qsTr("%1 sent · %2 waiting")
+                          .arg(root.earnedClaimsSubmitted).arg(waiting)
+                    : qsTr("%n sent, not seen yet", "", root.earnedClaimsSubmitted)
             if (root.earnedTotal.length === 0)
                 return ""
             if (root.earnedClaimCount === 0)
-                return qsTr("No rewards claimed yet")
+                return waiting > 0
+                    ? qsTr("None claimed · %1 waiting").arg(waiting)
+                    : qsTr("No rewards claimed yet")
+            if (waiting > 0)
+                return qsTr("%1 claimed · %2 waiting")
+                           .arg(root.earnedClaimCount).arg(waiting)
             // "before fees" lives in the info dialog, not here: three segments
             // elide on a tile this wide, and the segment that gets cut is the
             // date — which is the one thing the caption exists to say.
