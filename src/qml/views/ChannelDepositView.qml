@@ -518,7 +518,7 @@ ColumnLayout {
                 LogosTextField {
                     id: maxFeeField
                     Layout.fillWidth: true
-                    placeholderText: qsTr("Maximum transaction fee (LGO)")
+                    placeholderText: qsTr("Maximum transaction fee (%1)").arg(Units.SYMBOL)
                     validator: RegularExpressionValidator {
                         regularExpression: Units.inputRegExp(Qt.locale())
                     }

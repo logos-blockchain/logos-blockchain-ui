@@ -1,24 +1,25 @@
-// Token amounts. One LOGOS is 10^9 lepta, and the node deals only in lepta —
+// Token amounts. One token is 10^9 lepta, and the node deals only in lepta —
 // as decimal strings, because a lepta figure runs past 2^53 where Number()
 // starts losing digits (the faucet note is u64::MAX). So nothing here converts
 // to a number: amounts are sliced, padded and compared as strings, exact at
 // any width.
 //
-// The UI shows LOGOS and only LOGOS. lepta is a wire detail.
+// The UI shows tokens and only tokens. lepta is a wire detail.
+// SYMBOL below is the only place the token is named — rename it there.
 //
 // Deliberately not `.pragma library`: a library script runs outside any QML
 // context, and these functions need Qt.locale().
 //
-//     format("1500000000")    → "1.5 LGO"   (grouped for the current locale)
+//     format("1500000000")    → "1.5 " + SYMBOL  (grouped for the current locale)
 //     canonical("1500000000") → "1.5"       (ungrouped, '.', for copy buttons)
-//     normalizeInput("1.234,5") → "1234.5"  (locale text → canonical LOGOS)
+//     normalizeInput("1.234,5") → "1234.5"  (locale text → canonical tokens)
 
 // The scale is the app's assertion, not the node's: the node publishes no
 // denomination. If this is ever wrong, every figure in the app is wrong by it.
-// Kept in step with kLeptaPerLgo in BlockchainBackend.cpp, which converts the
+// Kept in step with kTokenDecimals in BlockchainBackend.cpp, which converts the
 // other way.
 var DECIMALS = 9
-var SYMBOL = "LGO"
+var SYMBOL = "TestToken"
 
 function _digitsOnly(s) {
     return typeof s === "string" && /^[0-9]+$/.test(s)
@@ -84,7 +85,7 @@ function _fraction(frac, decimalPoint) {
     return trimmed.length > 0 ? decimalPoint + trimmed : ""
 }
 
-// LOGOS for display: grouped for `locale` (default: the current one) and
+// Tokens for display: grouped for `locale` (default: the current one) and
 // suffixed with the symbol after a non-breaking space.
 function format(lepta, locale) {
     const plain = formatPlain(lepta, locale)
@@ -102,8 +103,8 @@ function formatPlain(lepta, locale) {
          + _fraction(parts[1], loc.decimalPoint)
 }
 
-// Short-form LOGOS for a tile that has to fit: "16.6 LGO", "1.23K LGO",
-// "18.45B LGO". For headline figures only — anything the user might copy, check
+// Short-form tokens for a tile that has to fit: "16.6", "1.23K", "18.45B", plus
+// the symbol. For headline figures only — anything the user might copy, check
 // against the chain or type back in gets format() or canonical(), which never
 // round.
 //
@@ -141,7 +142,7 @@ function compactPlain(lepta, locale) {
     let int = parts[0]
     let frac = parts[1]
 
-    // Under one LOGOS there is no magnitude to abbreviate, and rounding to two
+    // Under one token there is no magnitude to abbreviate, and rounding to two
     // places would turn a real balance into "0.00". Keep two SIGNIFICANT digits
     // instead, so a single lepta still reads as something.
     if (int === "0") {
@@ -191,7 +192,7 @@ function _renderUnit(int, frac, i) {
     return [rounded[0], rounded[1], _UNITS[i][1]]
 }
 
-// LOGOS in canonical form: no grouping, '.' as the decimal point. What copy
+// Tokens in canonical form: no grouping, '.' as the decimal point. What copy
 // buttons hand over, so it pastes into anything.
 function canonical(lepta) {
     if (!_digitsOnly(lepta))
@@ -231,7 +232,7 @@ function _add(a, b) {
     return out.length > 0 ? out : "0"
 }
 
-// Canonical LOGOS text ("1.5") -> lepta ("1500000000"). String arithmetic, like
+// Canonical token text ("1.5") -> lepta ("1500000000"). String arithmetic, like
 // everything else here: a lepta figure runs past 2^53, so Number() would lose
 // digits on exactly the amounts worth checking.
 //

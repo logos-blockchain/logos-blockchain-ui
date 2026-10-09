@@ -4,8 +4,8 @@ import QtQuick.Layouts
 import Logos.Theme
 import Logos.Controls
 
-// One row of the accounts list. AccountSummary draws it; this adds the row
-// surface and the copy button.
+// One row of the accounts list. AccountSummary draws it, copy button included;
+// this adds the row surface.
 LogosItemDelegate {
     id: root
 
@@ -31,13 +31,7 @@ LogosItemDelegate {
             roleLabel: model.roleLabel || ""
             address: root.address
             balance: model.balance || ""
-        }
-
-        LogosCopyButton {
-            Layout.alignment: Qt.AlignVCenter
-            Layout.preferredHeight: 40
-            Layout.preferredWidth: 40
-            value: root.address
+            copyable: true
         }
     }
 }

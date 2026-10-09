@@ -159,14 +159,14 @@ var mining = {
         + "much of it was mined.",
     states: [
         { label: "Value",
-          meaning: "Total claimed in LGO, before fees, with the tickets "
+          meaning: "Total claimed, before fees, with the tickets "
                  + "claimed and still waiting beneath it." },
-        { label: "0 LGO with tickets waiting",
+        { label: "0 with tickets waiting",
           meaning: "Tickets are being mined but nothing is being redeemed. "
                  + "Auto-claim may have stopped \u2014 it does that on its own "
                  + "once every claim target reaches its threshold. The Mining "
                  + "tab says more." },
-        { label: "0 LGO",
+        { label: "0",
           meaning: "Nothing claimed yet on this chain. Normal on a node that "
                  + "has not mined, or has only just started." }
     ],
@@ -488,7 +488,7 @@ var stake = {
         + "across instead.",
     states: [
         { label: "Amount",
-          meaning: "The staked value in LGO, grouped for reading." },
+          meaning: "The staked value, grouped for reading." },
         { label: "Address · N notes",
           meaning: "Beneath the figure while all the staked notes sit on one "
                  + "key: the address holding them, copyable in full, and how "
@@ -538,7 +538,7 @@ var earned = {
         + "of it was earned leading blocks.",
     states: [
         { label: "Amount",
-          meaning: "Total claimed in LGO, before fees, with the number of "
+          meaning: "Total claimed, before fees, with the number of "
                  + "vouchers it took beneath." },
         { label: "0",
           meaning: "Nothing claimed yet. Either the node has not led a block, "
