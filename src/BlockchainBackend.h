@@ -115,6 +115,9 @@ public slots:
     QVariantMap powConfigure(QString configPath, QString configJson) override;
     QVariantMap backupKeystore(QString destinationPath) override;
     QVariantMap getKeystoreKeys(QString configPath) override;
+    QVariantMap joinBlendCore(QString locator, QString stakeNoteId) override;
+    QVariantMap withdrawBlendCore() override;
+    QVariantMap getBlendReachability() override;
 
 
 public:
@@ -133,6 +136,10 @@ private:
     QElapsedTimer m_balancesSampled;
     void setError(const QString& message);
     void refreshBlendRole();
+    void refreshBlendConfig();
+    void refreshBlendRequirements();
+    void refreshBlend(bool force = false);
+    QElapsedTimer m_blendSampled;
     void refreshStake();
     void clearStake();
     void refreshNetwork();
@@ -366,6 +373,13 @@ private:
     // used to be, rather than refusing to open the ledger at all.
     QString m_genesisId;
     QVector<PendingBlock> m_pendingEventBlocks;
+    // Blend rewards are a header event in each epoch's first block, with no
+    // transaction to find them by: the lowest slot seen per epoch is queued.
+    quint64 m_epochSlots = 0; // blend_requirements' epoch_slots; 0 = unknown
+    QHash<quint64, quint64> m_epochFirstSlot;
+    [[nodiscard]] QString blendZk() const;
+    [[nodiscard]] bool isOurKey(const QString& pk) const;
+    void addBlendRewardCandidate(QHash<QString, PendingBlock::TxClaim>& claims, quint64 slot);
     // The last irreversible slot, straight off the processed-block stream. What
     // decides whether a recorded claim is counted yet.
     quint64 m_libSlot = 0;

@@ -1003,6 +1003,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         // and nobody has a copy of the new keystore yet.
         refreshKeysBackedUp();
         refreshAccountRoles();
+        refreshBlendConfig();
         setConfigState(ConfigUnknown);
         setConfigDropped({});
         setConfigBackupPath(QString());
@@ -1016,6 +1017,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
             setDeploymentConfig(n);
         }
         appSettings()->setValue("deploymentConfigPath", deploymentConfig());
+        refreshBlendRequirements();
     });
 
     // A chain id arrives once per run, and a different one means a different
@@ -1033,8 +1035,12 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         m_catchUpStuckAttempts = 0;
         m_catchUpUnavailableSlot = 0;
         m_pendingEventBlocks.clear();
+        m_epochFirstSlot.clear();
         setEarnedTotal(QString());
         setEarnedClaimCount(0);
+        setBlendRewardsTotal(QString());
+        setBlendLastReward(QString());
+        setBlendLastRewardEpoch(-1);
     });
 
     // A node that isn't running has no blend role. Acquiring one is driven from
@@ -1042,6 +1048,8 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     connect(this, &BlockchainBackendSimpleSource::statusChanged, this, [this]() {
         if (status() != Running) {
             setBlendRole(Unknown);
+            setBlendStatus({});
+            setBlendState(BlendUnknown);
             clearStake();
             clearNetwork();
             setChainId(QString());
@@ -1135,6 +1143,8 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         qWarning() << "BlockchainBackend: failed to get blockchain module client";
         return;
     }
+    refreshBlendConfig();
+    refreshBlendRequirements();
 
     // TODO(logos-co/logos-liblogos#219): for the node module's PID, nothing else.
     // A missing modules_state costs the CPU and memory tiles and nothing more,
@@ -1270,6 +1280,148 @@ void BlockchainBackend::refreshBlendRole()
         return;
 
     setBlendRole(doc.object().value(QStringLiteral("core_info")).isObject() ? Core : Edge);
+}
+
+// ---- Joining Blend as a core node ------------------------------------------
+
+namespace {
+// What the module answers for a #108 call the node does not provide yet.
+bool notAvailableYet(const LogosResult& r)
+{
+    return !r.success && r.error.toString().contains(QStringLiteral("not available yet"));
+}
+
+// Devnet's rules (its deployment's sdp_config and blend.common), for a node
+// that cannot report its own.
+QVariantMap fallbackBlendRequirements()
+{
+    return {
+        {QStringLiteral("min_stake"), QStringLiteral("1000000000")},
+        {QStringLiteral("activation_delay_epochs"), 2},
+        {QStringLiteral("inactivity_period"), 2},
+        {QStringLiteral("minimum_network_size"), 2},
+        // A ledger constant: withdraw_at = e + 2, unlocked when e + 3 starts.
+        {QStringLiteral("unlock_delay_epochs"), 3},
+        {QStringLiteral("reported"), false},
+    };
+}
+
+QVariantMap jsonObjectOf(const LogosResult& r)
+{
+    return QJsonDocument::fromJson(r.value.toString().toUtf8()).object().toVariantMap();
+}
+} // namespace
+
+void BlockchainBackend::refreshBlendConfig()
+{
+    const QString path = userConfig().trimmed();
+    if (!m_blockchainClient || path.isEmpty()) {
+        setBlendConfig({});
+        return;
+    }
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("read_blend_config"), toLocalPath(path)));
+    setBlendConfig(r.success ? jsonObjectOf(r) : QVariantMap{});
+}
+
+void BlockchainBackend::refreshBlendRequirements()
+{
+    if (!m_blockchainClient)
+        return;
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("blend_requirements"),
+        toLocalPath(deploymentConfig().trimmed())));
+    if (r.success) {
+        QVariantMap requirements = jsonObjectOf(r);
+        requirements.insert(QStringLiteral("reported"), true);
+        setBlendRequirements(requirements);
+    } else {
+        setBlendRequirements(fallbackBlendRequirements());
+    }
+    m_epochSlots = blendRequirements().value(QStringLiteral("epoch_slots")).toULongLong();
+}
+
+// Rides the status poll, throttled: the tile and the header need the state all
+// the time. Never from a stream callback.
+void BlockchainBackend::refreshBlend(bool force)
+{
+    if (!m_blockchainClient || status() != Running)
+        return;
+    if (!force && m_blendSampled.isValid() && m_blendSampled.elapsed() < 5000)
+        return;
+    m_blendSampled.start();
+
+    const LogosResult s = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("blend_status")));
+    if (!stillRunning())
+        return;
+    if (notAvailableYet(s)) {
+        // The node can only tell Core from Edge (blend_info), so that stays the
+        // role's only source. Re-read once acquired, so Edge can become Core;
+        // acquiring it is the online branch of the status poll.
+        setBlendApiAvailable(false);
+        setBlendState(BlendUnknown);
+        if (blendRole() != Unknown)
+            refreshBlendRole();
+    } else if (s.success) {
+        setBlendApiAvailable(true);
+        const QVariantMap st = jsonObjectOf(s);
+        setBlendStatus(st);
+        static const QHash<QString, BlendState> kStates = {
+            {QStringLiteral("not_declared"), BlendNotDeclared},
+            {QStringLiteral("pending"), BlendPending},
+            {QStringLiteral("activating"), BlendActivating},
+            {QStringLiteral("active"), BlendActive},
+            {QStringLiteral("inactive"), BlendInactive},
+            {QStringLiteral("withdrawn"), BlendWithdrawn},
+        };
+        setBlendState(kStates.value(st.value(QStringLiteral("state")).toString(), BlendUnknown));
+        if (blendRole() != Unknown || st.value(QStringLiteral("core_mode")).toBool())
+            setBlendRole(st.value(QStringLiteral("core_mode")).toBool() ? Core : Edge);
+    }
+
+}
+
+QVariantMap BlockchainBackend::joinBlendCore(QString locator, QString stakeNoteId)
+{
+    if (!m_blockchainClient || status() != Running)
+        return result::toVariantMap(result::err(tr("The node is not running.")));
+    if (stakeNoteId.trimmed().isEmpty())
+        return result::toVariantMap(result::err(tr("There is no stake note to lock.")));
+
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("blend_join_as_core_node"),
+        locator.trimmed(), stakeNoteId.trimmed()));
+    refreshBlend(/*force=*/true);
+    return result::toVariantMap(r);
+}
+
+// The value is { tx_hash, unlocks_at_epoch }.
+QVariantMap BlockchainBackend::withdrawBlendCore()
+{
+    if (!m_blockchainClient || status() != Running)
+        return result::toVariantMap(result::err(tr("The node is not running.")));
+
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("blend_withdraw")));
+    refreshBlend(/*force=*/true);
+    if (!r.success)
+        return result::toVariantMap(r);
+    return result::toVariantMap(LogosResult{true, jsonObjectOf(r), QVariant()});
+}
+
+// The value is the parsed object; not being Online yet is an answer too, an
+// empty one: nothing has been checked.
+QVariantMap BlockchainBackend::getBlendReachability()
+{
+    if (!m_blockchainClient || status() != Running)
+        return result::toVariantMap(result::err(tr("The node is not running.")));
+
+    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("blend_reachability")));
+    if (!r.success)
+        return result::toVariantMap(r);
+    return result::toVariantMap(LogosResult{true, jsonObjectOf(r), QVariant()});
 }
 
 void BlockchainBackend::clearNetwork()
@@ -1822,6 +1974,18 @@ void BlockchainBackend::publishClaims()
     setClaimsCountingSince(m_claims.countingSince());
     setEarnedClaimsPending(m_claims.pendingCount(ClaimLedger::Kind::Staking, m_libSlot));
     setPowClaimsPending(m_claims.pendingCount(ClaimLedger::Kind::Mining, m_libSlot));
+    setBlendRewardsTotal(m_claims.confirmedTotal(ClaimLedger::Kind::Blend, m_libSlot));
+    {
+        // Paid in the first block of epoch e for the epoch two before it.
+        const ClaimLedger::Record* last = nullptr;
+        for (const ClaimLedger::Record& record : m_claims.records())
+            if (record.kind == ClaimLedger::Kind::Blend && record.slot <= m_libSlot
+                && (!last || record.slot > last->slot))
+                last = &record;
+        setBlendLastReward(last ? last->value : QString());
+        setBlendLastRewardEpoch(last && m_epochSlots > 0 && last->slot / m_epochSlots >= 2
+                                    ? int(last->slot / m_epochSlots - 2) : -1);
+    }
 
     // Same source, same moment, same finality gate as the four figures above —
     // so a row can never say something the totals contradict. The model no-ops
@@ -2018,6 +2182,37 @@ BlockchainBackend::claimPayeesByTx(const QJsonObject& block)
     return out;
 }
 
+QString BlockchainBackend::blendZk() const
+{
+    return normalizeHex(blendConfig().value(QStringLiteral("zk_id")).toString());
+}
+
+// The wallet's known keys, plus BlendZk: rewards mint to it whether or not the
+// wallet lists it.
+bool BlockchainBackend::isOurKey(const QString& pk) const
+{
+    return m_knownAddresses.contains(pk) || (!pk.isEmpty() && pk == blendZk());
+}
+
+// Queues a block for its events when it is the earliest seen of its epoch, so
+// the reward that epoch's first block carries is fetched. One fetch per epoch,
+// plus one per earlier block found later (a restart mid-epoch, then catch-up).
+void BlockchainBackend::addBlendRewardCandidate(QHash<QString, PendingBlock::TxClaim>& claims,
+                                                quint64 slot)
+{
+    const QString zk = blendZk();
+    if (m_epochSlots == 0 || zk.isEmpty())
+        return;
+    const quint64 epoch = slot / m_epochSlots;
+    const auto seen = m_epochFirstSlot.constFind(epoch);
+    if (seen != m_epochFirstSlot.cend() && seen.value() <= slot)
+        return;
+    m_epochFirstSlot.insert(epoch, slot);
+    PendingBlock::TxClaim reward;
+    reward.payees << zk;
+    claims.insert(QStringLiteral("blend:") + zk, reward);
+}
+
 void BlockchainBackend::noteProcessedBlock(const QString& eventJson)
 {
     const QJsonObject event = QJsonDocument::fromJson(eventJson.toUtf8()).object();
@@ -2036,6 +2231,8 @@ void BlockchainBackend::noteProcessedBlock(const QString& eventJson)
     // chain streams its whole history past here, and all of it but the claims
     // is dropped on sight.
     QHash<QString, PendingBlock::TxClaim> claims = claimPayeesByTx(block);
+    addBlendRewardCandidate(
+        claims, jsonUint(block.value(QStringLiteral("header")).toObject().value(QStringLiteral("slot"))));
     if (claims.isEmpty())
         return;
 
@@ -2048,7 +2245,7 @@ void BlockchainBackend::noteProcessedBlock(const QString& eventJson)
             const QStringList& payees = it.value().payees;
             const bool ours =
                 std::any_of(payees.cbegin(), payees.cend(),
-                            [this](const QString& pk) { return m_knownAddresses.contains(pk); });
+                            [this](const QString& pk) { return isOurKey(pk); });
             if (ours)
                 ++it;
             else
@@ -2187,11 +2384,12 @@ void BlockchainBackend::catchUpClaims()
     for (qsizetype i = 0; i < window.size(); ++i) {
         const RawBlock& raw = window[i];
         QHash<QString, PendingBlock::TxClaim> claims = claimPayeesByTx(raw.block);
+        addBlendRewardCandidate(claims, raw.slot);
         for (auto it = claims.begin(); it != claims.end();) {
             const QStringList& payees = it.value().payees;
             const bool ours =
                 std::any_of(payees.cbegin(), payees.cend(),
-                            [this](const QString& pk) { return m_knownAddresses.contains(pk); });
+                            [this](const QString& pk) { return isOurKey(pk); });
             if (ours)
                 ++it;
             else
@@ -2331,7 +2529,7 @@ void BlockchainBackend::drainClaimEvents()
         bool ours = false;
         for (const PendingBlock::TxClaim& claim : pending.claims) {
             ours = std::any_of(claim.payees.cbegin(), claim.payees.cend(),
-                               [this](const QString& pk) { return m_knownAddresses.contains(pk); });
+                               [this](const QString& pk) { return isOurKey(pk); });
             if (ours)
                 break;
         }
@@ -2386,7 +2584,33 @@ void BlockchainBackend::recordClaimsFrom(const QString& eventsJson, const Pendin
     for (const QJsonValue& entry : events) {
         // Externally-tagged serde enums all the way down:
         //   { "Tx": { tx_hash, op_id, payload: { "LeaderRewardClaimed": {...} } } }
-        // Header events sit under "Header" and are somebody else's business.
+        //   { "Header": { "SdpRewardDistributed": { service_type, utxo: { op_id,
+        //                 output_index, note: { value, pk } } } } }
+        const QJsonObject distributed = entry.toObject()
+                                            .value(QStringLiteral("Header")).toObject()
+                                            .value(QStringLiteral("SdpRewardDistributed")).toObject();
+        if (!distributed.isEmpty()) {
+            const QJsonObject utxo = distributed.value(QStringLiteral("utxo")).toObject();
+            const QJsonObject note = utxo.value(QStringLiteral("note")).toObject();
+            const QString pk = normalizeHex(note.value(QStringLiteral("pk")).toString());
+            if (pk.isEmpty() || pk != blendZk())
+                continue;
+            QString opId;
+            for (const QJsonValue& byte : utxo.value(QStringLiteral("op_id")).toArray())
+                opId += QStringLiteral("%1").arg(byte.toInt(), 2, 16, QLatin1Char('0'));
+            ClaimLedger::Record record;
+            record.kind = ClaimLedger::Kind::Blend;
+            record.nullifier = opId + QLatin1Char(':')
+                             + QString::number(utxo.value(QStringLiteral("output_index")).toInt());
+            record.value = QString::number(jsonUint(note.value(QStringLiteral("value"))));
+            record.payee = pk;
+            record.blockId = block.blockId;
+            record.slot = block.slot;
+            m_claims.add(record);
+            changed = true;
+            continue;
+        }
+
         const QJsonObject tx = entry.toObject().value(QStringLiteral("Tx")).toObject();
         const QJsonObject payload = tx.value(QStringLiteral("payload")).toObject();
 
@@ -2597,6 +2821,7 @@ QVariantMap BlockchainBackend::getCryptarchiaInfo()
             loadClaimLedger();
             if (m_claimsDirty)
                 saveClaims();
+            refreshBlend();
             if (modeOnline) {
                 refreshBalancesIfStale();
                 if (blendRole() == Unknown)

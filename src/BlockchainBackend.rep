@@ -9,11 +9,23 @@ class BlockchainBackend
     // switch that turns blend off — but the view already renders it, so when the
     // node can say "off" this becomes one branch in refreshBlendRole().
     ENUM BlendRole { Unknown=0, Edge=1, Core=2, Inactive=3 }
+    // blend_status().state, parsed once here. Prefixed because rep enums share
+    // the class scope with BlendRole's names. BlendUnknown: not reported (node
+    // stopped, or a node without blend_status).
+    ENUM BlendState { BlendUnknown=0, BlendNotDeclared=1, BlendPending=2, BlendActivating=3,
+                      BlendActive=4, BlendInactive=5, BlendWithdrawn=6 }
 
     ENUM ConfigState { ConfigUnknown=0, ConfigOk=1, ConfigStale=2, ConfigUnreadable=3, ConfigUpgraded=4 }
 
     PROP(BlockchainStatus status READONLY)
     PROP(BlendRole blendRole READONLY)
+    PROP(BlendState blendState READONLY)
+
+    // ---- Joining Blend as a core node ----
+    PROP(QVariantMap blendConfig READONLY)
+    PROP(QVariantMap blendStatus READONLY)
+    PROP(QVariantMap blendRequirements READONLY)
+    PROP(bool blendApiAvailable READONLY)
     PROP(QString userConfig READWRITE)
     PROP(QString deploymentConfig READWRITE)
     PROP(bool useGeneratedConfig READWRITE)
@@ -112,6 +124,9 @@ class BlockchainBackend
     // An empty total is "not counted yet" — the ledger cannot be opened before
     // the node reports which chain it is on. A reported "0" is a real reading.
     PROP(QString earnedTotal READONLY)
+    PROP(QString blendRewardsTotal READONLY)
+    PROP(QString blendLastReward READONLY)
+    PROP(int blendLastRewardEpoch READONLY)
     PROP(int earnedClaimCount READONLY)
     PROP(int earnedClaimsSubmitted READONLY)
     PROP(int powClaimsSubmitted READONLY)
@@ -249,6 +264,9 @@ class BlockchainBackend
     // Same, for the mining history. Two lists, two filters: they are
     // different tabs, and one shared filter would move both.
     SLOT(void setMiningHistoryFilter(int mode))
+    SLOT(QVariantMap joinBlendCore(QString locator, QString stakeNoteId))
+    SLOT(QVariantMap withdrawBlendCore())
+    SLOT(QVariantMap getBlendReachability())
     SLOT(void clearBlocks())
     SLOT(void copyToClipboard(QString text))
 }

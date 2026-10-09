@@ -156,6 +156,32 @@ Rectangle {
         }
     }
 
+    BlendCoreState {
+        id: blendCore
+        nodeOnline: monitor.synced
+        nodeRunning: root.nodeRunning
+        blendStatus: root.backend ? root.backend.blendStatus : ({})
+        blendState: _d.blendState
+        requirements: root.backend ? root.backend.blendRequirements : ({})
+        blendConfig: root.backend ? root.backend.blendConfig : ({})
+        apiAvailable: !!root.backend && root.backend.blendApiAvailable
+        coreFromRole: !!root.backend && root.backend.blendRole === BlockchainBackend.Core
+        configPath: root.backend ? root.backend.userConfig : ""
+        timeInfoJson: monitor.timeInfoJson
+    }
+
+    BlendCoreDialog {
+        id: blendCoreDialog
+        objectName: "blendCoreDialog"
+        blend: blendCore
+
+        onVisibleChanged: if (!visible) blendCore.clearReads()
+        onRefreshRequested: _d.refreshBlendChecks()
+        onJoinRequested: function(locator) { _d.joinBlend(locator) }
+        onLeaveRequested: _d.leaveBlend()
+    }
+
+
     // Self libp2p peer id, derived from the selected user config (no running
     // node required). Refreshed when ready and whenever the config changes.
     property string peerId: ""
@@ -434,6 +460,86 @@ Rectangle {
             )
         }
 
+        // ---- Blend Core ----
+        // A key with no notes answers "Unknown wallet address", which is zero.
+        function isEmptyWallet(error) {
+            return String(error).indexOf("Unknown wallet address") >= 0
+        }
+
+        function refreshBlendChecks() {
+            if (!root.backend)
+                return
+            const config = root.backend.blendConfig
+            const zk = config.zk_id || ""
+            const sdp = config.sdp_funding_pk || ""
+
+            if (root.backend.blendApiAvailable)
+                logos.watch(root.backend.getBlendReachability(),
+                            function(result) { blendCore.reachability = result.success ? result.value : ({}) },
+                            function(error) {})
+
+            if (zk.length > 0)
+                logos.watch(root.backend.getNotes(zk, ""),
+                            function(result) {
+                                if (result.success)
+                                    blendCore.zkNotes = JSON.parse(result.value).notes || []
+                                else if (_d.isEmptyWallet(result.error))
+                                    blendCore.zkNotes = []
+                            },
+                            function(error) {})
+
+            if (sdp.length > 0)
+                logos.watch(root.backend.getBalance(sdp),
+                            function(result) {
+                                if (result.success)
+                                    blendCore.sdpFundingBalance = String(result.value)
+                                else if (_d.isEmptyWallet(result.error))
+                                    blendCore.sdpFundingBalance = "0"
+                            },
+                            function(error) {})
+        }
+
+        function joinBlend(locator) {
+            if (!root.backend || blendCore.busy)
+                return
+            blendCore.busy = true
+            blendCore.actionError = ""
+            logos.watch(
+                root.backend.joinBlendCore(locator, blendCore.stakeNoteId),
+                function(result) {
+                    blendCore.busy = false
+                    if (!result.success)
+                        blendCore.actionError = result.error
+                },
+                function(error) {
+                    blendCore.busy = false
+                    blendCore.actionError = error
+                }
+            )
+        }
+
+        function leaveBlend() {
+            if (!root.backend || blendCore.busy)
+                return
+            blendCore.busy = true
+            blendCore.actionError = ""
+            logos.watch(
+                root.backend.withdrawBlendCore(),
+                function(result) {
+                    blendCore.busy = false
+                    if (!result.success)
+                        blendCore.actionError = result.error
+                },
+                function(error) {
+                    blendCore.busy = false
+                    blendCore.actionError = error
+                }
+            )
+        }
+
+        readonly property int blendState: root.backend ? root.backend.blendState
+                                                       : BlockchainBackend.BlendUnknown
+
         // For one-shot results (a failed claim, an explorer lookup) that have no
         // surrounding state to frame them. Deliberately not used for the status
         // poll: its message lands in the hero's sub-line under a headline that
@@ -686,6 +792,25 @@ Rectangle {
                 }
 
                 LogosButton {
+                    id: blendCoreButton
+                    objectName: "blendCoreButton"
+                    enabled: opPage.nodeRunning
+                    text: {
+                        switch (_d.blendState) {
+                        case BlockchainBackend.BlendPending:    return qsTr("Blend Core pending")
+                        case BlockchainBackend.BlendActivating: return qsTr("Blend Core declared")
+                        case BlockchainBackend.BlendActive:     return qsTr("Blend Core active")
+                        case BlockchainBackend.BlendInactive:   return qsTr("Blend Core inactive")
+                        case BlockchainBackend.BlendWithdrawn:  return qsTr("Blend Core leaving")
+                        default:
+                            return root.backend && root.backend.blendRole === BlockchainBackend.Core
+                                   ? qsTr("Blend Core active") : qsTr("Enable Core")
+                        }
+                    }
+                    onClicked: blendCoreDialog.show()
+                }
+
+                LogosButton {
                     objectName: "nodeRunButton"
                     variant: LogosButton.Variant.Primary
                     text: opPage.stopping
@@ -789,6 +914,18 @@ Rectangle {
                     nodeDiskFreeMb: root.backend ? root.backend.nodeDiskFreeMb : -1
                     blendRole: root.backend ? root.backend.blendRole
                                             : BlockchainBackend.Unknown
+                    blendState: _d.blendState
+                    blendActiveFromEpoch: root.backend && root.backend.blendStatus
+                                          && root.backend.blendStatus.declaration
+                                          ? root.backend.blendStatus.declaration.active_from_epoch : -1
+                    blendWithdrawAt: root.backend && root.backend.blendStatus
+                                     && root.backend.blendStatus.declaration
+                                     && root.backend.blendStatus.declaration.withdraw_at !== null
+                                     && root.backend.blendStatus.declaration.withdraw_at !== undefined
+                                     ? root.backend.blendStatus.declaration.withdraw_at : -1
+                    blendRewardsTotal: root.backend ? root.backend.blendRewardsTotal : ""
+                    blendLastReward: root.backend ? root.backend.blendLastReward : ""
+                    blendLastRewardEpoch: root.backend ? root.backend.blendLastRewardEpoch : -1
                     synced: monitor.synced
                     hasBeenOnline: monitor.hasBeenOnline
                     statusStale: monitor.stale

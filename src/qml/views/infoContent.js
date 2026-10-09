@@ -70,33 +70,47 @@ var status = {
 var blend = {
     title: "Blend",
     what: "Whether this node's block proposals travel through the Blend "
-        + "Network — the mixnet that hides which node proposed a block. The "
-        + "point is proposer privacy: without it the peer that announces a "
-        + "block is the peer that made it, which is worth knowing to anyone "
-        + "watching the network.",
-    calc: "Reported by the node once it comes online. Every running node "
-        + "takes part at least as Edge; there is no setting that "
-        + "turns blend off. Core is opted into: the node declares itself "
-        + "through the Service Declaration Protocol, proving it holds a note "
-        + "of at least the minimum stake, and the declaration only takes "
-        + "effect two epochs later. A node that has just declared still "
-        + "shows Edge until then — that is genuinely its role in the meantime, "
-        + "not a stale reading.",
+        + "Network — the mixnet that hides which node proposed a block. Every "
+        + "running node takes part as Edge. A Core node also mixes other "
+        + "people's messages, and earns a share of Blend's rewards for it.",
+    calc: "Reported by the node once it comes online. To become Core, press "
+        + "Enable Blend Core in the header. You need: the node online; one "
+        + "coin of at least 1 token on your BlendZk key, which gets locked as "
+        + "stake; some tokens on your SdpFunding key for the small fee paid when "
+        + "joining and every epoch after; and the Blend UDP port forwarded on "
+        + "your router so other nodes can reach you. Joining publishes your "
+        + "public address on the blockchain, permanently and linked to this "
+        + "node. The declaration takes effect two epochs after it lands. "
+        + "Missing activity for too long (node off, fees unpaid, port blocked) "
+        + "drops it out. To leave, press Disable Blend Core: the node serves "
+        + "one more epoch and its stake unlocks three epochs after the "
+        + "withdrawal lands.",
     states: [
         { label: "Edge",
           meaning: "The default for a running node. Its own proposals are "
                  + "mixed by the core network on their way out, but it does "
                  + "not mix anyone else's." },
+        { label: "Joining",
+          meaning: "A declaration was sent. The caption says where it is: "
+                 + "submitted and waiting for a block, then Core from a given "
+                 + "epoch once it is on-chain. The stake is locked from then." },
         { label: "Core",
-          meaning: "A declared blend node. It mixes traffic for others as well "
-                 + "as itself, and earns rewards for doing so." },
+          meaning: "A declared blend node, in the core set. It mixes traffic "
+                 + "for others as well as itself, and earns rewards for it." },
+        { label: "Inactive",
+          meaning: "Declared, but it missed its activity proofs, so it is out "
+                 + "of the core set and runs as Edge. Open Blend Core in the "
+                 + "header for the reason." },
+        { label: "Leaving",
+          meaning: "A withdrawal was sent. The node keeps serving until it takes "
+                 + "effect; the caption says the epoch its stake unlocks." },
         { label: "—",
           meaning: "The node is not running, is still catching up, or blend "
                  + "has not reported yet. The role is cleared rather than "
                  + "remembered, because a node that is not following the chain "
                  + "is mixing nothing." }
     ],
-    docs: "https://docs.logos.co/blockchain/concepts/about-the-blend-network"
+    docs: "https://docs.logos.co/blockchain/blend/join-the-blend-network-as-a-core-node"
 }
 
 // The prototype lists this tile as unwired, needing a bridge to the node's HTTP
@@ -517,6 +531,19 @@ var stake = {
 // deriving it means tracking the whole UTXO set to learn what the inputs were
 // worth. Until that exists this counts the gross and says so, rather than
 // showing a net figure it cannot actually compute.
+var blendRewards = {
+    title: "Blend Rewards",
+    what: "What this node has been paid for mixing as a Blend core node. Only "
+        + "core nodes are paid; an Edge node earns nothing here.",
+    calc: "The chain pays them automatically to your BlendZk key, with no claim "
+        + "and no fee: a core node's share for an epoch arrives in the first block "
+        + "two epochs later, if its activity proof for that epoch was accepted. "
+        + "Each payment is added up here once it is final.\n\n"
+        + "Needs a node that reports its epoch length; on one that can't, this "
+        + "stays empty.",
+    docs: "https://docs.logos.co/blockchain/blend/join-the-blend-network-as-a-core-node"
+}
+
 var earned = {
     title: "Earned",
     what: "What this node has been paid for the blocks it led — the leader "
@@ -788,6 +815,21 @@ var bootstrapPeers = {
         + "Leaving this empty writes an empty list, and a node with no peers "
         + "never finds the chain.",
     docs: "https://docs.logos.co/blockchain/get-started/run-a-logos-blockchain-node-from-basecamp"
+}
+
+var blendPort = {
+    title: "Blend port",
+    what: "The UDP port this node listens on for Blend, the network that hides "
+        + "which node proposed a block. Every node uses Blend, but only a core "
+        + "node accepts connections on this port.",
+    calc: "It only matters if you join Blend as a core node. Other nodes then "
+        + "dial your public IP on this port, so your router has to forward it "
+        + "(UDP) to this computer, and your firewall has to let it through. The "
+        + "app can't open it for you.\n\n"
+        + "Leaving it empty uses 3400. To change it later, edit "
+        + "blend.core.backend.listening_address in your config file and restart "
+        + "the node.",
+    docs: "https://docs.logos.co/blockchain/blend/join-the-blend-network-as-a-core-node"
 }
 
 var powSearchThreads = {

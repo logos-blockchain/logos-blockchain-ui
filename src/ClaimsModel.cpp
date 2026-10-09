@@ -16,6 +16,7 @@ QVariant ClaimsModel::data(const QModelIndex& index, int role) const
     switch (role) {
     case KindRole:
         return row.record.kind == ClaimLedger::Kind::Mining ? QStringLiteral("mining")
+             : row.record.kind == ClaimLedger::Kind::Blend  ? QStringLiteral("blend")
                                                             : QStringLiteral("staking");
     case ValueRole:      return row.record.value;
     case PayeeRole:      return row.record.payee;
