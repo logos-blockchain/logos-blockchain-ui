@@ -26,6 +26,7 @@
 #include <QJsonObject>
 #include <QDirIterator>
 #include <QSettings>
+#include <memory>
 #include <QPointer>
 #include <QSignalBlocker>
 #include <QStorageInfo>
@@ -97,6 +98,25 @@ static QString toLocalPath(const QString& pathInput)
     if (pathInput.trimmed().isEmpty())
         return pathInput;
     return QUrl::fromUserInput(pathInput).toLocalFile();
+}
+
+// Under --user-dir (LOGOS_USER_DIR) everything this app saves stays in that
+// directory, so a test instance neither reads nor rewrites the real install's
+// config choice. Empty when unset: the per-OS-user locations apply.
+static QString userDirStateDir()
+{
+    const QString userDir = qEnvironmentVariable("LOGOS_USER_DIR");
+    return userDir.isEmpty() ? QString()
+                             : QDir(userDir).filePath(QStringLiteral("BlockchainUI"));
+}
+
+static std::unique_ptr<QSettings> appSettings()
+{
+    const QString dir = userDirStateDir();
+    if (dir.isEmpty())
+        return std::make_unique<QSettings>(QStringLiteral("Logos"), QStringLiteral("BlockchainUI"));
+    return std::make_unique<QSettings>(QDir(dir).filePath(QStringLiteral("settings.ini")),
+                                       QSettings::IniFormat);
 }
 
 namespace {
@@ -852,17 +872,21 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     setConfigDropped({});
     setConfigBackupPath(QString());
     setMergeConfigReportPath(QString());
+    const QString stateDir = userDirStateDir();
+    if (!stateDir.isEmpty())
+        QDir().mkpath(stateDir);
     setGeneratedUserConfigPath(
-        QDir::currentPath() + QStringLiteral("/user_config.yaml"));
+        (stateDir.isEmpty() ? QDir::currentPath() : stateDir)
+        + QStringLiteral("/user_config.yaml"));
 
     // Restore saved config paths
-    QSettings s("Logos", "BlockchainUI");
+    const auto s = appSettings();
     const QString envConfigPath =
         QString::fromUtf8(qgetenv("LB_CONFIG_PATH"));
     const QString savedUserConfig =
-        s.value("userConfigPath").toString();
+        s->value("userConfigPath").toString();
     const QString savedDeploymentConfig =
-        s.value("deploymentConfigPath").toString();
+        s->value("deploymentConfigPath").toString();
 
     const auto restorableOr = [](const QString& saved, const char* what) -> QString {
         if (saved.isEmpty())
@@ -971,8 +995,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
             QSignalBlocker b(this);
             setUserConfig(n);
         }
-        QSettings("Logos", "BlockchainUI")
-            .setValue("userConfigPath", userConfig());
+        appSettings()->setValue("userConfigPath", userConfig());
         // Derived from the config's location, so they move with it.
         setNodeDataDir(nodeDatabaseDir());
         setNodeKeystorePath(nodeKeystorePath());
@@ -992,8 +1015,7 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
             QSignalBlocker b(this);
             setDeploymentConfig(n);
         }
-        QSettings("Logos", "BlockchainUI")
-            .setValue("deploymentConfigPath", deploymentConfig());
+        appSettings()->setValue("deploymentConfigPath", deploymentConfig());
     });
 
     // A chain id arrives once per run, and a different one means a different
@@ -1516,7 +1538,7 @@ void BlockchainBackend::refreshKeysBackedUp()
         return;
     }
     const QString saved =
-        QSettings("Logos", "BlockchainUI").value(keysBackedUpSettingsKey()).toString();
+        appSettings()->value(keysBackedUpSettingsKey()).toString();
     setKeysBackedUp(!saved.isEmpty() && sameFilePath(saved, cfg));
 }
 
@@ -1526,8 +1548,7 @@ void BlockchainBackend::markKeysBackedUp()
     if (cfg.isEmpty())
         return;
     const QString local = toLocalPath(cfg);
-    QSettings("Logos", "BlockchainUI").setValue(keysBackedUpSettingsKey(),
-                                                local.isEmpty() ? cfg : local);
+    appSettings()->setValue(keysBackedUpSettingsKey(), local.isEmpty() ? cfg : local);
     setKeysBackedUp(true);
 }
 
@@ -1693,11 +1714,15 @@ void BlockchainBackend::refreshChainId()
 
 QString BlockchainBackend::claimLedgerPath() const
 {
-    QString base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
-    if (base.isEmpty())
-        base = QDir::tempPath();
+    QString dirPath = userDirStateDir();
+    if (dirPath.isEmpty()) {
+        QString base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+        if (base.isEmpty())
+            base = QDir::tempPath();
+        dirPath = base + QStringLiteral("/Logos/BlockchainUI");
+    }
 
-    QDir dir(base + QStringLiteral("/Logos/BlockchainUI"));
+    QDir dir(dirPath);
     if (!dir.exists() && !dir.mkpath(QStringLiteral(".")))
         return {};
 
