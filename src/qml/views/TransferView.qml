@@ -113,7 +113,7 @@ ColumnLayout {
         RowLayout {
             Layout.fillWidth: true
             Layout.topMargin: Theme.spacing.small
-            FieldLabel { text: qsTr("Amount (LGO)") }
+            FieldLabel { text: qsTr("Amount (%1)").arg(Units.SYMBOL) }
             LogosText {
                 Layout.alignment: Qt.AlignRight
                 visible: text.length > 0
@@ -158,7 +158,7 @@ ColumnLayout {
                          && transferToField.text.trim().length > 0
                          && root.amountLepta.length > 0
                          && !root.overBalance
-                // Canonical LOGOS; the backend scales it to lepta.
+                // Canonical tokens; the backend scales it to lepta.
                 onClicked: root.transferRequested(
                     String(transferFromCombo.currentValue || "").trim(),
                     transferToField.text.trim(),

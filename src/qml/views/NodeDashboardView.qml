@@ -808,9 +808,9 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Layout.minimumWidth: d.minTileWidth
-                    label: qsTr("Stake")
+                    label: qsTr("Stake (%1)").arg(Units.SYMBOL)
                     value: root.stakeTotal.length > 0
-                           ? Units.format(root.stakeTotal) : qsTr("—")
+                           ? Units.formatPlain(root.stakeTotal) : qsTr("—")
                     valueFontSizeMode: Text.HorizontalFit
                     caption: d.stakeCaption
                     labelTrailing: [
@@ -834,9 +834,9 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Layout.minimumWidth: d.minTileWidth
-                    label: qsTr("Earned")
+                    label: qsTr("Earned (%1)").arg(Units.SYMBOL)
                     value: root.earnedTotal.length > 0
-                           ? Units.format(root.earnedTotal) : qsTr("—")
+                           ? Units.formatPlain(root.earnedTotal) : qsTr("—")
                     valueFontSizeMode: Text.HorizontalFit
                     caption: d.earnedCaption
                     labelTrailing: [
@@ -939,9 +939,9 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Layout.minimumWidth: d.minTileWidth
-                    label: qsTr("Mining Rewards")
+                    label: qsTr("Mining Rewards (%1)").arg(Units.SYMBOL)
                     value: root.powRewardsLepta.length > 0
-                           ? Units.compact(root.powRewardsLepta) : Units.compact("0")
+                           ? Units.compactPlain(root.powRewardsLepta) : Units.compactPlain("0")
                     flashOnChange: true
                     flashColor: Theme.palette.success
                     severity: root.miningError.length > 0

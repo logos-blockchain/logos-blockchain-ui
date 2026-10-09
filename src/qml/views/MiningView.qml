@@ -224,9 +224,9 @@ ColumnLayout {
             Layout.fillWidth: true
             Layout.preferredWidth: 1
             objectName: "miningRewardsCard"
-            label: qsTr("Mining Rewards")
+            label: qsTr("Mining Rewards (%1)").arg(Units.SYMBOL)
             value: root.powRewardsLepta.length > 0
-                   ? Units.compact(root.powRewardsLepta) : Units.compact("0")
+                   ? Units.compactPlain(root.powRewardsLepta) : Units.compactPlain("0")
             flashOnChange: root.visible
             labelTrailing: [
                 LogosInfoButton {

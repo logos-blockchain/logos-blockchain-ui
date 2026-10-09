@@ -124,34 +124,34 @@ namespace {
 // How much of the log tail to scan, and how long a verdict stays good for.
 constexpr qint64 kLogTailBytes = 128 * 1024;
 constexpr qint64 kDiagnosisCacheMs = 2000;
-// One LOGOS is 10^9 lepta. The node publishes no denomination, so this scale is
+// One token is 10^9 lepta. The node publishes no denomination, so this scale is
 // the app's assertion — kept in step with DECIMALS in qml/Units.js, which
 // converts the other way.
-constexpr int kLgoDecimals = 9;
+constexpr int kTokenDecimals = 9;
 constexpr auto kMaxLepta = "18446744073709551615"; // u64, as the wire carries it
 
-// Canonical LOGOS ("1.5", as qml/Units.js normalizeInput leaves it) to lepta.
+// Canonical tokens ("1.5", as qml/Units.js normalizeInput leaves it) to lepta.
 // All string work: the result can exceed what a double holds exactly, and
 // scaling through one would move the user's money. Returns false with a reason
 // rather than truncating an over-precise figure.
-bool leptaFromLgo(const QString& canonical, QString* lepta, QString* error)
+bool leptaFromToken(const QString& canonical, QString* lepta, QString* error)
 {
     const QString text = canonical.trimmed();
     static const QRegularExpression shape(QStringLiteral("^[0-9]*\\.?[0-9]*$"));
     if (text.isEmpty() || text == QStringLiteral(".") || !shape.match(text).hasMatch()) {
-        *error = QObject::tr("Enter an amount in LGO, for example 1.5.");
+        *error = QObject::tr("Enter an amount, for example 1.5.");
         return false;
     }
 
     const int dot = text.indexOf(QLatin1Char('.'));
     const QString whole = (dot < 0) ? text : text.left(dot);
     const QString frac = (dot < 0) ? QString() : text.mid(dot + 1);
-    if (frac.size() > kLgoDecimals) {
-        *error = QObject::tr("LGO has at most %1 decimals.").arg(kLgoDecimals);
+    if (frac.size() > kTokenDecimals) {
+        *error = QObject::tr("Amounts have at most %1 decimals.").arg(kTokenDecimals);
         return false;
     }
 
-    QString digits = whole + frac + QString(kLgoDecimals - frac.size(), QLatin1Char('0'));
+    QString digits = whole + frac + QString(kTokenDecimals - frac.size(), QLatin1Char('0'));
     qsizetype first = 0;
     while (first + 1 < digits.size() && digits.at(first) == QLatin1Char('0'))
         ++first;
@@ -161,7 +161,7 @@ bool leptaFromLgo(const QString& canonical, QString* lepta, QString* error)
     const QLatin1String maxLepta(kMaxLepta);
     if (digits.size() > maxLepta.size()
         || (digits.size() == maxLepta.size() && digits > maxLepta)) {
-        *error = QObject::tr("That is more LGO than can exist.");
+        *error = QObject::tr("That is more than can exist.");
         return false;
     }
 
@@ -3416,10 +3416,10 @@ QVariantMap BlockchainBackend::transferFunds(
     if (!m_blockchainClient)
         return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
 
-    // amountStr is canonical LOGOS from the view; the module takes lepta.
+    // amountStr is canonical tokens from the view; the module takes lepta.
     QString amountLepta;
     QString amountError;
-    if (!leptaFromLgo(amountStr, &amountLepta, &amountError))
+    if (!leptaFromToken(amountStr, &amountLepta, &amountError))
         return result::toVariantMap(result::err(amountError));
 
     QStringList senders{fromKeyHex};
@@ -3700,10 +3700,10 @@ QVariantMap BlockchainBackend::channelDepositWithNotes(
         metadataHex = QString::fromLatin1(bytes.toHex());
     }
 
-    // maxTxFee is canonical LOGOS from the view; the module takes lepta.
+    // maxTxFee is canonical tokens from the view; the module takes lepta.
     QString feeLepta;
     QString feeError;
-    if (!leptaFromLgo(maxTxFee, &feeLepta, &feeError))
+    if (!leptaFromToken(maxTxFee, &feeLepta, &feeError))
         return result::toVariantMap(result::err(feeError));
 
     // 7 positional args exceed the variadic invokeRemoteMethod overloads
