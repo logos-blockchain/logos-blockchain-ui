@@ -1,1 +1,5 @@
 ConfigUpgradeDialog 1.0 ConfigUpgradeDialog.qml
+BlendCoreDialog 1.0 BlendCoreDialog.qml
+BlendCoreState 1.0 BlendCoreState.qml
+BlendJoinPages 1.0 BlendJoinPages.qml
+BlendStatusPages 1.0 BlendStatusPages.qml

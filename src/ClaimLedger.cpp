@@ -28,16 +28,22 @@ bool isDecimal(const QString& value)
 
 QString kindToString(ClaimLedger::Kind kind)
 {
-    return kind == ClaimLedger::Kind::Mining ? QStringLiteral("mining")
-                                             : QStringLiteral("staking");
+    switch (kind) {
+    case ClaimLedger::Kind::Mining: return QStringLiteral("mining");
+    case ClaimLedger::Kind::Blend:  return QStringLiteral("blend");
+    default:                        return QStringLiteral("staking");
+    }
 }
 
 // Staking is the default on purpose: it is what a ledger written before mining
 // joined it contains, and those files carry no kind at all.
 ClaimLedger::Kind kindFromString(const QString& text)
 {
-    return text == QLatin1String("mining") ? ClaimLedger::Kind::Mining
-                                           : ClaimLedger::Kind::Staking;
+    if (text == QLatin1String("mining"))
+        return ClaimLedger::Kind::Mining;
+    if (text == QLatin1String("blend"))
+        return ClaimLedger::Kind::Blend;
+    return ClaimLedger::Kind::Staking;
 }
 
 QString recordKey(ClaimLedger::Kind kind, const QString& nullifier)

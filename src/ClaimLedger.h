@@ -23,11 +23,12 @@ public:
     enum class Kind {
         Staking, // LeaderRewardClaimed — minted straight to a wallet key
         Mining,  // PoWRewardClaimed — minted to a per-ticket key, then transferred
+        Blend,   // SdpRewardDistributed — a header event minting to the BlendZk key
     };
 
     struct Record {
         Kind kind = Kind::Staking;
-        QString nullifier; // voucher_nullifier | pow_nullifier — chain-unique either way
+        QString nullifier; // voucher_nullifier | pow_nullifier | "<op_id>:<output>" — chain-unique
         QString value;
         QString payee; // the wallet key it was attributed to, normalized
         QString blockId;
