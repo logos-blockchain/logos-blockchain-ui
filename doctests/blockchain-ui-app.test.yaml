@@ -177,6 +177,27 @@ sections:
                 — an empty list is an empty list, not a fallback to the
                 deployment's own peers.
 
+            - name: "Continue to the connectivity step"
+              action: click_object
+              find_by: "objectName"
+              find_value: "onboardingAdvanceButton"
+
+            - name: "Step 3 is connectivity, and optional"
+              action: wait_for
+              texts:
+                - "Connectivity"
+                - "3. Connectivity"
+                - "Blend port"
+                - "Generate config"
+              timeout: 8000
+              screenshot: "blockchain-ui-setup-connectivity.png"
+              text: |
+                How other nodes reach this one: the Blend port. Only a Blend
+                core node needs it, so it starts empty and empty keeps the
+                node's default. No public IP is asked for: the node learns the
+                address its peers see it at. This is the step that writes the
+                config.
+
             - name: "Generate the config"
               action: click_object
               find_by: "objectName"
@@ -184,7 +205,7 @@ sections:
 
             - name: "Generate succeeded and routed to the keys step"
               action: wait_for
-              texts: ["Back up your keys", "3. Keys", "Download keystore.yaml",
+              texts: ["Back up your keys", "4. Keys", "Download keystore.yaml",
                       "I've backed up my keys somewhere safe"]
               timeout: 15000
               screenshot: "blockchain-ui-setup-keys.png"
@@ -215,7 +236,7 @@ sections:
 
             - name: "Step 4 is one toggle"
               action: wait_for
-              texts: ["Fund your node", "4. Fund", "Claim mined rewards automatically"]
+              texts: ["Fund your node", "5. Fund", "Claim mined rewards automatically"]
               timeout: 8000
               screenshot: "blockchain-ui-setup-mining.png"
               text: |

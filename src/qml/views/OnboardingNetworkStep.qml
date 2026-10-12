@@ -15,7 +15,6 @@ ColumnLayout {
     id: root
 
     property bool busy: false
-    property string errorMessage: ""
     property bool locked: false
     // Peers the build ships. Quick start uses these silently; Advanced has to
     // offer them too, or taking the longer route means starting from nothing.
@@ -28,9 +27,10 @@ ColumnLayout {
     readonly property bool needsPeers: root.peerCount === 0
     readonly property bool valid: !root.needsDeployment && !root.needsPeers
 
-    signal submitted(string outputPath, var initialPeers, int netPort, int blendPort,
-                     string httpAddr, string externalAddress, bool noPublicIpCheck,
-                     int deploymentMode, string deploymentConfigPath, string statePath)
+    // What the host generates from, together with the connectivity step's.
+    readonly property var initialPeers: d.peers()
+    readonly property int deploymentMode: d.custom ? 1 : 0
+    readonly property string deploymentPath: customDeploymentField.text.trim()
 
     // Called by the host when setup opens, so a second run does not inherit
     // the first one's typing.
@@ -38,17 +38,6 @@ ColumnLayout {
         d.custom = false
         customDeploymentField.text = ""
         initialPeersArea.text = root.defaultPeers.join("\n")
-    }
-
-    function submit() {
-        root.submitted("",
-                       d.peers(),
-                       0, 0,
-                       "", "",
-                       false,
-                       d.custom ? 1 : 0,
-                       customDeploymentField.text.trim(),
-                       "")
     }
 
     Component.onCompleted: root.reset()
@@ -60,6 +49,7 @@ ColumnLayout {
 
     QtObject {
         id: d
+
         property bool custom: false
 
         function peers() {
@@ -192,29 +182,18 @@ ColumnLayout {
         }
     }
 
+    Item { Layout.fillHeight: true }
+
+    // This step doesn't write the config; the next one does.
     LogosText {
         Layout.fillWidth: true
         visible: !root.locked
-        text: qsTr("Generating writes your config. These settings cannot be changed "
-                   + "afterwards without editing the file by hand.")
+        text: qsTr("Your config is written at the end of the next step. After that, these "
+                   + "settings can only be changed by editing the file by hand.")
         color: Theme.palette.textTertiary
         font.pixelSize: Theme.typography.secondaryText
         wrapMode: Text.WordWrap
     }
-
-    LogosNotice {
-        objectName: "networkErrorNotice"
-        Layout.fillWidth: true
-        shown: root.errorMessage.length > 0
-        severity: LogosNotice.Error
-        title: qsTr("Could not generate a config")
-        message: root.errorMessage
-        actions: [
-            LogosCopyButton { value: root.errorMessage }
-        ]
-    }
-
-    Item { Layout.fillHeight: true }
 
     FileDialog {
         id: deploymentConfigFileDialog

@@ -97,8 +97,9 @@ ColumnLayout {
                                                            : root.configExists
         property int stepIndex: -1
         readonly property var steps: root.newNode
-            ? ["network", "keys", "fund"]
-            : (mode === "existing" ? ["setup"] : ["setup", "network", "keys", "fund"])
+            ? ["network", "connectivity", "keys", "fund"]
+            : (mode === "existing" ? ["setup"]
+                                   : ["setup", "network", "connectivity", "keys", "fund"])
 
         readonly property string step: (stepIndex >= 0 && stepIndex < steps.length)
             ? steps[stepIndex]
@@ -140,10 +141,13 @@ ColumnLayout {
                     next()
                 break
             case "network":
+                next()
+                break
+            case "connectivity":
                 if (d.configWritten)
                     next()
                 else
-                    networkStep.submit()
+                    d.generate()
                 break
             case "keys":
                 next()
@@ -164,6 +168,8 @@ ColumnLayout {
             case "network":
                 // Nothing left to validate once it is written.
                 return d.configWritten || networkStep.valid
+            case "connectivity":
+                return d.configWritten || connectivityStep.valid
             case "keys":
                 return root.keysBackedUp || keysStep.acknowledged
             case "fund":
@@ -189,6 +195,8 @@ ColumnLayout {
                 if (networkStep.needsPeers)
                     return qsTr("Add at least one bootstrap peer to continue")
                 return ""
+            case "connectivity":
+                return d.configWritten ? "" : qsTr("Fix the highlighted field to continue")
             case "keys":
                 return qsTr("Confirm you saved your keys to continue")
             case "fund":
@@ -206,7 +214,7 @@ ColumnLayout {
             switch (step) {
             case "setup":
                 return mode === "existing" ? qsTr("Start node") : qsTr("Continue")
-            case "network":
+            case "connectivity":
                 return d.configWritten ? qsTr("See your keys") : qsTr("Generate config")
             case "fund":
                 return qsTr("Start node")
@@ -217,10 +225,19 @@ ColumnLayout {
 
         // Rail labels, index-for-index with `steps` above. Short on purpose:
         // every column is the same width, so a long one only elides.
+        // The network step's chain and peers, plus how others reach this node.
+        function generate() {
+            root.generateRequested("", networkStep.initialPeers, 0, connectivityStep.blendPort,
+                                   "", "", false,
+                                   networkStep.deploymentMode, networkStep.deploymentPath,
+                                   root.newNode)
+        }
+
         readonly property var stepNames: steps.map(function (name) {
             switch (name) {
             case "setup":   return qsTr("Setup")
             case "network": return qsTr("Network")
+            case "connectivity": return qsTr("Connectivity")
             case "keys":    return qsTr("Keys")
             case "fund":    return qsTr("Fund")
             default:        return name
@@ -233,6 +250,7 @@ ColumnLayout {
         d.mode = "generate"
         d.generatedThisRun = false
         networkStep.reset()
+        connectivityStep.reset()
     }
 
     // ---- Welcome -----------------------------------------------------------
@@ -353,8 +371,9 @@ ColumnLayout {
             switch (d.step) {
             case "setup":   return 0
             case "network": return 1
-            case "keys":    return 2
-            case "fund":    return 3
+            case "connectivity": return 2
+            case "keys":    return 3
+            case "fund":    return 4
             default:        return 0
             }
         }
@@ -378,14 +397,14 @@ ColumnLayout {
             locked: d.configWritten
             defaultPeers: root.bootstrapPeers
             userConfigPath: root.userConfigPath
-            errorMessage: d.step === "network" ? root.errorMessage : ""
-            onSubmitted: function(outputPath, initialPeers, netPort, blendPort, httpAddr,
-                                  externalAddress, noPublicIpCheck, deploymentMode,
-                                  deploymentPath, statePath) {
-                root.generateRequested(outputPath, initialPeers, netPort, blendPort, httpAddr,
-                                       externalAddress, noPublicIpCheck, deploymentMode,
-                                       deploymentPath, root.newNode)
-            }
+        }
+
+        OnboardingConnectivityStep {
+            id: connectivityStep
+            objectName: "onboardingConnectivityStep"
+            locked: d.configWritten
+            userConfigPath: root.userConfigPath
+            errorMessage: d.step === "connectivity" ? root.errorMessage : ""
         }
 
         OnboardingKeysStep {

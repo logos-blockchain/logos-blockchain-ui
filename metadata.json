@@ -9,6 +9,23 @@
   "icon": "src/icons/blockchain.png",
   "view": "qml/BlockchainView.qml",
   "dependencies": ["blockchain_module"],
+  "provides": [
+    {
+      "intent": "node.sign_referral_enrolment",
+      "params": [
+        { "name": "program", "type": "string", "required": true },
+        { "name": "participant_account", "type": "string", "required": true },
+        { "name": "referrer", "type": "string", "required": true }
+      ]
+    },
+    {
+      "intent": "node.sign_referral_payout",
+      "params": [
+        { "name": "program_account", "type": "string", "required": true },
+        { "name": "blinding_factor", "type": "string", "required": true }
+      ]
+    }
+  ],
   "bootstrap_peers": [],
   "lez_channel_id": "",
   "nix": {

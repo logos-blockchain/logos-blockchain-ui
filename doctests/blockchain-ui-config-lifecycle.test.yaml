@@ -454,6 +454,11 @@ sections:
                 abandons the run, and sharing a button between them would put
                 the destructive one where a confident click lands.
 
+            - name: "Continue past the network step"
+              action: click_object
+              find_by: "objectName"
+              find_value: "onboardingAdvanceButton"
+
             - name: "The step will generate, not skip"
               # The bug this catches: judging "already written" from the app's
               # CURRENT config — which of course exists — made this step walk

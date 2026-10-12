@@ -13,6 +13,7 @@ OnboardingWelcome 1.0 OnboardingWelcome.qml
 OnboardingChoiceCard 1.0 OnboardingChoiceCard.qml
 OnboardingSetupStep 1.0 OnboardingSetupStep.qml
 OnboardingNetworkStep 1.0 OnboardingNetworkStep.qml
+OnboardingConnectivityStep 1.0 OnboardingConnectivityStep.qml
 OnboardingKeysStep 1.0 OnboardingKeysStep.qml
 OnboardingMiningStep 1.0 OnboardingMiningStep.qml
 ChannelDepositView 1.0 ChannelDepositView.qml

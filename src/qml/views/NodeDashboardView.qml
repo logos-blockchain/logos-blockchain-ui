@@ -65,6 +65,12 @@ Item {
     property double nodeDiskUsedMb: -1
     property double nodeDiskFreeMb: -1
     property int blendRole: BlockchainBackend.Unknown
+    property int blendState: BlockchainBackend.BlendUnknown
+    property int blendActiveFromEpoch: -1
+    property int blendWithdrawAt: -1
+    property string blendRewardsTotal: ""
+    property string blendLastReward: ""
+    property int blendLastRewardEpoch: -1
     // Debounced in BlockchainView — a single blip in `mode` must not repaint
     // the card. `hasBeenOnline` separates a first bootstrap from a node that
     // fell behind; the node reports the same `mode` for both.
@@ -564,6 +570,13 @@ Item {
         // it on any other mode or on leaving Running. Re-checking those two
         // could only ever hide a role the node has actually reported.
         readonly property string blendLabel: {
+            switch (root.blendState) {
+            case BlockchainBackend.BlendPending:
+            case BlockchainBackend.BlendActivating: return qsTr("Joining")
+            case BlockchainBackend.BlendActive:     return qsTr("Core")
+            case BlockchainBackend.BlendInactive:   return qsTr("Inactive")
+            case BlockchainBackend.BlendWithdrawn:  return qsTr("Leaving")
+            }
             switch (root.blendRole) {
             case BlockchainBackend.Core:     return qsTr("Core")
             case BlockchainBackend.Edge:     return qsTr("Edge")
@@ -573,6 +586,18 @@ Item {
         }
 
         readonly property string blendCaption: {
+            if (root.blendState === BlockchainBackend.BlendPending)
+                return qsTr("Declaration submitted")
+            if (root.blendState === BlockchainBackend.BlendActivating && root.blendActiveFromEpoch >= 0)
+                return qsTr("Core from epoch %1").arg(root.blendActiveFromEpoch)
+            if (root.blendState === BlockchainBackend.BlendActive)
+                return qsTr("Mixing for the network")
+            if (root.blendState === BlockchainBackend.BlendInactive)
+                return qsTr("Missed its activity")
+            if (root.blendState === BlockchainBackend.BlendWithdrawn)
+                return root.blendWithdrawAt >= 0
+                    ? qsTr("Stake unlocks at epoch %1").arg(root.blendWithdrawAt + 1)
+                    : qsTr("Withdrawal submitted")
             switch (root.blendRole) {
             case BlockchainBackend.Core:     return qsTr("Mixing your proposals")
             case BlockchainBackend.Edge:     return qsTr("Mixed by the core network")
@@ -585,6 +610,13 @@ Item {
         // gets for free. Tinting both `info` blue made the role that took work
         // look identical to the one that took none.
         readonly property color blendColor: {
+            switch (root.blendState) {
+            case BlockchainBackend.BlendPending:
+            case BlockchainBackend.BlendActivating:
+            case BlockchainBackend.BlendWithdrawn:  return Theme.palette.textSecondary
+            case BlockchainBackend.BlendActive:     return Theme.palette.accentYellowSoft
+            case BlockchainBackend.BlendInactive:   return Theme.palette.error
+            }
             switch (root.blendRole) {
             case BlockchainBackend.Core:     return Theme.palette.accentYellowSoft
             case BlockchainBackend.Edge:     return Theme.palette.info
@@ -601,6 +633,20 @@ Item {
         // poll-derived ones: Balance, Vouchers, Blend, Peer ID and Epoch come
         // from elsewhere and are not stale just because this poll is.
         readonly property real infoOpacity: root.statusStale ? 0.45 : 1.0
+
+        // Only a core node is paid, so the tile only shows once this one has
+        // joined, or has been paid before.
+        readonly property bool blendEarned: root.blendRewardsTotal.length > 0
+                                            && root.blendRewardsTotal !== "0"
+        // Anything past "not declared" has joined.
+        readonly property bool blendEarning: d.blendEarned
+                                             || root.blendState >= BlockchainBackend.BlendPending
+        readonly property string blendRewardsCaption: {
+            if (root.blendLastRewardEpoch >= 0 && root.blendLastReward.length > 0)
+                return qsTr("+%1 for epoch %2").arg(Units.formatPlain(root.blendLastReward))
+                                               .arg(root.blendLastRewardEpoch)
+            return qsTr("Paid automatically, two epochs later")
+        }
 
         // The longest value a tile has to hold decides the column count: below
         // this the grid drops a column instead of squeezing the number.
@@ -863,6 +909,24 @@ Item {
                         LogosInfoButton {
                             title: qsTr("Blend")
                             dialogContentItem: InfoSections { info: InfoContent.blend }
+                        }
+                    ]
+                }
+
+                LogosStatCard {
+                    objectName: "blendRewardsCard"
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.minimumWidth: d.minTileWidth
+                    visible: d.blendEarning
+                    label: qsTr("Blend Rewards (%1)").arg(Units.SYMBOL)
+                    value: d.blendEarned ? Units.formatPlain(root.blendRewardsTotal) : qsTr("—")
+                    valueFontSizeMode: Text.HorizontalFit
+                    caption: d.blendRewardsCaption
+                    labelTrailing: [
+                        LogosInfoButton {
+                            title: qsTr("Blend Rewards")
+                            dialogContentItem: InfoSections { info: InfoContent.blendRewards }
                         }
                     ]
                 }
