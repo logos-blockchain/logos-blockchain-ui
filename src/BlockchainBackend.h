@@ -92,7 +92,7 @@ public slots:
     QVariantMap getClaimableVouchers() override;
     QVariantMap generateConfig(QString outputPath, QStringList initialPeers, int netPort,
                        int blendPort, QString httpAddr, QString externalAddress,
-                       bool noPublicIpCheck, int deploymentMode,
+                       bool noPublicIpCheck, bool enableOpenMetrics, int deploymentMode,
                        QString deploymentConfigPath, bool newNode) override;
     QVariantMap upgradeConfig() override;
     QVariantMap getNotes(QString walletAddressHex, QString optionalTipHex) override;

@@ -86,8 +86,8 @@ Item {
         }
 
         function generateConfig(outputPath, initialPeers, netPort, blendPort, httpAddr,
-                                externalAddress, noPublicIpCheck, deploymentMode,
-                                deploymentConfigPath, newNode, quickStart) {
+                                externalAddress, noPublicIpCheck, enableOpenMetrics,
+                                deploymentMode, deploymentConfigPath, newNode, quickStart) {
             if (!root.backend)
                 return
             d.setupBusy = true
@@ -97,7 +97,8 @@ Item {
             logos.watch(
                 root.backend.generateConfig(outputPath, initialPeers, netPort, blendPort,
                                             httpAddr, externalAddress, noPublicIpCheck,
-                                            deploymentMode, deploymentConfigPath, newNode),
+                                            enableOpenMetrics, deploymentMode,
+                                            deploymentConfigPath, newNode),
                 function(result) {
                     if (!result.success) {
                         d.setupBusy = false
@@ -199,11 +200,11 @@ Item {
         errorMessage: d.setupError
 
         onGenerateRequested: function(outputPath, initialPeers, netPort, blendPort, httpAddr,
-                                      externalAddress, noPublicIpCheck, deploymentMode,
-                                      deploymentConfigPath, newNode) {
+                                      externalAddress, noPublicIpCheck, enableOpenMetrics,
+                                      deploymentMode, deploymentConfigPath, newNode) {
             d.generateConfig(outputPath, initialPeers, netPort, blendPort, httpAddr,
-                             externalAddress, noPublicIpCheck, deploymentMode,
-                             deploymentConfigPath, newNode,
+                             externalAddress, noPublicIpCheck, enableOpenMetrics,
+                             deploymentMode, deploymentConfigPath, newNode,
                              onboardingView.atWelcomeScreen)
         }
 

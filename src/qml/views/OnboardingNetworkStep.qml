@@ -30,13 +30,15 @@ ColumnLayout {
 
     signal submitted(string outputPath, var initialPeers, int netPort, int blendPort,
                      string httpAddr, string externalAddress, bool noPublicIpCheck,
-                     int deploymentMode, string deploymentConfigPath, string statePath)
+                     bool enableOpenMetrics, int deploymentMode, string deploymentConfigPath,
+                     string statePath)
 
     // Called by the host when setup opens, so a second run does not inherit
     // the first one's typing.
     function reset() {
         d.custom = false
         customDeploymentField.text = ""
+        openMetricsSwitch.checked = true
         initialPeersArea.text = root.defaultPeers.join("\n")
     }
 
@@ -46,6 +48,7 @@ ColumnLayout {
                        0, 0,
                        "", "",
                        false,
+                       openMetricsSwitch.checked,
                        d.custom ? 1 : 0,
                        customDeploymentField.text.trim(),
                        "")
@@ -87,8 +90,8 @@ ColumnLayout {
         title: qsTr("These settings are already written")
         message: root.userConfigPath.length > 0
             ? qsTr("Your node config exists, and it cannot be generated a second time, so "
-                   + "nothing typed here would reach it. To change the peers or the "
-                   + "deployment, edit the file directly:\n\n%1").arg(root.userConfigPath)
+                   + "nothing typed here would reach it. To change the peers, the "
+                   + "deployment or monitoring, edit the file directly:\n\n%1").arg(root.userConfigPath)
             : qsTr("Your node config exists, and it cannot be generated a second time, so "
                    + "nothing typed here would reach it. Settings shows you where the file is.")
     }
@@ -190,6 +193,50 @@ ColumnLayout {
             font.family: Theme.typography.mono
             font.pixelSize: Theme.typography.secondaryText
         }
+    }
+
+    LogosText {
+        Layout.topMargin: Theme.spacing.medium
+        text: qsTr("Monitoring")
+        color: Theme.palette.text
+        font.pixelSize: Theme.typography.primaryText
+        font.weight: Theme.typography.weightBold
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.spacing.small
+
+        LogosText {
+            text: qsTr("OpenMetrics")
+            color: Theme.palette.text
+            font.pixelSize: Theme.typography.secondaryText
+            font.weight: Theme.typography.weightMedium
+        }
+
+        Item { Layout.fillWidth: true }
+
+        LogosInfoButton {
+            title: qsTr("OpenMetrics")
+            dialogContentItem: InfoSections { info: InfoContent.openMetrics }
+        }
+
+        LogosSwitch {
+            id: openMetricsSwitch
+            objectName: "networkOpenMetricsSwitch"
+            enabled: !root.locked
+            checked: true
+        }
+    }
+
+    LogosText {
+        Layout.fillWidth: true
+        Layout.minimumWidth: 0
+        Layout.topMargin: -Theme.spacing.small
+        text: qsTr("Lets other modules read this node's metrics.")
+        color: Theme.palette.textSecondary
+        font.pixelSize: Theme.typography.secondaryText
+        wrapMode: Text.WordWrap
     }
 
     LogosText {

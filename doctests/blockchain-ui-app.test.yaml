@@ -157,7 +157,7 @@ sections:
               find_by: "objectName"
               find_value: "onboardingAdvanceButton"
 
-            - name: "Step 2 is network and peers only"
+            - name: "Step 2 is network, peers and monitoring only"
               action: wait_for
               texts:
                 - "Network"
@@ -165,10 +165,12 @@ sections:
                 - "Default (public testnet)"
                 - "Custom deployment file"
                 - "Bootstrap peers"
+                - "Monitoring"
+                - "OpenMetrics"
               timeout: 8000
               screenshot: "blockchain-ui-setup-network.png"
               text: |
-                Two questions, and nothing else. Ports, NAT, external address
+                Three questions, and nothing else. Ports, NAT, external address
                 and storage paths are not on this screen at all: every one has
                 a working default, none is a decision a first-time operator is
                 equipped to make, and the config file still holds them all.
@@ -176,6 +178,10 @@ sections:
                 Bootstrap peers are written into the config exactly as entered
                 — an empty list is an empty list, not a fallback to the
                 deployment's own peers.
+
+                OpenMetrics starts on, so other modules can read the node's
+                metrics. It is written into the config explicitly either way,
+                never left to the module's default.
 
             # metadata.json ships no bootstrap_peers, so the field starts empty
             # and Generate stays disabled until one is entered. 203.0.113.0/24

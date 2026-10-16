@@ -3431,7 +3431,7 @@ QVariantMap BlockchainBackend::transferFunds(
 QVariantMap BlockchainBackend::generateConfig(
     QString outputPath, QStringList initialPeers, int netPort, int blendPort,
     QString httpAddr, QString externalAddress, bool noPublicIpCheck,
-    int deploymentMode, QString deploymentConfigPath, bool newNode)
+    bool enableOpenMetrics, int deploymentMode, QString deploymentConfigPath, bool newNode)
 {
     if (!m_blockchainClient)
         return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
@@ -3472,6 +3472,9 @@ QVariantMap BlockchainBackend::generateConfig(
         normalized.insert("external_address", externalAddress.trimmed());
     if (noPublicIpCheck)
         normalized.insert("no_public_ip_check", true);
+
+    normalized.insert("enable_open_metrics", enableOpenMetrics);
+
     // A node folder makes this node self-contained: config, keystore, state,
     // database and logs all inside one directory, so a second node shares
     // nothing with the first and the first needs no clearing up.

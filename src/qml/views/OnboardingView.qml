@@ -70,7 +70,8 @@ ColumnLayout {
 
     signal generateRequested(string outputPath, var initialPeers, int netPort, int blendPort,
                              string httpAddr, string externalAddress, bool noPublicIpCheck,
-                             int deploymentMode, string deploymentConfigPath, bool newNode)
+                             bool enableOpenMetrics, int deploymentMode,
+                             string deploymentConfigPath, bool newNode)
     signal userConfigPathSelected(string path)
     signal deploymentConfigPathSelected(string path)
     signal powConfigureRequested(string configJson)
@@ -248,7 +249,7 @@ ColumnLayout {
         canExit: root.canExit
         quickStartAvailable: root.quickStartAvailable
         onQuickStartRequested: root.generateRequested(
-            "", root.bootstrapPeers, 0, 0, "", "", false, 0, "", root.newNode)
+            "", root.bootstrapPeers, 0, 0, "", "", false, true, 0, "", root.newNode)
         onAdvancedRequested: d.stepIndex = 0
         onExitRequested: root.exitRequested()
     }
@@ -380,11 +381,11 @@ ColumnLayout {
             userConfigPath: root.userConfigPath
             errorMessage: d.step === "network" ? root.errorMessage : ""
             onSubmitted: function(outputPath, initialPeers, netPort, blendPort, httpAddr,
-                                  externalAddress, noPublicIpCheck, deploymentMode,
-                                  deploymentPath, statePath) {
+                                  externalAddress, noPublicIpCheck, enableOpenMetrics,
+                                  deploymentMode, deploymentPath, statePath) {
                 root.generateRequested(outputPath, initialPeers, netPort, blendPort, httpAddr,
-                                       externalAddress, noPublicIpCheck, deploymentMode,
-                                       deploymentPath, root.newNode)
+                                       externalAddress, noPublicIpCheck, enableOpenMetrics,
+                                       deploymentMode, deploymentPath, root.newNode)
             }
         }
 

@@ -790,6 +790,14 @@ var bootstrapPeers = {
     docs: "https://docs.logos.co/blockchain/get-started/run-a-logos-blockchain-node-from-basecamp"
 }
 
+var openMetrics = {
+    title: "OpenMetrics",
+    what: "Makes the node's metrics available on request, in OpenMetrics "
+        + "format.",
+    calc: "Other modules use this to read the node's metrics. Turned off, "
+        + "they can't."
+}
+
 var powSearchThreads = {
     title: "Search threads",
     what: "Worker threads the ticket search may use.",
