@@ -1,0 +1,45 @@
+name: Build
+
+# Compile-check the module on every PR and on master, across all shipped
+# platforms — mirrors the release matrix so a PR can't merge something that
+# only builds on one OS. (release.yml only runs on tags, so nothing guarded
+# PRs before this.)
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: x86_64-linux
+          - os: ubuntu-24.04-arm
+            arch: aarch64-linux
+          - os: macos-14
+            arch: aarch64-darwin
+
+    name: build (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # Pull from the shared logos-co cache to keep builds fast. authToken is
+      # empty on fork PRs (secrets are withheld) — the action still reads the
+      # public cache, it just can't push.
+      - uses: cachix/cachix-action@v15
+        with:
+          name: logos-co
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      - name: Build module
+        run: nix build '.#default' -L
