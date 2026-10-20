@@ -17,7 +17,6 @@ LogosDialog {
 
     signal signRequested()
     signal declineRequested()
-    signal startNodeRequested()
 
     title: qsTr("Sign message")
     backgroundColor: Theme.palette.surface
@@ -98,8 +97,11 @@ LogosDialog {
             Layout.fillWidth: true
             shown: root.request.valid
             severity: LogosNotice.Warning
-            title: qsTr("You're signing with your node's key")
-            message: qsTr("Only sign if you started this yourself in %1.").arg(root.request.requester)
+            title: root.request.secret ? qsTr("You're sharing a key derived from your node's key")
+                                       : qsTr("You're signing with your node's key")
+            message: root.request.secret
+                     ? qsTr("Only share it if you started this yourself in %1.").arg(root.request.requester)
+                     : qsTr("Only sign if you started this yourself in %1.").arg(root.request.requester)
         }
 
         LogosText {
@@ -150,7 +152,9 @@ LogosDialog {
                     Layout.fillWidth: true
                     Layout.topMargin: Theme.spacing.small
                     visible: root.request.valid
-                    text: qsTr("The signature can't be used as a transaction and can't move funds.")
+                    text: root.request.secret
+                          ? qsTr("It can't sign anything and can't move funds.")
+                          : qsTr("The signature can't be used as a transaction and can't move funds.")
                     wrapMode: Text.WordWrap
                     color: Theme.palette.textTertiary
                     font.pixelSize: Theme.typography.secondaryText
@@ -159,7 +163,7 @@ LogosDialog {
                 LogosFrame {
                     objectName: "signMessageBody"
                     Layout.fillWidth: true
-                    visible: root.request.valid
+                    visible: root.request.valid && !root.request.secret
                     backgroundColor: Theme.palette.surfaceRaised
                     borderColor: "transparent"
                     radius: Theme.spacing.radiusMedium
@@ -196,18 +200,6 @@ LogosDialog {
                 }
 
                 LogosNotice {
-                    objectName: "signNodeStopped"
-                    Layout.fillWidth: true
-                    shown: root.request.valid && !root.request.nodeRunning
-                    severity: LogosNotice.Warning
-                    title: root.request.nodeStarting ? qsTr("Your node is starting")
-                                                     : qsTr("Your node isn't running")
-                    message: root.request.canStartNode
-                             ? qsTr("Only a running node can sign. Start it, then sign.")
-                             : qsTr("Only a running node can sign. Finish setting up your node first.")
-                }
-
-                LogosNotice {
                     objectName: "signError"
                     Layout.fillWidth: true
                     shown: root.request.actionError.length > 0 && !root.request.busy
@@ -236,18 +228,12 @@ LogosDialog {
             onClicked: root.declineRequested()
         },
         LogosButton {
-            objectName: "signStartNodeButton"
-            visible: root.request.valid && !root.request.nodeRunning
-            enabled: root.request.canStartNode && !root.request.nodeStarting
-            text: root.request.nodeStarting ? qsTr("Starting…") : qsTr("Start node")
-            onClicked: root.startNodeRequested()
-        },
-        LogosButton {
             objectName: "signApproveButton"
-            visible: root.request.valid && root.request.nodeRunning
+            visible: root.request.valid
             variant: LogosButton.Variant.Primary
             enabled: root.request.canSign
-            text: root.request.busy ? qsTr("Signing…") : qsTr("Sign")
+            text: root.request.secret ? (root.request.busy ? qsTr("Sharing…") : qsTr("Share"))
+                                      : (root.request.busy ? qsTr("Signing…") : qsTr("Sign"))
             onClicked: root.signRequested()
         }
     ]

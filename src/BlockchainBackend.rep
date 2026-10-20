@@ -37,6 +37,9 @@ class BlockchainBackend
     PROP(QVariantMap configPowSection READONLY)
     PROP(QString nodeDataDir READONLY)
     PROP(QString nodeKeystorePath READONLY)
+    // The keystore's BlendSigning public key: the node ID for signing when the config itself
+    // can't be read (one for an older or newer node).
+    PROP(QString keystoreSigningKey READONLY)
     // Whether the keystore for the current config has been saved somewhere
     // else. Set by a successful backupKeystore and by nothing else: the wizard's
     // checkbox lets you past the step, it does not make a copy exist.
@@ -260,6 +263,13 @@ class BlockchainBackend
     // backed up is the file, and a list that quietly omitted the blend and
     // network keys would understate what is at stake.
     SLOT(QVariantMap getKeystoreKeys(QString configPath))
+    // Answers an Uplink referral request (node.sign_referral_enrolment,
+    // node.sign_referral_payout, node.referral_receipt_secret; ReferralSigning.h) once the
+    // user has approved it. Builds what to sign from the request and the keystore's
+    // BlendSigning key, refuses unless it is exactly `shownPayloadHex` (what the dialog
+    // showed; "" for the receipt secret), then signs (or derives the receipt secret) and
+    // wipes the key. Answers { success, value: { signature | receipt_secret, public_key } }.
+    SLOT(QVariantMap answerReferralRequest(QString intent, QVariantMap params, QString shownPayloadHex))
     SLOT(void setClaimHistoryFilter(int mode))
     // Same, for the mining history. Two lists, two filters: they are
     // different tabs, and one shared filter would move both.
@@ -267,7 +277,6 @@ class BlockchainBackend
     SLOT(QVariantMap joinBlendCore(QString locator, QString stakeNoteId))
     SLOT(QVariantMap withdrawBlendCore())
     SLOT(QVariantMap getBlendReachability())
-    SLOT(QVariantMap signMessage(QString domain, QString payloadHex))
     SLOT(void clearBlocks())
     SLOT(void copyToClipboard(QString text))
 }

@@ -24,21 +24,27 @@
         { "name": "program_account", "type": "string", "required": true },
         { "name": "blinding_factor", "type": "string", "required": true }
       ]
+    },
+    {
+      "intent": "node.referral_receipt_secret",
+      "params": [
+        { "name": "purpose", "type": "string", "required": false }
+      ]
     }
   ],
   "bootstrap_peers": [],
   "lez_channel_id": "",
   "nix": {
     "packages": {
-      "build": [],
-      "runtime": ["qt6.qtdeclarative", "zstd", "abseil-cpp"]
+      "build": ["openssl"],
+      "runtime": ["qt6.qtdeclarative", "zstd", "abseil-cpp", "openssl"]
     },
     "external_libraries": [{ "name": "process_stats" }],
     "cmake": {
-      "find_packages": ["Qt6Gui"],
+      "find_packages": ["Qt6Gui", "OpenSSL"],
       "extra_sources": [],
       "extra_include_dirs": [],
-      "extra_link_libraries": ["Qt6::Gui"]
+      "extra_link_libraries": ["Qt6::Gui", "OpenSSL::Crypto"]
     }
   }
 }

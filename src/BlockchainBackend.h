@@ -17,6 +17,7 @@
 #include "BlockModel.h"
 #include "ClaimLedger.h"
 #include "ClaimsModel.h"
+#include "ReferralSigning.h"
 
 class LogosAPI;
 class LogosAPIClient;
@@ -117,7 +118,7 @@ public slots:
     QVariantMap getKeystoreKeys(QString configPath) override;
     QVariantMap joinBlendCore(QString locator, QString stakeNoteId) override;
     QVariantMap withdrawBlendCore() override;
-    QVariantMap signMessage(QString domain, QString payloadHex) override;
+    QVariantMap answerReferralRequest(QString intent, QVariantMap params, QString shownPayloadHex) override;
     QVariantMap getBlendReachability() override;
 
 
@@ -138,6 +139,7 @@ private:
     void setError(const QString& message);
     void refreshBlendRole();
     void refreshBlendConfig();
+    void refreshKeystoreSigningKey();
     void refreshBlendRequirements();
     void refreshBlend(bool force = false);
     QElapsedTimer m_blendSampled;

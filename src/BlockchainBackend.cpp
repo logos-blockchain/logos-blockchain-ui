@@ -1314,6 +1314,7 @@ QVariantMap jsonObjectOf(const LogosResult& r)
 
 void BlockchainBackend::refreshBlendConfig()
 {
+    refreshKeystoreSigningKey();
     const QString path = userConfig().trimmed();
     if (!m_blockchainClient || path.isEmpty()) {
         setBlendConfig({});
@@ -1405,18 +1406,6 @@ QVariantMap BlockchainBackend::withdrawBlendCore()
     const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("blend_withdraw")));
     refreshBlend(/*force=*/true);
-    if (!r.success)
-        return result::toVariantMap(r);
-    return result::toVariantMap(LogosResult{true, jsonObjectOf(r), QVariant()});
-}
-
-QVariantMap BlockchainBackend::signMessage(QString domain, QString payloadHex)
-{
-    if (!m_blockchainClient || status() != Running)
-        return result::toVariantMap(result::err(tr("The node is not running.")));
-
-    const LogosResult r = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, QStringLiteral("sign_message"), domain, payloadHex));
     if (!r.success)
         return result::toVariantMap(r);
     return result::toVariantMap(LogosResult{true, jsonObjectOf(r), QVariant()});
@@ -1720,6 +1709,59 @@ void BlockchainBackend::markKeysBackedUp()
 // render. Unlike readAccountRoles this does not cross-reference the config:
 // the keystore holds keys the config never names (blend signing, network
 // swarm), and those are exactly the ones a user would not think to save.
+namespace {
+
+// The node's keystore, read whole for one referral request and wiped by the caller: it holds
+// every secret key the node has.
+QByteArray readKeystore(const QString& path)
+{
+    QFile file(path);
+    if (path.isEmpty() || !file.open(QIODevice::ReadOnly))
+        return {};
+    return file.readAll();
+}
+
+void wipeBytes(QByteArray& bytes)
+{
+    if (!bytes.isEmpty())
+        std::fill(bytes.begin(), bytes.end(), '\0');
+    bytes.clear();
+}
+
+} // namespace
+
+void BlockchainBackend::refreshKeystoreSigningKey()
+{
+    QByteArray yaml = readKeystore(nodeKeystorePath());
+    setKeystoreSigningKey(QString::fromLatin1(referral_signing::blendSigningPublicKey(yaml).toHex()));
+    wipeBytes(yaml);
+}
+
+QVariantMap BlockchainBackend::answerReferralRequest(QString intent, QVariantMap params, QString shownPayloadHex)
+{
+    if (!referral_signing::handles(intent))
+        return result::toVariantMap(result::err(QStringLiteral("Not a referral request.")));
+    QByteArray yaml = readKeystore(nodeKeystorePath());
+    if (yaml.isEmpty())
+        return result::toVariantMap(result::err(QStringLiteral("This node has no keystore yet.")));
+    referral_signing::Prepared prepared;
+    QString error;
+    referral_signing::Answer answer;
+    if (!referral_signing::prepare(intent, params, yaml, prepared, error))
+        answer.error = error;
+    // What the user approved is what gets signed: the dialog built it from the config's key,
+    // this from the keystore's, so a keystore for another node is refused here too.
+    else if (QString::fromLatin1(prepared.message.toHex()) != shownPayloadHex.toLower())
+        answer.error = QStringLiteral("What would be signed differs from what was shown. "
+                                      "Does this node's keystore belong to its config?");
+    else
+        answer = referral_signing::answer(prepared, yaml);
+    wipeBytes(yaml);
+    if (!answer.ok)
+        return result::toVariantMap(result::err(answer.error));
+    return result::toVariantMap(LogosResult{true, answer.data, QVariant()});
+}
+
 QVariantMap BlockchainBackend::getKeystoreKeys(QString configPath)
 {
     if (!m_blockchainClient)

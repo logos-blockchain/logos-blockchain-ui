@@ -181,15 +181,12 @@ Rectangle {
         onLeaveRequested: _d.leaveBlend()
     }
 
-    // ---- node.sign_referral_*: other apps ask the node to sign ----
+    // ---- node.sign_referral_*, node.referral_receipt_secret: other apps ask the node ----
 
     SignRequestState {
         id: signRequests
-        nodeRunning: root.nodeRunning
-        nodeStarting: !!root.backend && root.backend.status === BlockchainBackend.Starting
-        canStartNode: root.hasConfig
-        signingKey: root.backend && root.backend.blendConfig.provider_id
-                    ? root.backend.blendConfig.provider_id : ""
+        signingKey: !root.backend ? ""
+                    : signRequests.nodeKey(root.backend.blendConfig.provider_id, root.backend.keystoreSigningKey)
         onCurrentChanged: current !== null ? signMessageDialog.open() : signMessageDialog.close()
     }
 
@@ -206,7 +203,6 @@ Rectangle {
         objectName: "signMessageDialog"
         request: signRequests
 
-        onStartNodeRequested: if (root.backend) root.backend.startBlockchain()
         onDeclineRequested: {
             logos.respond(signRequests.requestId, false, {},
                           signRequests.malformed ? "bad_request" : "cancelled")
@@ -219,6 +215,7 @@ Rectangle {
         id: signConfirmDialog
         requester: signRequests.requester
         canConfirm: signRequests.canSign
+        secret: signRequests.secret
 
         // A failure stays on the signing dialog so the user can retry or decline.
         onConfirmed: {
@@ -228,8 +225,10 @@ Rectangle {
             const built = signRequests.built
             signRequests.busy = true
             signRequests.actionError = ""
+            // Signed (or derived) from the node's keystore, only if it builds the bytes shown.
             logos.watch(
-                root.backend.signMessage(built.domain, built.payloadHex),
+                root.backend.answerReferralRequest(signRequests.intent, signRequests.current.params,
+                                                   built.payloadHex),
                 function(result) {
                     if (signRequests.requestId !== requestId)
                         return
@@ -240,9 +239,12 @@ Rectangle {
                     }
                     if (result.success) {
                         logos.respond(requestId, true,
-                                      { signature: result.value.signature,
-                                        public_key: result.value.public_key,
-                                        payload_hex: built.payloadHex }, "")
+                                      built.secret
+                                      ? { receipt_secret: result.value.receipt_secret,
+                                          public_key: result.value.public_key }
+                                      : { signature: result.value.signature,
+                                          public_key: result.value.public_key,
+                                          payload_hex: built.payloadHex }, "")
                         signRequests.next()
                     } else {
                         signRequests.busy = false

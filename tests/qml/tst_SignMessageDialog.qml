@@ -13,7 +13,6 @@ Item {
 
     SignRequestState {
         id: state
-        nodeRunning: true
         signingKey: "a1ee7c1a79aa778692f23de269d3f79fcf17a4a9b596d42675fd7bb386e72f09"
     }
 
@@ -56,7 +55,7 @@ Item {
             confirmedSpy.clear()
             declineSpy.clear()
             state.add("r1", "node.sign_referral_enrolment",
-                      { program: "LezReferralProgram1", participant_account: "LezAccount7xKq2",
+                      { program: "09".repeat(32), participant_account: "03".repeat(32),
                         referrer: "f10c55c16abbe8cc14ed1dec6b207ee6b72d6d73e9e057b3186300d98e8389b8" },
                       "uplink_ui")
             dialog.open()
@@ -131,10 +130,10 @@ Item {
         }
 
         function test_confirm_is_disabled_when_signing_is_not_allowed() {
-            state.nodeRunning = false
+            state.busy = true
             const button = findAll(confirm.footer, i => i.objectName === "signConfirmButton")[0]
             compare(button.enabled, false)
-            state.nodeRunning = true
+            state.busy = false
             compare(button.enabled, true)
         }
     }

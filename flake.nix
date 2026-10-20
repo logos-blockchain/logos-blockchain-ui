@@ -21,13 +21,26 @@
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
-    logos-module-builder.lib.mkLogosQmlModule {
-      src = ./.;
-      configFile = ./metadata.json;
-      flakeInputs = inputs;
+    let
+      shared = {
+        src = ./.;
+        configFile = ./metadata.json;
+        flakeInputs = inputs;
 
-      externalLibInputs = {
-        process_stats = inputs.process-stats;
+        externalLibInputs = {
+          process_stats = inputs.process-stats;
+        };
       };
+
+      module = logos-module-builder.lib.mkLogosQmlModule shared;
+
+      # mkLogosQmlModule only runs tests/*.mjs; the referral signing is C++ unit tests.
+      unitTests = logos-module-builder.lib.mkLogosModuleTests
+        (shared // { testDir = ./tests; });
+    in
+    module // {
+      checks = builtins.mapAttrs
+        (system: tests: ((module.checks or {}).${system} or {}) // tests)
+        unitTests;
     };
 }

@@ -12,13 +12,18 @@ LogosDialog {
     // Who receives the signature, as SignRequestState.requester names it.
     property string requester: ""
     property bool canConfirm: false
+    // The receipt secret: shared, not signed.
+    property bool secret: false
 
     signal confirmed()
 
     objectName: "signConfirmDialog"
-    title: qsTr("Sign with your node's key?")
-    message: qsTr("There's no password: your node signs as soon as you confirm, and %1 "
-                  + "receives the signature.").arg(root.requester)
+    title: root.secret ? qsTr("Share your receipt key?") : qsTr("Sign with your node's key?")
+    message: root.secret
+             ? qsTr("There's no password: %1 receives your node's receipt key as soon as you "
+                    + "confirm.").arg(root.requester)
+             : qsTr("There's no password: your node signs as soon as you confirm, and %1 "
+                    + "receives the signature.").arg(root.requester)
     backgroundColor: Theme.palette.surface
     parent: Overlay.overlay
     anchors.centerIn: parent
@@ -34,7 +39,7 @@ LogosDialog {
             objectName: "signConfirmButton"
             variant: LogosButton.Variant.Primary
             enabled: root.canConfirm
-            text: qsTr("Sign")
+            text: root.secret ? qsTr("Share") : qsTr("Sign")
             onClicked: {
                 root.close()
                 root.confirmed()

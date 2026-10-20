@@ -24,6 +24,8 @@ logos_module(
         src/ClaimLedger.cpp
         src/ClaimsModel.h
         src/ClaimsModel.cpp
+        src/ReferralSigning.h
+        src/ReferralSigning.cpp
     # TODO(logos-co/logos-liblogos#219): only for the node module's CPU and
     # memory figures — the library behind liblogos's own host-side stats, used
     # here because those stats are not exposed to modules. Goes with the flake
@@ -32,6 +34,8 @@ logos_module(
         process_stats
     FIND_PACKAGES
         Qt6Gui
+        OpenSSL
     LINK_LIBRARIES
         Qt6::Gui
+        OpenSSL::Crypto
 )
