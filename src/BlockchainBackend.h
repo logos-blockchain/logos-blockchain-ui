@@ -94,7 +94,6 @@ public slots:
                        int blendPort, QString httpAddr, QString externalAddress,
                        bool noPublicIpCheck, int deploymentMode,
                        QString deploymentConfigPath, bool newNode) override;
-    QVariantMap upgradeConfig() override;
     QVariantMap getNotes(QString walletAddressHex, QString optionalTipHex) override;
     QVariantMap channelDepositWithNotes(QString channelIdHex,
                                     QStringList inputNoteIdHexes,
