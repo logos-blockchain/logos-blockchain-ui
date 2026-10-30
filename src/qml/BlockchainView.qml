@@ -138,16 +138,9 @@ Rectangle {
 
         configState: root.backend ? root.backend.configState
                                   : BlockchainBackend.ConfigUnknown
-        configDropped: root.backend ? root.backend.configDropped : []
-        configBackupPath: root.backend ? root.backend.configBackupPath : ""
-        mergeConfigReportPath: root.backend ? root.backend.mergeConfigReportPath : ""
         hasKeystore: !!root.backend && root.backend.nodeKeystorePath.length > 0
         refusalReason: root.backend ? root.backend.lastErrorMessage : ""
-        busy: _d.configUpgradeBusy
-        upgradeError: _d.configUpgradeError
 
-        onUpgradeRequested: _d.upgradeConfig()
-        onStartNodeRequested: if (root.backend) root.backend.startBlockchain()
         // Setup opens underneath, and the config stays Stale until a new one is
         // chosen, so the dialog has to step aside itself.
         onStartFreshRequested: {
@@ -256,7 +249,7 @@ Rectangle {
         if (!root.moduleReachable)
             return qsTr("The node service stopped responding. Restart the app.")
         if (root.backend.configState === BlockchainBackend.ConfigStale)
-            return qsTr("This config needs updating before the node can start.")
+            return qsTr("This config is from an older release, so the node can't start with it.")
         if (root.backend.configState === BlockchainBackend.ConfigUnreadable)
             return qsTr("This config can't be read, so the node can't start.")
         switch (root.backend.status) {
@@ -375,11 +368,6 @@ Rectangle {
         property bool claimSuccess: false
         property string claimMessage: ""
 
-        // The upgrade is two disk-touching module calls behind one button, so
-        // the dialog has to be able to say it is working. Only the dialog can
-        // start one, so a single flag keeps it to one at a time.
-        property bool configUpgradeBusy: false
-
         // Whether the open wizard run is creating a second node rather than
         // configuring the current one.
         property bool setupNewNode: false
@@ -400,39 +388,6 @@ Rectangle {
             !!root.backend
             && (root.backend.userConfig !== _d.baselineUserConfig
                 || root.backend.deploymentConfig !== _d.baselineDeploymentConfig)
-
-        // migrate + merge + swap, in the backend. A failure here leaves the
-        // config untouched, so there is nothing to undo — the dialog just stays
-        // on the offer with the reason attached.
-        // Why the last upgrade attempt failed, or empty
-        property string configUpgradeError: ""
-
-        function reportUpgradeFailure(error) {
-            _d.configUpgradeError = _d.errorText(error)
-            stopFailedToast.show(qsTr("Couldn't update the config"),
-                                 _d.configUpgradeError)
-            configUpgradeDialog.dismiss()
-        }
-
-        function upgradeConfig() {
-            if (!root.backend || _d.configUpgradeBusy)
-                return
-            _d.configUpgradeBusy = true
-            // Cleared per attempt, so a retry never shows the previous reason.
-            _d.configUpgradeError = ""
-            logos.watch(
-                root.backend.upgradeConfig(),
-                function(result) {
-                    _d.configUpgradeBusy = false
-                    if (!result.success)
-                        _d.reportUpgradeFailure(result.error)
-                },
-                function(error) {
-                    _d.configUpgradeBusy = false
-                    _d.reportUpgradeFailure(error)
-                }
-            )
-        }
 
         // For one-shot results (a failed claim, an explorer lookup) that have no
         // surrounding state to frame them. Deliberately not used for the status
@@ -1054,10 +1009,6 @@ Rectangle {
                         )
                     }
                     keysBackedUp:!!root.backend && root.backend.keysBackedUp
-                    configStale: !!root.backend
-                        && root.backend.configState === BlockchainBackend.ConfigStale
-
-                    onUpdateConfigRequested: _d.upgradeConfig()
                     configChangedSinceStart: _d.configChangedSinceStart
                     onUserConfigSelected: function(path) {
                         if (!root.backend || path.length === 0)

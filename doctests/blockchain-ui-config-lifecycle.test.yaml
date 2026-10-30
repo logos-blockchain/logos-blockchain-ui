@@ -1,19 +1,22 @@
-name: "The config lifecycle: refuse, update, repoint, start a second node"
+name: "The config lifecycle: refuse, repoint, start a second node"
 output: blockchain-ui-config-lifecycle.md
 release: ""
 
 intro: |
-  A node config outlives the release it was written for. `logos-blockchain-ui`
-  has to cope with that: recognise a config this build will not accept, offer to
-  rebuild it without losing the user's keys, let them point at a different one,
-  and let them stand up a second node without destroying the first.
+  A node config outlives the release it was written for. The node copes with
+  the common case itself: a config from the previous release is upgraded in
+  place when the node starts, with the original kept beside it. What is left
+  for `logos-blockchain-ui` is everything else: recognise a config this build
+  still will not accept and say so, let the user point at a different one, and
+  let them stand up a second node without destroying the first.
 
   This doc-test drives all of it **headless and without ever starting a node**.
   That is not a compromise — it is where the interesting behaviour lives. A
   config this build refuses is rejected during parsing, before any network or
   storage work, so every refusal path reproduces in milliseconds with no peers,
-  no chain and no disk state. The one thing a node would add is proof that a
-  *repaired* config runs, and that is the node's own doc-test to make.
+  no chain and no disk state. The one thing a node would add is the in-place
+  upgrade of a previous-release config, and that is the node's own doc-test to
+  make.
 
   Each section launches the app fresh, because the behaviour under test is
   exactly what the app decides at startup from what it finds on disk.
@@ -22,7 +25,7 @@ what_you_build: "The `logos-blockchain-ui` standalone app, driven headless throu
 
 what_you_learn:
   - Why nothing can validate a node config without starting the node, and what the UI does about it
-  - How a refused config is told apart from an unreadable one, and why they are offered different things
+  - How a refused config is told apart from an unreadable one, and what each is offered
   - How the app repoints at a different config without going near the setup wizard
   - How a second node is created in its own directory rather than by overwriting the first
 
@@ -51,16 +54,17 @@ sections:
       is the whole point: the node's own parser is the only thing that can tell
       the difference, and it says so in terms the UI has to act on.
 
-      They differ in one way that matters to the user. The first sits beside a
-      `keystore.yaml`, so its keys can be carried into a rebuilt config. The
-      second does not, so there is nothing to rebuild *from* — and the app has
-      to offer something else rather than a button that cannot work.
+      Since 0.3.3 a config holds only what differs from the defaults, and the
+      keys live in a `keystore.yaml` beside it. Without that keystore the config
+      has to be complete, so a fragment like this one is refused for a missing
+      required section — which is also how a config older than the previous
+      release announces itself, because the node upgrades only that one.
     steps:
       - title: "Write them"
         run: |
           rm -rf /tmp/logos-ui-fixtures
-          mkdir -p /tmp/logos-ui-fixtures/with-keystore /tmp/logos-ui-fixtures/no-keystore
-          for d in with-keystore no-keystore; do
+          mkdir -p /tmp/logos-ui-fixtures/stale /tmp/logos-ui-fixtures/other
+          for d in stale other; do
             cat > "/tmp/logos-ui-fixtures/$d/user_config.yaml" <<'YAML'
           # Parses as YAML, is not a UserConfig: the node reports a missing
           # required section, which is how a config older than the release
@@ -70,12 +74,10 @@ sections:
               inner: {}
           YAML
           done
-          # Only the first gets keys to carry forward.
-          printf 'keys: {}\n' > /tmp/logos-ui-fixtures/with-keystore/keystore.yaml
           ls -R /tmp/logos-ui-fixtures
         code_block: |
-          mkdir -p /tmp/logos-ui-fixtures/with-keystore /tmp/logos-ui-fixtures/no-keystore
-          # …a user_config.yaml in each, and a keystore.yaml in the first only
+          mkdir -p /tmp/logos-ui-fixtures/stale /tmp/logos-ui-fixtures/other
+          # …a user_config.yaml in each
 
   - title: "A config this build refuses"
     step: true
@@ -106,7 +108,7 @@ sections:
               find_by: "objectName"
               find_value: "nodeSettingsView"
               method: "userConfigSelected"
-              args: ["/tmp/logos-ui-fixtures/with-keystore/user_config.yaml"]
+              args: ["/tmp/logos-ui-fixtures/stale/user_config.yaml"]
 
             - name: "The app has not decided anything yet"
               # No API can judge a config without running it, so anything other
@@ -124,28 +126,23 @@ sections:
 
             - name: "The refusal becomes an offer"
               action: wait_for
-              texts: ["Your config is out of date"]
+              texts: ["This config can't be updated"]
               timeout: 20000
               screenshot: "config-refused.png"
               text: |
                 The node rejected the file while parsing it, and the app turned
-                that into the one action that can fix it. Note what it does
-                **not** say: nothing here claims the node crashed or stopped
-                unexpectedly. It never started.
+                that into the one action left: a fresh start, with the wording
+                saying plainly that it means a new keystore, a new wallet and a
+                new set of keys. Note what it does **not** say: nothing here
+                claims the node crashed or stopped unexpectedly. It never
+                started.
 
-            - name: "Update is offered, because a keystore sits beside it"
-              action: expect_property
-              find_by: "objectName"
-              find_value: "configUpgradeButton"
-              property: "visible"
-              value: true
-
-            - name: "Starting fresh is not, because it does not have to be"
+            - name: "Starting fresh is offered"
               action: expect_property
               find_by: "objectName"
               find_value: "configStartFreshButton"
               property: "visible"
-              value: false
+              value: true
 
   - title: "Declining, and finding your way back"
     step: true
@@ -178,7 +175,7 @@ sections:
               find_by: "objectName"
               find_value: "nodeSettingsView"
               method: "userConfigSelected"
-              args: ["/tmp/logos-ui-fixtures/with-keystore/user_config.yaml"]
+              args: ["/tmp/logos-ui-fixtures/stale/user_config.yaml"]
 
             - name: "Start, and be refused"
               action: click_object
@@ -187,7 +184,7 @@ sections:
 
             - name: "The offer appears"
               action: wait_for
-              texts: ["Your config is out of date"]
+              texts: ["This config can't be updated"]
               timeout: 20000
 
             - name: "Decline it"
@@ -204,7 +201,7 @@ sections:
 
             - name: "The banner keeps saying why the node will not run"
               action: wait_for
-              texts: ["This config needs updating before the node can start."]
+              texts: ["This config is from an older release, so the node can't start with it."]
               timeout: 8000
               screenshot: "config-refused-dismissed.png"
               text: |
@@ -224,15 +221,15 @@ sections:
               property: "visible"
               value: true
 
-  - title: "A config with no keys to carry"
+  - title: "Starting fresh"
     step: true
     text: |
-      Rebuilding a config means generating a fresh one **from the user's own
-      keystore**, which is what keeps their wallet. With no keystore beside the
-      config there is nothing to rebuild from, so offering "Update config" would
-      promise something the module would refuse to do.
+      Nothing in the module can rebuild a config the node refuses: the one
+      upgrade there is happens inside the node, and only from the previous
+      release. So the offer is a fresh start, and it has to lead somewhere —
+      straight into setup, with the dialog out of the way.
     steps:
-      - title: "Point at the keystore-less fixture"
+      - title: "Take the offer"
         ui_test:
           launch: "nix run .#ui-dev --no-write-lock-file -- --height 1000"
           qt_mcp: "result-mcp"
@@ -244,41 +241,22 @@ sections:
               find_by: "objectName"
               find_value: "tabSettings"
 
-            - name: "Repoint at the fixture with no keystore"
+            - name: "Repoint at the fixture"
               action: call_method
               find_by: "objectName"
               find_value: "nodeSettingsView"
               method: "userConfigSelected"
-              args: ["/tmp/logos-ui-fixtures/no-keystore/user_config.yaml"]
+              args: ["/tmp/logos-ui-fixtures/stale/user_config.yaml"]
 
             - name: "Start, and be refused"
               action: click_object
               find_by: "objectName"
               find_value: "nodeRunButton"
 
-            - name: "The offer is a different one"
+            - name: "The offer appears"
               action: wait_for
               texts: ["This config can't be updated"]
               timeout: 20000
-              screenshot: "config-refused-no-keystore.png"
-              text: |
-                Same refusal, different remedy — and the wording says plainly
-                that starting fresh means a new keystore, a new wallet and a new
-                set of keys, because that is what it means.
-
-            - name: "Update is withheld"
-              action: expect_property
-              find_by: "objectName"
-              find_value: "configUpgradeButton"
-              property: "visible"
-              value: false
-
-            - name: "Starting fresh is offered instead"
-              action: expect_property
-              find_by: "objectName"
-              find_value: "configStartFreshButton"
-              property: "visible"
-              value: true
 
             - name: "Start fresh"
               action: click_object
@@ -346,7 +324,7 @@ sections:
               find_by: "objectName"
               find_value: "nodeSettingsView"
               method: "userConfigSelected"
-              args: ["/tmp/logos-ui-fixtures/with-keystore/user_config.yaml"]
+              args: ["/tmp/logos-ui-fixtures/stale/user_config.yaml"]
 
             - name: "Now it is announced"
               action: expect_property
@@ -365,7 +343,7 @@ sections:
               find_by: "objectName"
               find_value: "nodeSettingsView"
               method: "userConfigSelected"
-              args: ["/tmp/logos-ui-fixtures/no-keystore/user_config.yaml"]
+              args: ["/tmp/logos-ui-fixtures/other/user_config.yaml"]
 
             - name: "Still announced — still different from what would run"
               action: expect_property
@@ -394,10 +372,11 @@ sections:
   - title: "A second node, not a replacement"
     step: true
     text: |
-      `generate_user_config` refuses when a config **or** a keystore already
-      exists. That is deliberate — it is what stops a regenerate quietly
-      destroying a wallet — and it means generating is only ever valid on an
-      empty slate.
+      `generate_user_config` refuses when a config already exists, and reuses
+      a keystore it finds beside its output rather than replacing it. That is
+      deliberate — it is what stops a regenerate quietly destroying a wallet —
+      and it means a node with keys of its own only ever starts on an empty
+      slate.
 
       So "Start a new node" makes one: a fresh directory beside the current
       node, with its own config, keystore, state, database and logs. Nothing is
@@ -491,10 +470,12 @@ outro: |
 
   Two things are deliberately out of reach here.
 
-  **That a repaired config runs.** `merge_user_config` works on raw YAML and
-  never type-checks its result, so the only thing that can call an upgrade good
-  is a start that succeeds — which needs a node, reachable peers and a matching
-  chainsync protocol version. That belongs in the module's own doc-test.
+  **The upgrade the node does itself.** A config from the previous release is
+  rewritten in place on start, with the original kept as
+  `user_config.yaml.0.3.2.bak`. Seeing that needs a start that gets as far as
+  reading the config and on to running services — which needs a node, reachable
+  peers and a matching chainsync protocol version. That belongs in the module's
+  own doc-test.
 
   **Anything below the UI.** The classifier that turns the node's wording into a
   verdict, and the backend setter whose change-signal is dropped when the value

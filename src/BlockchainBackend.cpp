@@ -50,8 +50,8 @@ const QString BlockchainBackend::MODULES_STATE_MODULE_NAME =
 // complete.
 struct ConfigVerdict {
     QString message;
-    QStringList dropped;
-    bool upgradeable = false;
+    // Written for an older release, as opposed to not a config at all.
+    bool stale = false;
 };
 
 static ConfigVerdict classifyConfigError(const QString& message);
@@ -66,8 +66,7 @@ void BlockchainBackend::setError(const QString& message)
     const ConfigVerdict verdict = classifyConfigError(message);
     if (!verdict.message.isEmpty()) {
         qWarning().noquote() << "BlockchainBackend: -> config rejected:" << verdict.message;
-        setConfigDropped(verdict.dropped);
-        setConfigState(verdict.upgradeable ? ConfigStale : ConfigUnreadable);
+        setConfigState(verdict.stale ? ConfigStale : ConfigUnreadable);
         setLastErrorMessage(verdict.message);
         setNodeRecovering(false);
         setStatus(Error);
@@ -436,27 +435,26 @@ static ConfigVerdict classifyConfigError(const QString& message)
         if (fields.isEmpty()) {
             return {QObject::tr("This config was written for an older version and has settings "
                                 "this one no longer recognises."),
-                    {}, true};
+                    true};
         }
         return {QObject::tr("This config was written for an older version. These settings no "
                             "longer exist: %1").arg(fields.join(QStringLiteral(", "))),
-                fields, true};
+                true};
     }
 
     if (detail.startsWith(QLatin1String("missing field"))) {
         return {QObject::tr("This config is missing a setting this version requires: %1")
                     .arg(detail),
-                {}, true};
+                true};
     }
     if (detail.startsWith(QLatin1String("invalid type"))) {
         return {QObject::tr("A setting in this config has the wrong type for this version: %1")
                     .arg(detail),
-                {}, true};
+                true};
     }
 
     // Not a version mismatch: hand-edited, truncated, or a stale !include.
-    // Not upgradeable — merge_user_config parses its source and would refuse it.
-    return {QObject::tr("This config file could not be read: %1").arg(detail), {}, false};
+    return {QObject::tr("This config file could not be read: %1").arg(detail), false};
 }
 
 // The module routes logs to "<persistence>/logs" while the config goes to
@@ -869,9 +867,6 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     setCpuCount(QThread::idealThreadCount());
     setUseGeneratedConfig(false);
     setConfigState(ConfigUnknown);
-    setConfigDropped({});
-    setConfigBackupPath(QString());
-    setMergeConfigReportPath(QString());
     const QString stateDir = userDirStateDir();
     if (!stateDir.isEmpty())
         QDir().mkpath(stateDir);
@@ -1004,9 +999,6 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
         refreshKeysBackedUp();
         refreshAccountRoles();
         setConfigState(ConfigUnknown);
-        setConfigDropped({});
-        setConfigBackupPath(QString());
-        setMergeConfigReportPath(QString());
     });
     connect(this, &BlockchainBackendSimpleSource::deploymentConfigChanged, this, [this]() {
         const QString p = deploymentConfig();
@@ -3219,7 +3211,6 @@ void BlockchainBackend::startBlockchain()
             if (r.success) {
                 self->setNodeRecovering(false);
                 self->setConfigState(ConfigOk);
-                self->setConfigDropped({});
                 self->setStatus(Running);
                 QTimer::singleShot(500, self.data(), [self]() {
                     if (!self)
@@ -3504,18 +3495,10 @@ QVariantMap BlockchainBackend::generateConfig(
         BLOCKCHAIN_MODULE_NAME, "generate_user_config", jsonToSend)));
 }
 
-// The node reports conflicts one per line. Split here rather than in the view so
-// QML renders rows instead of picking a blob apart, the way every other
-// structured payload on this source already arrives.
-static QStringList splitConflictsReport(const QString& report)
-{
-    return report.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
-}
-
-// Where the next node goes. generate_user_config refuses when a
-// config OR a keystore already exists, so a new folder is the only way to reach
-// the one precondition under which generating is valid. Nothing is deleted and
-// the current node keeps running from where it is.
+// Where the next node goes. generate_user_config refuses when a config already
+// exists and reuses a keystore it finds beside its output, so a new folder is
+// the only way to a node with a config and keys of its own. Nothing is deleted
+// and the current node keeps running from where it is.
 QString BlockchainBackend::nextNodeFolder() const
 {
     static const QRegularExpression numbered(QStringLiteral("^node-\\d+$"));
@@ -3539,136 +3522,6 @@ QString BlockchainBackend::nextNodeFolder() const
             return QDir::toNativeSeparators(candidate);
     }
     return {};
-}
-
-// Names the file a failed migrate was actually looking at.
-//
-// migrate_user_config reads exactly ONE file — the keystore. The config is not
-// parsed, it is BUILT from that keystore and written out. So a parser complaint
-// coming back from this step can only be about the keystore, however much
-// "Error migrating config: found character that cannot start any token" sounds
-// like it is about the config the user just tried to repair.
-//
-// Its two own errors name their subject already and are passed through.
-// Whatever the node rejected, the file is still text and the user can still
-// open it — so this goes on every failure the node hands back, not on a list of
-// error strings we thought of in advance. Naming ONE file is the only judgement
-// made here: "edit your config or your keystore" is an invitation to go
-// breaking the wrong one.
-static QString withManualEditHint(const QString& message, const QString& path,
-                                  const QString& reassurance)
-{
-    return message + QStringLiteral("\n\n") + reassurance + QLatin1Char(' ')
-        + QObject::tr("If you know what needs changing, you can edit %1 yourself — copy "
-                      "it somewhere safe first.").arg(path);
-}
-
-static QString describeMigrateFailure(const QString& error, const QString& keystorePath)
-{
-    if (error.contains(QLatin1String("configuration exists"), Qt::CaseInsensitive)
-            || error.contains(QLatin1String("Keystore file does not exist"), Qt::CaseInsensitive)) {
-        return error;
-    }
-    return withManualEditHint(
-        QObject::tr("Rebuilding the config failed while reading your keystore at %1. "
-                    "That is the only file this step reads.\n\n%2")
-            .arg(keystorePath, error),
-        keystorePath,
-        QObject::tr("Your keys are still in this file."));
-}
-
-QVariantMap BlockchainBackend::upgradeConfig()
-{
-    const auto fail = [](const QString& why) {
-        qWarning().noquote() << "upgradeConfig: FAILED —" << why;
-        return result::toVariantMap(result::err(why));
-    };
-
-    if (!m_blockchainClient)
-        return fail(tr("Module not initialized."));
-
-    if (status() == Running || status() == Starting || status() == Stopping)
-        return fail(tr("Wait for the node to stop before updating its config."));
-
-    const QString configPath = toLocalPath(userConfig().trimmed());
-    if (configPath.isEmpty() || !QFile::exists(configPath))
-        return fail(tr("There is no config to update."));
-
-    const QString keystorePath = nodeKeystorePath();
-    if (keystorePath.isEmpty()) {
-        return fail(tr("No keystore was found beside this config, so a new one cannot be "
-                       "built from your keys."));
-    }
-
-    const QString newPath = configPath + QStringLiteral(".new");
-    const QString backupPath = configPath + QStringLiteral(".bak");
-
-    qWarning().noquote() << "upgradeConfig: config=" << configPath
-                         << "keystore=" << keystorePath;
-
-    if (QFile::exists(newPath) && !QFile::remove(newPath))
-        return fail(tr("Could not clear a leftover file at %1.").arg(newPath));
-
-    qWarning().noquote() << "upgradeConfig: migrate ->" << newPath;
-    const LogosResult migrated = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, QStringLiteral("migrate_user_config"), newPath, keystorePath));
-    if (!migrated.success) {
-        QFile::remove(newPath);
-        return fail(describeMigrateFailure(migrated.error.toString(), keystorePath));
-    }
-
-    qWarning().noquote() << "upgradeConfig: merge" << configPath << "->" << newPath;
-    const LogosResult merged = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
-        BLOCKCHAIN_MODULE_NAME, QStringLiteral("merge_user_config"),
-        QVariantList{configPath, newPath, QString(), false, false}));
-    if (!merged.success) {
-        QFile::remove(newPath);
-        return fail(withManualEditHint(
-            tr("Carrying your settings across failed while reading your existing config "
-               "at %1.\n\n%2").arg(configPath, merged.error.toString()),
-            configPath,
-            tr("Your settings are still in this file.")));
-    }
-
-    // Conflicts are not failure: the merge wrote the destination either way, and
-    // each line names a value that could not come across.
-    const QStringList dropped = splitConflictsReport(merged.value.toString());
-
-    // Swap last, so every failure above leaves the user's config untouched. The
-    // path never changes — see the .rep note on upgradeConfig.
-    qWarning().noquote() << "upgradeConfig: swap — backup ->" << backupPath
-                         << "| dropped:" << dropped.size();
-    QFile::remove(backupPath);
-    if (!QFile::rename(configPath, backupPath)) {
-        QFile::remove(newPath);
-        return fail(tr("Could not back up the current config to %1.").arg(backupPath));
-    }
-    if (!QFile::rename(newPath, configPath)) {
-        QFile::rename(backupPath, configPath);
-        QFile::remove(newPath);
-        return fail(tr("Could not put the updated config in place."));
-    }
-
-    // Cleared first: a clean upgrade writes no report
-    setMergeConfigReportPath(QString());
-    if (!dropped.isEmpty()) {
-        const QString reportPath =
-            QFileInfo(configPath).absolutePath() + QStringLiteral("/user_config-migration-report.txt");
-        QFile report(reportPath);
-        if (report.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
-            report.write(dropped.join(QLatin1Char('\n')).toUtf8() + '\n');
-            setMergeConfigReportPath(reportPath);
-        } else
-            qWarning().noquote() << "upgradeConfig: could not write the report to" << reportPath;
-    }
-
-    qWarning().noquote() << "upgradeConfig: replaced" << configPath << "- backup at" << backupPath
-                         << "-" << dropped.size() << "setting(s) not carried over";
-
-    setConfigDropped(dropped);
-    setConfigBackupPath(backupPath);
-    setConfigState(ConfigUpgraded);
-    return result::toVariantMap(LogosResult{true, backupPath, QVariant()});
 }
 
 QVariantMap BlockchainBackend::getNotes(QString walletAddressHex, QString optionalTipHex)

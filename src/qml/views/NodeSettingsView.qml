@@ -21,11 +21,6 @@ ColumnLayout {
     // The chooser is not reachable while the node is up: changing config under
     // a running node would leave the two disagreeing.
     property bool canChange: true
-    // Offer the rebuild only when the node has actually refused this config.
-    // There is no way to validate one without starting the node, so the rest of
-    // the time this cannot honestly be recommended.
-    property bool configStale: false
-
     property bool nodeRunning: false
 
     // A config was repointed and the node has not been started since. Changing
@@ -49,7 +44,6 @@ ColumnLayout {
 
     spacing: Theme.spacing.large
 
-    signal updateConfigRequested()
     signal startNewNodeRequested()
 
 
@@ -215,14 +209,6 @@ ColumnLayout {
                 Layout.alignment: Qt.AlignRight
                 spacing: Theme.spacing.small
 
-                LogosButton {
-                    objectName: "updateConfigButton"
-                    visible: root.configStale
-                    enabled: root.canChange
-                    variant: LogosButton.Variant.Primary
-                    text: qsTr("Update config")
-                    onClicked: root.updateConfigRequested()
-                }
                 LogosButton {
                     objectName: "startNewNodeButton"
                     enabled: root.canChange
