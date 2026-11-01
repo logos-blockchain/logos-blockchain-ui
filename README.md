@@ -2,6 +2,8 @@
 
 A QML + C++ backend UI module for the [Logos](https://logos.co) platform that provides a graphical interface to control and monitor the Logos blockchain node.
 
+The `sql/` directory contains a separate SQL Explorer module for browsing Logos SQL channels.
+
 Built with [`logos-module-builder`](https://github.com/logos-co/logos-module-builder) using the `mkLogosQmlModule` pattern (QML frontend + C++ backend with Qt Remote Objects).
 
 ## Features
@@ -78,6 +80,14 @@ Or from the workspace:
 ws bundle logos-blockchain-ui --auto-local
 ```
 
+### SQL Explorer
+
+```bash
+nix run .#sql
+```
+
+Enter a running node's HTTP URL and a Logos SQL channel ID. The Explorer syncs a local read-only replica, then lets you browse tables or run read-only SQL queries against the latest or finalized data. Previously opened connections are saved for reuse.
+
 ### Build Targets
 
 ```bash
@@ -86,6 +96,10 @@ nix build .#lgx      # .lgx package for distribution
 nix build .#install  # lgpm-installed output (modules/ + plugins/)
 nix run              # standalone app with blockchain module
 nix develop          # enter development shell
+nix build .#sql      # SQL Explorer plugin + QML output
+nix build .#sql-unit-tests # focused C++ and QML tests; no running node needed
+nix build .#sql-lgx  # SQL Explorer .lgx package
+nix run .#sql        # standalone SQL Explorer with the SQL module
 ```
 
 ## Module Structure
@@ -95,6 +109,14 @@ logos-blockchain-ui/
 ├── flake.nix                       # mkLogosQmlModule
 ├── metadata.json                   # Module config (ui_qml type)
 ├── CMakeLists.txt                  # logos_module() macro
+├── sql/
+│   ├── metadata.json               # SQL Explorer module config
+│   ├── src/
+│   │   ├── SqlBackend.rep         # Explorer remote interface
+│   │   ├── SqlBackend.h/cpp       # Browsing and SQL module calls
+│   │   ├── QueryResultModel.h/cpp # Query results for the table view
+│   │   └── qml/                   # Explorer screen and result table
+│   └── tests/                     # Backend and QML tests with a mock transport
 └── src/
     ├── BlockchainBackend.rep       # RemoteObject interface
     ├── BlockchainBackend.h/cpp     # Business logic (extends BlockchainBackendSimpleSource)

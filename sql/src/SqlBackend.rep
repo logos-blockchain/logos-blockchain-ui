@@ -1,0 +1,24 @@
+class SqlBackend
+{
+    // An open local replica, not a guarantee that the node is still reachable.
+    PROP(bool connected READONLY)
+    PROP(bool busy READONLY)
+    PROP(QString nodeUrl READONLY)
+    PROP(QString channelId READONLY)
+    PROP(QVariantList recentConnections READONLY)
+    PROP(QString stateDirectory READONLY)
+    // Selects which local database is queried: "latest" or "finalized".
+    PROP(QString readView READONLY)
+    PROP(QVariantList tables READONLY)
+    PROP(QStringList columns READONLY)
+    PROP(int returnedRows READONLY)
+    // More rows exist than were returned; table browsing uses this for Next.
+    PROP(bool truncated READONLY)
+    PROP(QString lastError READONLY)
+
+    SLOT(QVariantMap openChannel(QString nodeUrl, QString channelId))
+    SLOT(QVariantMap closeChannel())
+    SLOT(QVariantMap refreshSchema(QString view))
+    SLOT(QVariantMap browseTable(QString tableName, int offset, int pageSize))
+    SLOT(QVariantMap runQuery(QString sql, int maxRows))
+}

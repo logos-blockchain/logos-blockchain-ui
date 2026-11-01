@@ -1,0 +1,19 @@
+{
+  "name": "sql_ui",
+  "display_name": "SQL Explorer",
+  "version": "0.1.0",
+  "type": "ui_qml",
+  "category": "blockchain",
+  "description": "Browse and query Logos SQL channels",
+  "main": "sql_ui_plugin",
+  "icon": "src/icons/sql.png",
+  "view": "qml/SqlView.qml",
+  "dependencies": ["sql_module"],
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": ["qt6.qtdeclarative"]
+    },
+    "external_libraries": []
+  }
+}

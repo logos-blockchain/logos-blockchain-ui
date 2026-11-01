@@ -1,0 +1,27 @@
+name: SQL Explorer
+
+# Build the view plugin and test its backend and QML without a running node.
+on:
+  pull_request:
+    paths: ['sql/**', 'flake.nix', 'flake.lock', '.github/workflows/sql.yml']
+  push:
+    branches: [master, main]
+    paths: ['sql/**', 'flake.nix', 'flake.lock', '.github/workflows/sql.yml']
+
+concurrency:
+  group: sql-explorer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: cachix/cachix-action@v15
+        with:
+          name: logos-co
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+      - name: Build Explorer and run focused tests
+        run: nix build .#sql .#sql-unit-tests
