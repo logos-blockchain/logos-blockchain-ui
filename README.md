@@ -97,9 +97,7 @@ logos-blockchain-ui/
 ├── CMakeLists.txt                  # logos_module() macro
 └── src/
     ├── BlockchainBackend.rep       # RemoteObject interface
-    ├── BlockchainBackend.h/cpp     # Business logic (extends BlockchainBackendSimpleSource)
-    ├── BlockchainPlugin.h/cpp      # Thin plugin entry point
-    ├── BlockchainPluginInterface.h # Plugin interface marker
+    ├── BlockchainBackend.h/cpp     # Business logic, run as the core module blockchain_ui_backend
     ├── AccountsModel.h/cpp         # QAbstractListModel for accounts
     ├── LogModel.h/cpp              # QAbstractListModel for logs
     └── qml/

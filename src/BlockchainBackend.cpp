@@ -1,6 +1,7 @@
 #include "BlockchainBackend.h"
 #include "logos_api.h"
 #include "logos_api_client.h"
+#include "logos_sdk.h"
 // logos_api_client.h only forward-declares LogosObject, and the probe below has
 // to destroy one. Deleting through the forward declaration compiles (with a
 // warning) and silently skips the destructor, leaking the replica it wraps.
@@ -844,9 +845,8 @@ static QByteArray decodeBase58(const QString& input, bool* ok)
     return bytes;
 }
 
-BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
+BlockchainBackend::BlockchainBackend(QObject* parent)
     : BlockchainBackendSimpleSource(parent)
-    , m_logosAPI(logosAPI)
     , m_accountsModel(new AccountsModel(this))
     , m_blockModel(new BlockModel(this))
     , m_claimsModel(new ClaimsModel(ClaimLedger::Kind::Staking, this))
@@ -1074,9 +1074,18 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
 
     // The block model parses every incoming block already, so it reports the
     // claims it sees rather than making us walk the same payload twice.
+}
 
+void BlockchainBackend::onContextReady()
+{
+    // Before anything reads it: the startup work below includes publishing
+    // the bootstrap peers this carries.
+    setModuleContext(QString::fromStdString(modulePath()));
+
+    // The module's own LogosAPI, so the one client per dependency it caches.
+    m_logosAPI = modules().api;
     if (!m_logosAPI) {
-        qWarning() << "BlockchainBackend: constructed without LogosAPI";
+        qWarning() << "BlockchainBackend: no LogosAPI in the module context";
         return;
     }
 
@@ -1475,9 +1484,7 @@ void BlockchainBackend::setModuleContext(const QString& modulePath)
     if (modulePath.isEmpty()) {
         qWarning() << "BlockchainBackend: no module path from the host, so"
                    << "metadata.json cannot be read: first-run Quick start and"
-                   << "the LEZ channel preset will both be hidden. Needs a"
-                   << "ui-host that calls initModuleContext"
-                   << "(logos-view-module-runtime).";
+                   << "the LEZ channel preset will both be hidden.";
         return;
     }
 

@@ -12,6 +12,7 @@
 #include <QVariantMap>
 
 #include "rep_BlockchainBackend_source.h"
+#include "logos_module_context.h"
 
 #include "AccountsModel.h"
 #include "BlockModel.h"
@@ -33,7 +34,9 @@ class QTimer;
 // "<module>/<propertyName>" (see logos-view-module-runtime/ui-host/main.cpp).
 // QML acquires them via logos.model("blockchain_ui",
 // "accounts"|"blocks"|"claims"|"miningClaims").
-class BlockchainBackend : public BlockchainBackendSimpleSource
+// Runs as the core module blockchain_ui_backend ("backend": "module").
+class BlockchainBackend : public BlockchainBackendSimpleSource,
+                          public LogosModuleContext
 {
     Q_OBJECT
     Q_PROPERTY(AccountsModel* accounts READ accounts CONSTANT)
@@ -42,8 +45,12 @@ class BlockchainBackend : public BlockchainBackendSimpleSource
     Q_PROPERTY(ClaimsModel* miningClaims READ miningClaims CONSTANT)
 
 public:
-    explicit BlockchainBackend(LogosAPI* logosAPI, QObject* parent = nullptr);
+    explicit BlockchainBackend(QObject* parent = nullptr);
     ~BlockchainBackend() override;
+
+    // modules() is live from here: reads the module's metadata.json, then
+    // connects to the node module and subscribes to its events.
+    void onContextReady() override;
 
     AccountsModel* accounts() const { return m_accountsModel; }
     BlockModel* blocks() const { return m_blockModel; }

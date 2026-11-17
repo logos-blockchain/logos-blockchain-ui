@@ -7,13 +7,13 @@ else()
     message(FATAL_ERROR "LogosModule.cmake not found. Set LOGOS_MODULE_BUILDER_ROOT.")
 endif()
 
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/metadata.json" METADATA_JSON)
+string(JSON MODULE_NAME GET ${METADATA_JSON} name)
+
 logos_module(
-    NAME blockchain_ui
+    NAME ${MODULE_NAME}
     REP_FILE src/BlockchainBackend.rep
     SOURCES
-        src/BlockchainPluginInterface.h
-        src/BlockchainPlugin.h
-        src/BlockchainPlugin.cpp
         src/BlockchainBackend.h
         src/BlockchainBackend.cpp
         src/AccountsModel.h
@@ -24,6 +24,8 @@ logos_module(
         src/ClaimLedger.cpp
         src/ClaimsModel.h
         src/ClaimsModel.cpp
+    INCLUDE_DIRS
+        src
     # TODO(logos-co/logos-liblogos#219): only for the node module's CPU and
     # memory figures — the library behind liblogos's own host-side stats, used
     # here because those stats are not exposed to modules. Goes with the flake
